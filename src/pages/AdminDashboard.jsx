@@ -1,0 +1,78 @@
+// Admin dashboard (build plan §9, item 31). Calls ensure_current_fees() on mount
+// (same safety net as the member dashboard) then renders the summary, member grid,
+// and approvals queue. Approving/rejecting refreshes the data.
+import { useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
+import { useAdminData } from '../hooks/useAdminData'
+import { signOut } from '../lib/auth'
+import { supabase } from '../supabaseClient'
+import AdminSummaryCards from '../components/admin/AdminSummaryCards'
+import MemberGrid from '../components/admin/MemberGrid'
+import ApprovalsQueue from '../components/admin/ApprovalsQueue'
+
+export default function AdminDashboard() {
+  const { profile, user } = useAuth()
+  const navigate = useNavigate()
+  const admin = useAdminData()
+  const { refresh } = admin
+
+  useEffect(() => {
+    if (!supabase) return
+    supabase.rpc('ensure_current_fees').then(({ error }) => {
+      if (error) console.error('ensure_current_fees failed', error)
+      refresh()
+    })
+  }, [refresh])
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-400">Micro-SACCOS · Admin</p>
+            <h1 className="text-lg font-semibold text-gray-900 truncate">
+              {profile?.full_name || user?.email}
+            </h1>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            {/* Admin is also a contributing member (Decision #1). */}
+            <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
+              My member view
+            </Link>
+            <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700">
+              Sign out
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
+        {admin.error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {admin.error}
+          </div>
+        )}
+
+        {admin.loading ? (
+          <p className="text-center text-gray-400 py-8">Loading…</p>
+        ) : (
+          <>
+            <AdminSummaryCards stats={admin.stats} />
+            <ApprovalsQueue
+              pendingLoans={admin.pendingLoans}
+              pendingPayments={admin.pendingPayments}
+              onActioned={refresh}
+            />
+            <MemberGrid rows={admin.gridRows} />
+          </>
+        )}
+      </main>
+    </div>
+  )
+}

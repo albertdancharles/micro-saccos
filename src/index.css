@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* Mobile-first base. Member views use `max-w-md mx-auto`; the admin grid may
+   scroll horizontally (see build plan §13). */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
