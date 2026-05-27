@@ -1,7 +1,7 @@
 // Admin dashboard (build plan §9, item 31). Calls ensure_current_fees() on mount
 // (same safety net as the member dashboard) then renders the summary, member grid,
 // and approvals queue. Approving/rejecting refreshes the data.
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useAdminData } from '../hooks/useAdminData'
@@ -10,12 +10,14 @@ import { supabase } from '../supabaseClient'
 import AdminSummaryCards from '../components/admin/AdminSummaryCards'
 import MemberGrid from '../components/admin/MemberGrid'
 import ApprovalsQueue from '../components/admin/ApprovalsQueue'
+import AddMemberModal from '../components/admin/AddMemberModal'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
   const navigate = useNavigate()
   const admin = useAdminData()
   const { refresh } = admin
+  const [addOpen, setAddOpen] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
@@ -69,10 +71,20 @@ export default function AdminDashboard() {
               pendingPayments={admin.pendingPayments}
               onActioned={refresh}
             />
+            <div className="flex justify-end">
+              <button
+                onClick={() => setAddOpen(true)}
+                className="rounded-lg border border-emerald-600 text-emerald-700 text-sm font-medium px-4 py-2 hover:bg-emerald-50"
+              >
+                + Add member
+              </button>
+            </div>
             <MemberGrid rows={admin.gridRows} />
           </>
         )}
       </main>
+
+      <AddMemberModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={refresh} />
     </div>
   )
 }

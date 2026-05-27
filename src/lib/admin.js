@@ -96,3 +96,23 @@ export async function getAdminData(supabase) {
 
   return { stats, gridRows, pendingLoans, pendingPayments, currentMonthKey }
 }
+
+// Admin: create a new member via the admin-create-member Edge Function (which holds
+// the service-role key). Returns { email, password } — the temp credentials to share.
+export async function createMember(supabase, { full_name, email, phone_number }) {
+  const { data, error } = await supabase.functions.invoke('admin-create-member', {
+    body: { full_name, email, phone_number },
+  })
+  if (error) {
+    // Non-2xx responses surface as FunctionsHttpError with the Response in context.
+    let message = error.message
+    try {
+      const ctx = await error.context?.json?.()
+      if (ctx?.error) message = ctx.error
+    } catch {
+      /* keep the generic message */
+    }
+    throw new Error(message || 'Could not create the member.')
+  }
+  return data
+}
