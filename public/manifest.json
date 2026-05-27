@@ -1,0 +1,19 @@
+{
+  "name": "Micro-SACCOS — Umoja Group",
+  "short_name": "Micro-SACCOS",
+  "description": "Savings & loan co-operative: fees, loans, and repayments for the Umoja Group.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
