@@ -2,7 +2,7 @@
 // so we fetch the small datasets once and join client-side (15 members → trivial).
 // Returns everything the admin dashboard renders: stats, the member grid, and the
 // pending loan + payment queues.
-import { loanCeiling } from './loanMath'
+import { loanCeiling, poolCeiling, maxLoan } from './loanMath'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
@@ -62,12 +62,15 @@ export async function getAdminData(supabase) {
     return { id: p.id, name: p.full_name, role: p.role, fee, installment, overall }
   })
 
+  const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
+  const poolCap = poolCeiling(pool)
+
   const feesThisPeriod = fees.filter((f) => f.period === currentPeriod)
   const pendingSubs = subs.filter((s) => s.status === 'pending')
   const pendingLoansArr = loans.filter((l) => l.status === 'pending')
 
   const stats = {
-    pool: Number(poolRes.data?.pool_balance_tzs ?? 0),
+    pool,
     feesPaid: feesThisPeriod.filter((f) => f.status === 'paid').length,
     feesTotal: feesThisPeriod.length || profiles.length,
     activeLoans: loans.filter((l) => l.status === 'active').length,
@@ -76,7 +79,14 @@ export async function getAdminData(supabase) {
 
   const pendingLoans = pendingLoansArr.map((l) => {
     const savings = savingsByMember[l.member_id] || 0
-    return { ...l, memberName: profileName[l.member_id] || 'Unknown', savings, ceiling: loanCeiling(savings) }
+    return {
+      ...l,
+      memberName: profileName[l.member_id] || 'Unknown',
+      savings,
+      ceiling: loanCeiling(savings),
+      poolCeiling: poolCap,
+      maxEligible: maxLoan(savings, pool),
+    }
   })
 
   const feeById = Object.fromEntries(fees.map((f) => [f.id, f]))

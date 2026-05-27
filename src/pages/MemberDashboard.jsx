@@ -97,6 +97,7 @@ export default function MemberDashboard() {
             <LoanRequestForm
               memberId={user?.id}
               savings={summary.savings}
+              pool={summary.pool}
               loan={summary.loan}
               onSubmitted={handleSubmitted}
             />

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS } from '../../lib/format'
-import { loanCeiling } from '../../lib/loanMath'
+import { loanCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
 import { submitLoanRequest } from '../../lib/loans'
 
 function Row({ label, value, strong }) {
@@ -15,14 +15,16 @@ function Row({ label, value, strong }) {
   )
 }
 
-export default function LoanRequestForm({ memberId, savings, loan, onSubmitted }) {
+export default function LoanRequestForm({ memberId, savings, pool, loan, onSubmitted }) {
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const maxLoan = loanCeiling(savings)
+  const savingsCeiling = loanCeiling(savings)
+  const poolCap = poolCeiling(pool)
+  const eligible = maxLoan(savings, pool)
   const amountNum = Number(amount)
-  const overLimit = amountNum > maxLoan
+  const overLimit = amountNum > eligible
 
   if (loan) {
     return (
@@ -57,15 +59,17 @@ export default function LoanRequestForm({ memberId, savings, loan, onSubmitted }
       <h2 className="text-sm font-semibold text-gray-900 mb-3">Request a loan</h2>
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm mb-3 space-y-1">
-        <Row label="Approved savings" value={formatTZS(savings)} />
-        <Row label="5× ceiling" value={formatTZS(maxLoan)} />
+        <Row label="5× your savings" value={formatTZS(savingsCeiling)} />
+        <Row label="25% of group pool" value={formatTZS(poolCap)} />
         <div className="border-t border-gray-200 my-1" />
-        <Row label="Maximum eligible" value={formatTZS(maxLoan)} strong />
+        <Row label="Maximum eligible" value={formatTZS(eligible)} strong />
       </div>
 
-      {maxLoan <= 0 ? (
+      {eligible <= 0 ? (
         <p className="text-sm text-gray-500">
-          Make an approved savings deposit to become eligible for a loan.
+          {savingsCeiling <= 0
+            ? 'Make an approved savings deposit to become eligible for a loan.'
+            : 'The group pool is currently too low to issue a loan. Try again once more savings come in.'}
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -79,7 +83,10 @@ export default function LoanRequestForm({ memberId, savings, loan, onSubmitted }
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
           />
           {amount !== '' && overLimit && (
-            <p className="text-sm text-red-600">Loan request exceeds your 5× savings limit.</p>
+            <p className="text-sm text-red-600">
+              Exceeds your maximum of {formatTZS(eligible)}
+              {poolCap < savingsCeiling ? ' (capped at 25% of the group pool).' : ' (5× your savings).'}
+            </p>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button

@@ -1,7 +1,7 @@
 // Loan helpers (build plan §8a). Approval/schedule generation is the approve_loan
 // RPC (admin side); members only read their loan and submit a request.
 import { formatTZS } from './format'
-import { loanCeiling } from './loanMath'
+import { maxLoan as computeMaxLoan } from './loanMath'
 import { getApprovedSavings } from './savings'
 
 // The member's one non-terminal loan (pending or active), if any (Decision #4).
@@ -29,20 +29,28 @@ export async function getInstallments(supabase, loanId) {
   return data
 }
 
-// Submit a loan request (build plan §8a): one-loan-at-a-time guard + 5× ceiling,
-// inserted as 'pending' for admin approval.
+// Submit a loan request (build plan §8a): one-loan-at-a-time guard + ceiling,
+// inserted as 'pending' for admin approval. The ceiling is the lower of 5× savings
+// and 25% of the group pool (so one member can't drain the pool).
 export async function submitLoanRequest(supabase, memberId, requestedAmount) {
   const existing = await getCurrentLoan(supabase, memberId)
   if (existing) {
     throw new Error('You already have a loan in progress. Close it before requesting another.')
   }
 
-  const totalSavings = await getApprovedSavings(supabase, memberId)
-  const maxLoan = loanCeiling(totalSavings)
+  const [totalSavings, poolRes] = await Promise.all([
+    getApprovedSavings(supabase, memberId),
+    supabase.from('v_group_pool').select('pool_balance_tzs').single(),
+  ])
+  if (poolRes.error) throw poolRes.error
+  const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
+  const ceiling = computeMaxLoan(totalSavings, pool)
 
   if (!(requestedAmount > 0)) throw new Error('Enter a valid amount.')
-  if (requestedAmount > maxLoan) {
-    throw new Error(`Exceeds your 5× savings limit. Maximum eligible: ${formatTZS(maxLoan)}.`)
+  if (requestedAmount > ceiling) {
+    throw new Error(
+      `Exceeds your limit. Maximum eligible: ${formatTZS(ceiling)} (the lower of 5× your savings and 25% of the group pool).`,
+    )
   }
 
   const { data, error } = await supabase
@@ -51,7 +59,7 @@ export async function submitLoanRequest(supabase, memberId, requestedAmount) {
     .select()
     .single()
   if (error) throw error
-  return { loan: data, maxLoan, totalSavings }
+  return { loan: data, maxLoan: ceiling, totalSavings, pool }
 }
 
 // Admin: approve a loan + generate its 3-installment schedule atomically (build

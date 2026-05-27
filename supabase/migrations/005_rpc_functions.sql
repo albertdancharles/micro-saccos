@@ -9,12 +9,20 @@ RETURNS void AS $$
 DECLARE
   v_loan loans%ROWTYPE;
   v_int  numeric(12,2);
+  v_pool numeric(14,2);
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
 
   SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
   IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';      END IF;
   IF v_loan.status <> 'pending' THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+
+  -- A single loan may never exceed 25% of the current group pool, so one member
+  -- can't drain it (whole TZS). Authoritative gate; the UI mirrors it.
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_loan.principal > floor(0.25 * COALESCE(v_pool, 0)) THEN
+    RAISE EXCEPTION 'Loan exceeds 25%% of the group pool (max %).', floor(0.25 * COALESCE(v_pool, 0));
+  END IF;
 
   v_int := round(v_loan.principal * 0.05);   -- 5% flat monthly interest, whole TZS
 
