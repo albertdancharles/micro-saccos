@@ -1,0 +1,427 @@
+-- ============================================================================
+-- setup.sql  —  Micro-SACCOS full hosted setup (migrations 001-005 concatenated)
+-- ============================================================================
+-- HOW TO USE (hosted, no Docker):
+--   1. Create a project at https://supabase.com
+--   2. Dashboard -> SQL Editor -> New query
+--   3. Paste this ENTIRE file and click Run. Safe on a fresh project.
+-- Then follow README.md "Hosted path" for env vars, seeding, and optional cron.
+-- ============================================================================
+-- ----------------------------------------------------------------------------
+-- 001_create_tables.sql
+-- ----------------------------------------------------------------------------
+
+-- 001_create_tables.sql — Micro-SACCOS schema (build plan §4).
+-- Apply order: 001 tables → 002 views → 003 RLS → 004 storage → 005 RPCs.
+
+-- Timezone helper: "today" in East Africa Time (UTC+3, Africa/Dar_es_Salaam).
+-- Defined here so the views (002) and RPCs (005) can both use it. Never use raw
+-- CURRENT_DATE — it is UTC and drifts month boundaries by a day.
+CREATE OR REPLACE FUNCTION today_eat()
+RETURNS date AS $$
+  SELECT (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date;
+$$ LANGUAGE sql STABLE;
+
+-- profiles: extends auth.users. All 15 are contributing members; `role` only
+-- gates permissions (Decision #1). Created automatically on signup by a trigger.
+CREATE TABLE profiles (
+  id            uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name     text NOT NULL,
+  phone_number  text UNIQUE,
+  role          text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  is_active     boolean NOT NULL DEFAULT true,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- SECURITY DEFINER + pinned search_path: this trigger fires under the
+-- supabase_auth_admin role (GoTrue), whose search_path excludes `public`, so the
+-- table must be schema-qualified and search_path pinned or every signup fails with
+-- "Database error creating new user".
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, full_name, phone_number)
+  VALUES (NEW.id,
+          NEW.raw_user_meta_data->>'full_name',
+          NEW.raw_user_meta_data->>'phone_number');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE handle_new_user();
+
+-- monthly_fees: one per active profile per month (admin included). Auto-generated
+-- on the 1st; `status` is pending/paid only (overdue is computed in the views).
+CREATE TABLE monthly_fees (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id         uuid NOT NULL REFERENCES profiles(id),
+  period            date NOT NULL,                    -- always the 1st of the month
+  amount            numeric(12,2) NOT NULL DEFAULT 10000,
+  status            text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+  penalty_collected numeric(12,2) NOT NULL DEFAULT 0, -- accrued penalty banked at payment
+  paid_at           timestamptz,
+  reviewed_by       uuid REFERENCES profiles(id),
+  UNIQUE (member_id, period)
+);
+
+-- loans: a member may hold only one non-terminal loan at a time (Decision #4,
+-- enforced in submitLoanRequest). Disbursement proof is captured at approval.
+CREATE TABLE loans (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id              uuid NOT NULL REFERENCES profiles(id),
+  principal              numeric(12,2) NOT NULL CHECK (principal > 0),
+  status                 text NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending', 'active', 'closed', 'rejected')),
+  requested_at           timestamptz NOT NULL DEFAULT now(),
+  approved_at            timestamptz,
+  approved_by            uuid REFERENCES profiles(id),
+  disbursed_at           timestamptz,
+  disbursement_proof_url text,
+  rejection_reason       text
+);
+
+-- loan_installments: exactly 3 per approved loan, interest only (no fee, Decision #2).
+-- Bullet schedule: M1/M2 interest, M3 principal + interest.
+CREATE TABLE loan_installments (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id             uuid NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  installment_number  int NOT NULL CHECK (installment_number IN (1, 2, 3)),
+  due_date            date NOT NULL,
+  principal_due       numeric(12,2) NOT NULL DEFAULT 0,   -- 0 for M1/M2, full principal M3
+  interest_due        numeric(12,2) NOT NULL,             -- principal × 0.05, whole TZS
+  total_due           numeric(12,2) GENERATED ALWAYS AS (principal_due + interest_due) STORED,
+  status              text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+  penalty_collected   numeric(12,2) NOT NULL DEFAULT 0,
+  proof_url           text,
+  paid_at             timestamptz,
+  reviewed_by         uuid REFERENCES profiles(id),
+  UNIQUE (loan_id, installment_number)
+);
+
+-- payment_submissions: single intake for ALL proofs (Decision #3). related_id is
+-- NULL for savings deposits; for monthly_fee / loan_installment it points at the
+-- row whose status flips to paid on approval.
+CREATE TABLE payment_submissions (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        uuid NOT NULL REFERENCES profiles(id),
+  submission_type  text NOT NULL
+                     CHECK (submission_type IN ('savings_deposit', 'monthly_fee', 'loan_installment')),
+  related_id       uuid,
+  amount_claimed   numeric(12,2) NOT NULL CHECK (amount_claimed > 0),
+  proof_url        text NOT NULL,
+  status           text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  submitted_at     timestamptz NOT NULL DEFAULT now(),
+  reviewed_at      timestamptz,
+  reviewed_by      uuid REFERENCES profiles(id),
+  rejection_reason text
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 002_create_views.sql
+-- ----------------------------------------------------------------------------
+
+-- 002_create_views.sql — overdue + penalty computed at query time (build plan §5).
+-- Penalty rule (Decision #6): once past due, 5% × base applies and again each
+-- completed month thereafter (simple, non-compounding). penalty_months is the
+-- multiplier. All "today" comparisons use today_eat(); penalties round to whole TZS.
+
+-- Monthly fees: due by the end of the period's month (period + 1 month).
+CREATE OR REPLACE VIEW v_fee_status AS
+WITH b AS (
+  SELECT mf.*, (mf.period + INTERVAL '1 month')::date AS due_date
+  FROM monthly_fees mf
+)
+SELECT
+  b.*,
+  CASE
+    WHEN b.status = 'paid' OR today_eat() <= b.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), b.due_date)) * 12
+        + date_part('month', age(today_eat(), b.due_date)))::int + 1
+  END AS penalty_months,
+  CASE
+    WHEN b.status = 'paid'        THEN 'paid'
+    WHEN today_eat() > b.due_date THEN 'overdue'
+    ELSE 'pending'
+  END AS computed_status
+FROM b;
+
+CREATE OR REPLACE VIEW v_fee_status_money AS
+SELECT
+  f.*,
+  round(0.05 * f.amount * f.penalty_months)            AS penalty_due,
+  f.amount + round(0.05 * f.amount * f.penalty_months) AS total_with_penalty
+FROM v_fee_status f;
+
+-- Loan installments: overdue if past due_date and not paid. Penalty base = total_due.
+CREATE OR REPLACE VIEW v_installment_status AS
+SELECT
+  li.*,
+  CASE
+    WHEN li.status = 'paid' OR today_eat() <= li.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), li.due_date)) * 12
+        + date_part('month', age(today_eat(), li.due_date)))::int + 1
+  END AS penalty_months,
+  CASE
+    WHEN li.status = 'paid'        THEN 'paid'
+    WHEN today_eat() > li.due_date THEN 'overdue'
+    ELSE 'pending'
+  END AS computed_status
+FROM loan_installments li;
+
+CREATE OR REPLACE VIEW v_installment_status_money AS
+SELECT
+  i.*,
+  round(0.05 * i.total_due * i.penalty_months)               AS penalty_due,
+  i.total_due + round(0.05 * i.total_due * i.penalty_months) AS total_with_penalty
+FROM v_installment_status i;
+
+-- Group pool balance (single aggregate; no member breakdown).
+-- Cash in:  approved savings + paid fees (+ collected penalty) + paid installments (+ collected penalty)
+-- Cash out: principal disbursed for active & closed loans
+CREATE OR REPLACE VIEW v_group_pool AS
+SELECT
+    (SELECT COALESCE(SUM(amount_claimed), 0)
+       FROM payment_submissions
+       WHERE submission_type = 'savings_deposit' AND status = 'approved')
+  + (SELECT COALESCE(SUM(amount), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM monthly_fees      WHERE status = 'paid')
+  + (SELECT COALESCE(SUM(total_due), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM loan_installments WHERE status = 'paid')
+  - (SELECT COALESCE(SUM(principal), 0)
+       FROM loans             WHERE status IN ('active', 'closed'))
+  AS pool_balance_tzs;
+
+
+-- ----------------------------------------------------------------------------
+-- 003_rls_policies.sql
+-- ----------------------------------------------------------------------------
+
+-- 003_rls_policies.sql — Row-Level Security (build plan §6).
+-- Privileged writes (fee generation, loan/payment approval) go through the service
+-- role (Edge Function) or SECURITY DEFINER RPCs, so base tables need no write policy
+-- for those paths.
+
+-- Helper: is the current user an admin? SECURITY DEFINER bypasses RLS → no recursion.
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- profiles
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Members see own profile, admin sees all"
+  ON profiles FOR SELECT USING (id = auth.uid() OR is_admin());
+CREATE POLICY "Admin can update any profile"
+  ON profiles FOR UPDATE USING (is_admin());
+
+-- monthly_fees (rows created by Edge Function via service role; status flipped by RPC)
+ALTER TABLE monthly_fees ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Member sees own fees"
+  ON monthly_fees FOR SELECT USING (member_id = auth.uid() OR is_admin());
+
+-- loans
+ALTER TABLE loans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Member sees own loans"
+  ON loans FOR SELECT USING (member_id = auth.uid() OR is_admin());
+CREATE POLICY "Member inserts loan request"
+  ON loans FOR INSERT WITH CHECK (member_id = auth.uid() AND status = 'pending');
+-- approval/rejection happen via approve_loan / reject_loan RPCs
+
+-- loan_installments (created + flipped by RPC only)
+ALTER TABLE loan_installments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Member sees own installments via loan"
+  ON loan_installments FOR SELECT USING (
+    loan_id IN (SELECT id FROM loans WHERE member_id = auth.uid()) OR is_admin()
+  );
+
+-- payment_submissions
+ALTER TABLE payment_submissions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Member sees own submissions"
+  ON payment_submissions FOR SELECT USING (member_id = auth.uid() OR is_admin());
+CREATE POLICY "Member inserts own submission"
+  ON payment_submissions FOR INSERT WITH CHECK (member_id = auth.uid() AND status = 'pending');
+-- approval/rejection happen via approve_submission / reject_submission RPCs
+
+-- Views: aggregate pool is safe for all authenticated users; status/money views rely
+-- on the underlying table RLS (security_invoker default) so members see only their rows.
+GRANT SELECT ON v_group_pool TO authenticated;
+GRANT SELECT ON v_fee_status, v_fee_status_money,
+                v_installment_status, v_installment_status_money TO authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- 004_storage_bucket.sql
+-- ----------------------------------------------------------------------------
+
+-- 004_storage_bucket.sql — private proof bucket + storage RLS (build plan §7).
+
+-- Bucket: private, images only, ≤ 5 MB. Supabase enforces mime/size server-side.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('payment-proofs', 'payment-proofs', false, 5242880,
+        ARRAY['image/jpeg', 'image/png', 'image/webp'])
+ON CONFLICT (id) DO UPDATE
+  SET file_size_limit    = EXCLUDED.file_size_limit,
+      allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- Path structure puts member_id as the 2nd segment for member uploads, e.g.
+--   savings/{member_id}/{submission_id}.jpg
+--   fees/{member_id}/{period}/{submission_id}.jpg
+--   loan-repayments/{member_id}/{loan_id}/{installment_number}/{submission_id}.jpg
+-- Admin disbursement proofs live under loan-disbursements/{loan_id}/...
+
+-- Members upload only under their own id (2nd folder segment).
+CREATE POLICY "member upload own proofs"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'payment-proofs'
+              AND (storage.foldername(name))[2] = auth.uid()::text);
+
+-- Members read their own files; admins read ALL files (so the admin client can mint
+-- signed URLs directly — no service-role key in the browser).
+CREATE POLICY "read own or admin"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'payment-proofs'
+         AND ((storage.foldername(name))[2] = auth.uid()::text OR is_admin()));
+
+-- Admins upload disbursement proofs.
+CREATE POLICY "admin upload disbursements"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'payment-proofs' AND is_admin());
+
+
+-- ----------------------------------------------------------------------------
+-- 005_rpc_functions.sql
+-- ----------------------------------------------------------------------------
+
+-- 005_rpc_functions.sql — SECURITY DEFINER RPCs (build plan §8b, §8c, §8c-bis).
+-- These hold the atomic multi-write logic; never replicate it client-side.
+
+-- Loan approval + schedule generation. Called as
+-- supabase.rpc('approve_loan', { p_loan_id, p_proof_url }) after the admin uploads
+-- the disbursement screenshot. Atomic: loan update + 3 installment inserts.
+CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_loan loans%ROWTYPE;
+  v_int  numeric(12,2);
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';      END IF;
+  IF v_loan.status <> 'pending' THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+
+  v_int := round(v_loan.principal * 0.05);   -- 5% flat monthly interest, whole TZS
+
+  UPDATE loans
+    SET status = 'active', approved_at = now(), approved_by = auth.uid(),
+        disbursed_at = now(), disbursement_proof_url = p_proof_url
+    WHERE id = p_loan_id;
+
+  -- Bullet schedule, due dates anchored to EAT "today".
+  INSERT INTO loan_installments (loan_id, installment_number, due_date, principal_due, interest_due)
+  VALUES
+    (p_loan_id, 1, (today_eat() + INTERVAL '1 month')::date, 0,                v_int),
+    (p_loan_id, 2, (today_eat() + INTERVAL '2 month')::date, 0,                v_int),
+    (p_loan_id, 3, (today_eat() + INTERVAL '3 month')::date, v_loan.principal, v_int);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Payment approval. The admin passes the actual amount verified on the screenshot
+-- (Decision #11); penalty banked = received − base (clamped ≥ 0). Auto-closes a loan
+-- once all installments are paid. Called as
+-- supabase.rpc('approve_submission', { p_submission_id, p_amount_received }).
+CREATE OR REPLACE FUNCTION approve_submission(p_submission_id uuid, p_amount_received numeric)
+RETURNS void AS $$
+DECLARE
+  s         payment_submissions%ROWTYPE;
+  v_base    numeric(12,2);
+  v_penalty numeric(12,2);
+  v_loan_id uuid;
+  v_open    int;
+BEGIN
+  IF NOT is_admin()              THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount_received IS NULL OR p_amount_received < 0
+                                 THEN RAISE EXCEPTION 'Invalid amount received'; END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL          THEN RAISE EXCEPTION 'Submission not found'; END IF;
+  IF s.status <> 'pending' THEN RAISE EXCEPTION 'Already reviewed';    END IF;
+
+  UPDATE payment_submissions
+    SET status = 'approved', reviewed_at = now(), reviewed_by = auth.uid()
+    WHERE id = p_submission_id;
+
+  IF s.submission_type = 'monthly_fee' THEN
+    SELECT amount INTO v_base FROM monthly_fees WHERE id = s.related_id;
+    v_penalty := greatest(0, p_amount_received - COALESCE(v_base, 0));
+    UPDATE monthly_fees
+      SET status = 'paid', paid_at = now(), reviewed_by = auth.uid(),
+          penalty_collected = v_penalty
+      WHERE id = s.related_id;
+
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT total_due INTO v_base FROM loan_installments WHERE id = s.related_id;
+    v_penalty := greatest(0, p_amount_received - COALESCE(v_base, 0));
+    UPDATE loan_installments
+      SET status = 'paid', paid_at = now(), reviewed_by = auth.uid(),
+          penalty_collected = v_penalty
+      WHERE id = s.related_id
+      RETURNING loan_id INTO v_loan_id;
+
+    SELECT COUNT(*) INTO v_open
+      FROM loan_installments WHERE loan_id = v_loan_id AND status <> 'paid';
+    IF v_open = 0 THEN
+      UPDATE loans SET status = 'closed' WHERE id = v_loan_id;
+    END IF;
+
+  ELSE  -- savings_deposit: confirmed amount becomes the source of truth
+    UPDATE payment_submissions SET amount_claimed = p_amount_received
+      WHERE id = p_submission_id;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Self-healing fee generation: idempotent, called on every dashboard load so the
+-- current EAT month's fees always exist even if pg_cron was skipped while the free
+-- project was paused (build plan §8c-bis, §13).
+CREATE OR REPLACE FUNCTION ensure_current_fees()
+RETURNS void AS $$
+DECLARE
+  v_period date := date_trunc('month', today_eat())::date;
+BEGIN
+  INSERT INTO monthly_fees (member_id, period, amount, status)
+  SELECT p.id, v_period, 10000, 'pending'
+  FROM profiles p
+  WHERE p.is_active = true
+  ON CONFLICT (member_id, period) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Rejections: set status only; the member resubmits. Rows are never hard-deleted.
+CREATE OR REPLACE FUNCTION reject_submission(p_submission_id uuid, p_reason text)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE payment_submissions
+    SET status = 'rejected', reviewed_at = now(), reviewed_by = auth.uid(),
+        rejection_reason = p_reason
+    WHERE id = p_submission_id AND status = 'pending';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION reject_loan(p_loan_id uuid, p_reason text)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE loans
+    SET status = 'rejected', rejection_reason = p_reason
+    WHERE id = p_loan_id AND status = 'pending';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
