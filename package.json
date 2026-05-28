@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "reset-passwords": "node scripts/reset-passwords.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
