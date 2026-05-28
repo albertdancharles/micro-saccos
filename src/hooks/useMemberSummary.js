@@ -14,6 +14,8 @@ const monthKey = (dateStr) => (dateStr ? String(dateStr).slice(0, 7) : '')
 const EMPTY = {
   pool: 0,
   savings: 0,
+  paidFees: 0,
+  contribution: 0,
   loan: null,
   fees: [],
   installments: [],
@@ -45,6 +47,13 @@ export function useMemberSummary() {
       // Current month = the latest fee period (fees are generated monthly).
       const currentMonthKey = fees.length ? monthKey(fees[0].period) : ''
 
+      // Member contribution (drives the 3x loan ceiling): savings + paid base fees.
+      // Derived from the fees we already fetched, so no extra round trip.
+      const paidFees = fees
+        .filter((f) => f.status === 'paid')
+        .reduce((s, f) => s + Number(f.amount), 0)
+      const contribution = savings + paidFees
+
       // Amount due now = unpaid fees + installments that are overdue or due this month.
       const feesDue = fees.filter((f) => f.computed_status !== 'paid')
       const instDue = installments.filter(
@@ -59,6 +68,8 @@ export function useMemberSummary() {
       setData({
         pool: Number(poolRes.data?.pool_balance_tzs ?? 0),
         savings,
+        paidFees,
+        contribution,
         loan,
         fees,
         installments,

@@ -1,18 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { poolCeiling, maxLoan, monthlyInterest, penaltyDue } from './loanMath'
+import {
+  poolCeiling,
+  contributionCeiling,
+  maxLoan,
+  monthlyInterest,
+  penaltyDue,
+} from './loanMath'
 
-describe('poolCeiling / maxLoan', () => {
+describe('poolCeiling', () => {
   it('is 25% of the pool, floored to whole TZS', () => {
     expect(poolCeiling(1000000)).toBe(250000)
-    expect(poolCeiling(10000)).toBe(2500)
     expect(poolCeiling(10001)).toBe(2500) // floor(2500.25)
     expect(poolCeiling(0)).toBe(0)
   })
+})
 
-  it('maxLoan returns the pool ceiling (sole rule)', () => {
-    expect(maxLoan(10000)).toBe(2500)
-    expect(maxLoan(0)).toBe(0)
-    expect(maxLoan(1000000)).toBe(250000)
+describe('contributionCeiling', () => {
+  it('is 3x the member contribution, floored to whole TZS', () => {
+    expect(contributionCeiling(10000)).toBe(30000)
+    expect(contributionCeiling(0)).toBe(0)
+  })
+})
+
+describe('maxLoan', () => {
+  it('is the lower of 3x contribution and 25% pool', () => {
+    // contribution binds: 3*5000=15,000 < 25% of 1,000,000=250,000
+    expect(maxLoan(5000, 1000000)).toBe(15000)
+    // pool binds: 25% of 200,000=50,000 < 3*50,000=150,000
+    expect(maxLoan(50000, 200000)).toBe(50000)
+    expect(maxLoan(0, 1000000)).toBe(0) // no contribution → no loan
+    expect(maxLoan(100000, 0)).toBe(0)  // empty pool → no loan
   })
 })
 

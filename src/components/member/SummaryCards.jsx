@@ -3,12 +3,25 @@
 // dashboard so members know their capacity without opening the loan form).
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
-import { maxLoan } from '../../lib/loanMath'
+import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
 
-export default function SummaryCards({ pool, savings, loan, amountDue, penaltyDue }) {
+export default function SummaryCards({ pool, savings, contribution, loan, amountDue, penaltyDue }) {
   const loanBalance = loan?.status === 'active' ? Number(loan.principal) : 0
-  const maxLoanAmount = maxLoan(pool)
+  const contribCap = contributionCeiling(contribution)
+  const poolCap = poolCeiling(pool)
+  const maxLoanAmount = maxLoan(contribution, pool)
   const hasOpenLoan = loan?.status === 'pending' || loan?.status === 'active'
+  // Which rule is binding? Helps the member know why the max is what it is.
+  const bindingNote =
+    maxLoanAmount === 0
+      ? contribCap === 0
+        ? 'Make a savings deposit or pay your monthly fee to become eligible.'
+        : 'Group pool is currently too low to issue a loan.'
+      : contribCap < poolCap
+        ? 'Limited by 3× your savings + paid fees.'
+        : contribCap === poolCap
+          ? 'Both rules cap at the same amount.'
+          : 'Limited by 25% of the group pool.'
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -29,8 +42,10 @@ export default function SummaryCards({ pool, savings, loan, amountDue, penaltyDu
         <p className="text-xs text-emerald-700">Max loan you can request</p>
         <p className="mt-1 text-2xl font-semibold text-emerald-900">{formatTZS(maxLoanAmount)}</p>
         <p className="mt-1 text-xs text-emerald-700/80">
-          25% of the current group pool
-          {hasOpenLoan ? ' · available once your current loan is closed' : ''}.
+          {bindingNote}
+          {hasOpenLoan && maxLoanAmount > 0
+            ? ' Available once your current loan is closed.'
+            : ''}
         </p>
       </div>
     </div>

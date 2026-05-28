@@ -81,6 +81,7 @@ export default function MemberDashboard() {
             <SummaryCards
               pool={summary.pool}
               savings={summary.savings}
+              contribution={summary.contribution}
               loan={summary.loan}
               amountDue={summary.amountDue}
               penaltyDue={summary.penaltyDue}
@@ -96,6 +97,7 @@ export default function MemberDashboard() {
             />
             <LoanRequestForm
               memberId={user?.id}
+              contribution={summary.contribution}
               pool={summary.pool}
               loan={summary.loan}
               onSubmitted={handleSubmitted}

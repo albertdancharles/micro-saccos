@@ -7,9 +7,10 @@
 CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
 RETURNS void AS $$
 DECLARE
-  v_loan loans%ROWTYPE;
-  v_int  numeric(12,2);
-  v_pool numeric(14,2);
+  v_loan         loans%ROWTYPE;
+  v_int          numeric(12,2);
+  v_pool         numeric(14,2);
+  v_contribution numeric(14,2);
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
 
@@ -17,11 +18,25 @@ BEGIN
   IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';      END IF;
   IF v_loan.status <> 'pending' THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
 
-  -- A single loan may never exceed 25% of the current group pool, so one member
-  -- can't drain it (whole TZS). Authoritative gate; the UI mirrors it.
+  -- Cap 1: a single loan may never exceed 25% of the current group pool, so one
+  -- member can't drain it (whole TZS).
   SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
   IF v_loan.principal > floor(0.25 * COALESCE(v_pool, 0)) THEN
     RAISE EXCEPTION 'Loan exceeds 25%% of the group pool (max %).', floor(0.25 * COALESCE(v_pool, 0));
+  END IF;
+
+  -- Cap 2: a loan may never exceed 3x the member's contribution (approved savings
+  -- + paid monthly fees). Penalties are excluded — they're fines, not contributions.
+  SELECT
+      COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                WHERE member_id = v_loan.member_id
+                  AND submission_type = 'savings_deposit'
+                  AND status = 'approved'), 0)
+    + COALESCE((SELECT SUM(amount) FROM monthly_fees
+                WHERE member_id = v_loan.member_id AND status = 'paid'), 0)
+  INTO v_contribution;
+  IF v_loan.principal > floor(3 * v_contribution) THEN
+    RAISE EXCEPTION 'Loan exceeds 3x member contribution (max %).', floor(3 * v_contribution);
   END IF;
 
   v_int := round(v_loan.principal * 0.05);   -- 5% flat monthly interest, whole TZS
