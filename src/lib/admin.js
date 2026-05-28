@@ -6,8 +6,18 @@ import { contributionCeiling, poolCeiling, maxLoan } from './loanMath'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
-export async function getAdminData(supabase) {
-  const [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes, savingsRes] = await Promise.all([
+export async function getAdminData(supabase, currentAdminId = null) {
+  const [
+    profilesRes,
+    feesRes,
+    instRes,
+    loansRes,
+    subsRes,
+    poolRes,
+    savingsRes,
+    subApprovalsRes,
+    loanApprovalsRes,
+  ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
     supabase.from('v_installment_status_money').select('*'),
@@ -19,8 +29,20 @@ export async function getAdminData(supabase) {
       .select('member_id, amount_claimed')
       .eq('submission_type', 'savings_deposit')
       .eq('status', 'approved'),
+    supabase.from('submission_approvals').select('*').order('approved_at', { ascending: true }),
+    supabase.from('loan_approvals').select('*').order('approved_at', { ascending: true }),
   ])
-  for (const r of [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes, savingsRes]) {
+  for (const r of [
+    profilesRes,
+    feesRes,
+    instRes,
+    loansRes,
+    subsRes,
+    poolRes,
+    savingsRes,
+    subApprovalsRes,
+    loanApprovalsRes,
+  ]) {
     if (r.error) throw r.error
   }
 
@@ -77,12 +99,31 @@ export async function getAdminData(supabase) {
   const pendingSubs = subs.filter((s) => s.status === 'pending')
   const pendingLoansArr = loans.filter((l) => l.status === 'pending')
 
+  // Required approvals = min(2, active admin count). With one admin it falls back
+  // to single-admin approval; once a second admin is promoted, every approval needs
+  // two signatures.
+  const adminCount = profiles.filter((p) => p.role === 'admin').length
+  const requiredApprovals = Math.min(2, Math.max(1, adminCount))
+
+  // Group approvals by their target id, ordered oldest-first (the first approver's
+  // amount/proof wins on finalization, mirroring the SQL).
+  const subApprovalsBy = {}
+  for (const a of subApprovalsRes.data) {
+    ;(subApprovalsBy[a.submission_id] ||= []).push(a)
+  }
+  const loanApprovalsBy = {}
+  for (const a of loanApprovalsRes.data) {
+    ;(loanApprovalsBy[a.loan_id] ||= []).push(a)
+  }
+
   const stats = {
     pool,
     feesPaid: feesThisPeriod.filter((f) => f.status === 'paid').length,
     feesTotal: feesThisPeriod.length || profiles.length,
     activeLoans: loans.filter((l) => l.status === 'active').length,
     pendingReviews: pendingSubs.length + pendingLoansArr.length,
+    adminCount,
+    requiredApprovals,
   }
 
   // Has the member ever held a loan that proceeded past 'pending'? Drives the
@@ -96,6 +137,10 @@ export async function getAdminData(supabase) {
       const savings = savingsByMember[l.member_id] || 0
       const paidFees = paidFeesByMember[l.member_id] || 0
       const contribution = savings + paidFees
+      const approvals = loanApprovalsBy[l.id] || []
+      const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+      const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+      const isSelf = currentAdminId === l.member_id
       return {
         ...l,
         memberName: profileName[l.member_id] || 'Unknown',
@@ -104,6 +149,13 @@ export async function getAdminData(supabase) {
         poolCeiling: poolCap,
         maxEligible: maxLoan(contribution, pool),
         hasPriorLoan: everBorrowed.has(l.member_id),
+        approvalsCount: approvals.length,
+        requiredApprovals,
+        approverNames,
+        iApproved,
+        isSelf,
+        canApprove: !iApproved && !isSelf,
+        firstProofUrl: approvals[0]?.proof_url ?? null,
       }
     })
     // First-time borrowers first; within each group, oldest request wins.
@@ -124,7 +176,23 @@ export async function getAdminData(supabase) {
       suggested = Number(instById[s.related_id].total_with_penalty)
       penalty = Number(instById[s.related_id].penalty_due)
     }
-    return { ...s, memberName: profileName[s.member_id] || 'Unknown', suggested, penalty }
+    const approvals = subApprovalsBy[s.id] || []
+    const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+    const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+    const isSelf = currentAdminId === s.member_id
+    return {
+      ...s,
+      memberName: profileName[s.member_id] || 'Unknown',
+      suggested,
+      penalty,
+      approvalsCount: approvals.length,
+      requiredApprovals,
+      approverNames,
+      iApproved,
+      isSelf,
+      canApprove: !iApproved && !isSelf,
+      firstAmount: approvals[0] ? Number(approvals[0].amount_received) : null,
+    }
   })
 
   return { stats, gridRows, pendingLoans, pendingPayments, currentMonthKey }

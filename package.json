@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "node scripts/seed.mjs",
-    "reset-passwords": "node scripts/reset-passwords.mjs"
+    "reset-passwords": "node scripts/reset-passwords.mjs",
+    "promote-admin": "node scripts/promote-admin.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

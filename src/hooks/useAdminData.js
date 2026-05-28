@@ -2,10 +2,19 @@
 // approval queues in one pass and exposes refresh() for after an approve/reject.
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useAuth } from './useAuth'
 import { getAdminData } from '../lib/admin'
 
 const EMPTY = {
-  stats: { pool: 0, feesPaid: 0, feesTotal: 0, activeLoans: 0, pendingReviews: 0 },
+  stats: {
+    pool: 0,
+    feesPaid: 0,
+    feesTotal: 0,
+    activeLoans: 0,
+    pendingReviews: 0,
+    adminCount: 0,
+    requiredApprovals: 1,
+  },
   gridRows: [],
   pendingLoans: [],
   pendingPayments: [],
@@ -13,6 +22,8 @@ const EMPTY = {
 }
 
 export function useAdminData() {
+  const { user } = useAuth()
+  const currentAdminId = user?.id ?? null
   const [data, setData] = useState(EMPTY)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -20,7 +31,7 @@ export function useAdminData() {
   const load = useCallback(async () => {
     if (!supabase) return
     try {
-      setData(await getAdminData(supabase))
+      setData(await getAdminData(supabase, currentAdminId))
       setError(null)
     } catch (err) {
       console.error('useAdminData load failed', err)
@@ -28,7 +39,7 @@ export function useAdminData() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentAdminId])
 
   useEffect(() => {
     // load() sets state only after an await (no synchronous cascade) — false positive.
@@ -46,6 +57,8 @@ export function useAdminData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_approvals' }, load)
       .subscribe()
     return () => {
       supabase.removeChannel(channel)

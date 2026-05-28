@@ -1,12 +1,13 @@
-// Pending loan row (build plan §9). Shows eligibility, then approval uploads the
-// disbursement screenshot and calls approve_loan (loan → active + 3 installments).
-// Reject reveals a reason field and calls reject_loan.
+// Pending loan row (build plan §9). Multi-admin aware:
+//   * 0 approvals → this admin is the first; uploads disbursement proof and submits.
+//   * 1+ approvals → first proof wins; second admin views it and confirms (no upload).
+//   * Self-loans can never be approved by the same person.
 import { useState } from 'react'
 import UploadZone from '../ui/UploadZone'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveLoan, rejectLoan } from '../../lib/loans'
-import { buildDisbursementPath, uploadPaymentProof } from '../../lib/storage'
+import { buildDisbursementPath, uploadPaymentProof, getSignedUrl } from '../../lib/storage'
 
 function Row({ label, value, danger }) {
   return (
@@ -18,23 +19,47 @@ function Row({ label, value, danger }) {
 }
 
 export default function LoanQueueItem({ loan, onActioned }) {
+  const hasPriorApproval = loan.approvalsCount > 0
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
+  const [proofUrl, setProofUrl] = useState(null)
+  const [loadingProof, setLoadingProof] = useState(false)
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
   const contribBinds = Number(loan.contributionCeiling) <= Number(loan.poolCeiling)
 
+  async function viewProof() {
+    setError('')
+    setLoadingProof(true)
+    try {
+      setProofUrl(await getSignedUrl(supabase, loan.firstProofUrl))
+    } catch (err) {
+      setError(err?.message || 'Could not load the proof.')
+    } finally {
+      setLoadingProof(false)
+    }
+  }
+
   async function handleApprove() {
     setError('')
-    if (!file) return setError('Upload the M-Pesa disbursement screenshot first.')
     setBusy(true)
     try {
-      const path = buildDisbursementPath(loan.id, file)
-      await uploadPaymentProof(supabase, file, path)
-      await approveLoan(supabase, loan.id, path)
+      if (hasPriorApproval) {
+        // Second admin: confirm using the first approver's proof URL (no upload).
+        await approveLoan(supabase, loan.id, loan.firstProofUrl)
+      } else {
+        if (!file) {
+          setError('Upload the M-Pesa disbursement screenshot first.')
+          setBusy(false)
+          return
+        }
+        const path = buildDisbursementPath(loan.id, file)
+        await uploadPaymentProof(supabase, file, path)
+        await approveLoan(supabase, loan.id, path)
+      }
       onActioned?.()
     } catch (err) {
       setError(err?.message || 'Could not approve the loan.')
@@ -57,6 +82,24 @@ export default function LoanQueueItem({ loan, onActioned }) {
     }
   }
 
+  const willFinalize = loan.approvalsCount + 1 >= loan.requiredApprovals
+  const approveLabel = busy
+    ? hasPriorApproval ? 'Confirming…' : 'Approving…'
+    : willFinalize
+      ? hasPriorApproval
+        ? `Confirm & disburse (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
+        : `Approve & disburse (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
+      : `Submit approval (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
+
+  let approvalNote = null
+  if (loan.isSelf) {
+    approvalNote = 'You can\'t approve your own loan.'
+  } else if (loan.iApproved) {
+    approvalNote = `You've already approved (${loan.approvalsCount}/${loan.requiredApprovals}). Awaiting another admin.`
+  } else if (hasPriorApproval) {
+    approvalNote = `Approved by ${loan.approverNames.join(', ')} (${loan.approvalsCount}/${loan.requiredApprovals}).`
+  }
+
   return (
     <div className="rounded-xl border border-gray-200 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -73,6 +116,12 @@ export default function LoanQueueItem({ loan, onActioned }) {
         </div>
         <p className="text-lg font-semibold text-gray-900">{formatTZS(loan.principal)}</p>
       </div>
+
+      {approvalNote && (
+        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-amber-800">
+          {approvalNote}
+        </p>
+      )}
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
         <Row label="Member contribution" value={formatTZS(loan.contribution)} />
@@ -117,18 +166,37 @@ export default function LoanQueueItem({ loan, onActioned }) {
         </div>
       ) : (
         <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Disbursement proof</p>
-            <UploadZone file={file} onSelect={setFile} />
-          </div>
+          {hasPriorApproval ? (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Disbursement proof (from first approver)</p>
+              {proofUrl ? (
+                <a href={proofUrl} target="_blank" rel="noreferrer">
+                  <img src={proofUrl} alt="Disbursement proof" className="max-h-48 rounded-lg border border-gray-100" />
+                </a>
+              ) : (
+                <button
+                  onClick={viewProof}
+                  disabled={loadingProof}
+                  className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                >
+                  {loadingProof ? 'Loading…' : 'View proof'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Disbursement proof</p>
+              <UploadZone file={file} onSelect={setFile} />
+            </div>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={handleApprove}
-              disabled={busy}
-              className="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 disabled:opacity-50"
+              disabled={busy || !loan.canApprove}
+              className="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {busy ? 'Approving…' : 'Approve & disburse'}
+              {approveLabel}
             </button>
             <button
               onClick={() => setRejecting(true)}
