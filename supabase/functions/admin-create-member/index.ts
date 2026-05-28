@@ -70,13 +70,23 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { error } = await admin.auth.admin.createUser({
+  const { data: created, error } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { full_name, phone_number },
   })
   if (error) return json({ error: error.message }, 400)
+
+  // Audit the creation. Service role bypasses RLS, and auth.uid() isn't available
+  // in this context, so we pass the caller's id explicitly.
+  await admin.from('audit_log').insert({
+    actor_id: user.id,
+    action: 'create_member',
+    target_type: 'profile',
+    target_id: created?.user?.id ?? null,
+    details: { email, full_name },
+  })
 
   // Returned to the admin so they can pass the temp credentials on; the new member
   // changes the password on first login.

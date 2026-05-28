@@ -9,6 +9,7 @@ import UpdatePassword from './pages/UpdatePassword'
 import MemberDashboard from './pages/MemberDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import Profile from './pages/Profile'
+import AuditLog from './pages/AuditLog'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
 
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/audit" element={<AuditLog />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

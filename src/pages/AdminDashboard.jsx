@@ -47,6 +47,9 @@ export default function AdminDashboard() {
             <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
               My member view
             </Link>
+            <Link to="/admin/audit" className="text-sm text-gray-500 hover:text-gray-700">
+              Audit log
+            </Link>
             <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
               Profile
             </Link>
