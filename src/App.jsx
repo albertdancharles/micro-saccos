@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import UpdatePassword from './pages/UpdatePassword'
 import MemberDashboard from './pages/MemberDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import Profile from './pages/Profile'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<RoleHome />} />
             <Route path="/dashboard" element={<MemberDashboard />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
 
           <Route element={<ProtectedRoute requireAdmin />}>

@@ -85,19 +85,32 @@ export async function getAdminData(supabase) {
     pendingReviews: pendingSubs.length + pendingLoansArr.length,
   }
 
-  const pendingLoans = pendingLoansArr.map((l) => {
-    const savings = savingsByMember[l.member_id] || 0
-    const paidFees = paidFeesByMember[l.member_id] || 0
-    const contribution = savings + paidFees
-    return {
-      ...l,
-      memberName: profileName[l.member_id] || 'Unknown',
-      contribution,
-      contributionCeiling: contributionCeiling(contribution),
-      poolCeiling: poolCap,
-      maxEligible: maxLoan(contribution, pool),
-    }
-  })
+  // Has the member ever held a loan that proceeded past 'pending'? Drives the
+  // queue's first-time-borrower priority (members without prior loans appear first).
+  const everBorrowed = new Set(
+    loans.filter((l) => l.status === 'active' || l.status === 'closed').map((l) => l.member_id),
+  )
+
+  const pendingLoans = pendingLoansArr
+    .map((l) => {
+      const savings = savingsByMember[l.member_id] || 0
+      const paidFees = paidFeesByMember[l.member_id] || 0
+      const contribution = savings + paidFees
+      return {
+        ...l,
+        memberName: profileName[l.member_id] || 'Unknown',
+        contribution,
+        contributionCeiling: contributionCeiling(contribution),
+        poolCeiling: poolCap,
+        maxEligible: maxLoan(contribution, pool),
+        hasPriorLoan: everBorrowed.has(l.member_id),
+      }
+    })
+    // First-time borrowers first; within each group, oldest request wins.
+    .sort((a, b) => {
+      if (a.hasPriorLoan !== b.hasPriorLoan) return a.hasPriorLoan ? 1 : -1
+      return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime()
+    })
 
   const feeById = Object.fromEntries(fees.map((f) => [f.id, f]))
   const instById = Object.fromEntries(installments.map((i) => [i.id, i]))

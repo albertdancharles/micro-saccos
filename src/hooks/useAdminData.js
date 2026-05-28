@@ -36,5 +36,21 @@ export function useAdminData() {
     load()
   }, [load])
 
+  // Realtime: refetch whenever a submission or loan changes (any admin's queue +
+  // any member's status updates within a second of each other).
+  useEffect(() => {
+    if (!supabase) return
+    const channel = supabase
+      .channel('admin-data')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [load])
+
   return { ...data, loading, error, refresh: load }
 }

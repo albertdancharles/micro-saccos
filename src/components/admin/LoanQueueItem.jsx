@@ -61,7 +61,14 @@ export default function LoanQueueItem({ loan, onActioned }) {
     <div className="rounded-xl border border-gray-200 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-gray-900">{loan.memberName}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-gray-900">{loan.memberName}</p>
+            {!loan.hasPriorLoan && (
+              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                First-time borrower
+              </span>
+            )}
+          </div>
           <p className="text-xs text-gray-400">Requested {formatDate(loan.requested_at?.slice(0, 10))}</p>
         </div>
         <p className="text-lg font-semibold text-gray-900">{formatTZS(loan.principal)}</p>

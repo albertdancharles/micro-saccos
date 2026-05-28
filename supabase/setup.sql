@@ -448,3 +448,20 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
+-- ----------------------------------------------------------------------------
+-- 006_member_self_update.sql
+-- ----------------------------------------------------------------------------
+
+-- Let members update their own phone number from the Profile page without granting
+-- blanket UPDATE on profiles. SECURITY DEFINER scopes the write to auth.uid()'s row.
+CREATE OR REPLACE FUNCTION update_own_phone(p_phone text)
+RETURNS void AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  UPDATE public.profiles
+     SET phone_number = NULLIF(trim(p_phone), '')
+   WHERE id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+

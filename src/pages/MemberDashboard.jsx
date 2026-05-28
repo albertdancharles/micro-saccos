@@ -2,7 +2,7 @@
 // (self-healing fee generation, §8c-bis) then loads the summary and renders the
 // member flows. A "Log transaction" sheet feeds new proofs into the approvals queue.
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useMemberSummary } from '../hooks/useMemberSummary'
 import { signOut } from '../lib/auth'
@@ -54,9 +54,14 @@ export default function MemberDashboard() {
               {profile?.full_name || user?.email}
             </h1>
           </div>
-          <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700 shrink-0">
-            Sign out
-          </button>
+          <div className="flex items-center gap-4 shrink-0">
+            <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
+              Profile
+            </Link>
+            <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700">
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

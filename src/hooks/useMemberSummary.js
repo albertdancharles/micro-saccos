@@ -93,5 +93,25 @@ export function useMemberSummary() {
     load()
   }, [load])
 
+  // Realtime: when this member's own submissions, fees, loans, or installments
+  // change (e.g. admin approves), refetch the summary. Filtered so we only
+  // listen for rows that touch this member.
+  useEffect(() => {
+    if (!supabase || !memberId) return
+    const memberFilter = `member_id=eq.${memberId}`
+    const channel = supabase
+      .channel(`member-summary-${memberId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions', filter: memberFilter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees', filter: memberFilter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans', filter: memberFilter }, load)
+      // loan_installments has no member_id (only loan_id), so refetch on any change;
+      // the queries are cheap and only an active borrower will see frequent updates.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [memberId, load])
+
   return { ...data, loading, error, refresh: load }
 }
