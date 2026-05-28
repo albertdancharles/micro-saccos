@@ -25,7 +25,6 @@ export default function LoanQueueItem({ loan, onActioned }) {
   const [reason, setReason] = useState('')
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
-  const poolBinds = Number(loan.poolCeiling) < Number(loan.ceiling)
 
   async function handleApprove() {
     setError('')
@@ -68,14 +67,11 @@ export default function LoanQueueItem({ loan, onActioned }) {
       </div>
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
-        <Row label="5× savings" value={formatTZS(loan.ceiling)} />
-        <Row label="25% of pool" value={formatTZS(loan.poolCeiling)} />
-        <Row label="Max eligible" value={formatTZS(loan.maxEligible)} />
+        <Row label="Max eligible (25% of pool)" value={formatTZS(loan.maxEligible)} />
         <Row label="Requested" value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600">
-            Exceeds the max eligible{poolBinds ? ' (capped at 25% of the group pool)' : ''}; the
-            approval will be rejected.
+            Exceeds 25% of the group pool; the approval will be rejected by the database.
           </p>
         )}
       </div>

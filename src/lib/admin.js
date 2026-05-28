@@ -2,25 +2,20 @@
 // so we fetch the small datasets once and join client-side (15 members → trivial).
 // Returns everything the admin dashboard renders: stats, the member grid, and the
 // pending loan + payment queues.
-import { loanCeiling, poolCeiling, maxLoan } from './loanMath'
+import { maxLoan } from './loanMath'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
 export async function getAdminData(supabase) {
-  const [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes, savingsRes] = await Promise.all([
+  const [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
     supabase.from('v_installment_status_money').select('*'),
     supabase.from('loans').select('*'),
     supabase.from('payment_submissions').select('*').order('submitted_at', { ascending: false }),
     supabase.from('v_group_pool').select('pool_balance_tzs').single(),
-    supabase
-      .from('payment_submissions')
-      .select('member_id, amount_claimed')
-      .eq('submission_type', 'savings_deposit')
-      .eq('status', 'approved'),
   ])
-  for (const r of [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes, savingsRes]) {
+  for (const r of [profilesRes, feesRes, instRes, loansRes, subsRes, poolRes]) {
     if (r.error) throw r.error
   }
 
@@ -46,11 +41,6 @@ export async function getAdminData(supabase) {
     if (memberId && monthKey(i.due_date) === currentMonthKey) currentInstByMember[memberId] = i
   }
 
-  const savingsByMember = {}
-  for (const r of savingsRes.data) {
-    savingsByMember[r.member_id] = (savingsByMember[r.member_id] || 0) + Number(r.amount_claimed)
-  }
-
   // Grid: one row per active member (admin included, Decision #1).
   const gridRows = profiles.map((p) => {
     const fee = feeByMember[p.id] || null
@@ -63,7 +53,7 @@ export async function getAdminData(supabase) {
   })
 
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
-  const poolCap = poolCeiling(pool)
+  const maxEligible = maxLoan(pool)
 
   const feesThisPeriod = fees.filter((f) => f.period === currentPeriod)
   const pendingSubs = subs.filter((s) => s.status === 'pending')
@@ -77,17 +67,11 @@ export async function getAdminData(supabase) {
     pendingReviews: pendingSubs.length + pendingLoansArr.length,
   }
 
-  const pendingLoans = pendingLoansArr.map((l) => {
-    const savings = savingsByMember[l.member_id] || 0
-    return {
-      ...l,
-      memberName: profileName[l.member_id] || 'Unknown',
-      savings,
-      ceiling: loanCeiling(savings),
-      poolCeiling: poolCap,
-      maxEligible: maxLoan(savings, pool),
-    }
-  })
+  const pendingLoans = pendingLoansArr.map((l) => ({
+    ...l,
+    memberName: profileName[l.member_id] || 'Unknown',
+    maxEligible,
+  }))
 
   const feeById = Object.fromEntries(fees.map((f) => [f.id, f]))
   const instById = Object.fromEntries(installments.map((i) => [i.id, i]))

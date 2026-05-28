@@ -1,20 +1,13 @@
 // Pure financial helpers, mirroring the SQL rules in the build plan so the UI can
 // preview figures without a round-trip. Money rounds to whole TZS.
 
-// Loan ceiling = 5x approved savings (Decision #4). Active-principal subtraction
-// is unnecessary because a member may hold only one loan at a time.
-export const loanCeiling = (approvedSavings) => Number(approvedSavings) * 5
-
-// Pool ceiling: a single loan may not exceed 25% of the group pool, so one member
-// can't drain it and others can still borrow. Floored to whole TZS so it never
-// rounds above the cap.
+// Maximum loan = 25% of the current group pool (whole TZS, floored so we never
+// round above the cap). This is the sole ceiling — one member can't drain the
+// pool, so others can still borrow. (Supersedes the original 5x-savings rule.)
 export const POOL_LOAN_FRACTION = 0.25
-export const poolCeiling = (poolBalance) => Math.floor(Number(poolBalance) * POOL_LOAN_FRACTION)
-
-// Effective maximum loan = the lower of the 5x savings ceiling and the 25% pool
-// ceiling. Both must hold.
-export const maxLoan = (approvedSavings, poolBalance) =>
-  Math.min(loanCeiling(approvedSavings), poolCeiling(poolBalance))
+export const poolCeiling = (poolBalance) =>
+  Math.floor(Number(poolBalance) * POOL_LOAN_FRACTION)
+export const maxLoan = (poolBalance) => poolCeiling(poolBalance)
 
 // Flat monthly interest = principal x 5%, whole shillings (Decision #2).
 export const monthlyInterest = (principal) => Math.round(Number(principal) * 0.05)
