@@ -11,6 +11,8 @@ import AdminSummaryCards from '../components/admin/AdminSummaryCards'
 import MemberGrid from '../components/admin/MemberGrid'
 import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
+import PoolChart from '../components/admin/PoolChart'
+import NotificationsBell from '../components/ui/NotificationsBell'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -43,6 +45,7 @@ export default function AdminDashboard() {
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <NotificationsBell />
             {/* Admin is also a contributing member (Decision #1). */}
             <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
               My member view
@@ -72,6 +75,7 @@ export default function AdminDashboard() {
         ) : (
           <>
             <AdminSummaryCards stats={admin.stats} />
+            <PoolChart />
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
               pendingPayments={admin.pendingPayments}

@@ -13,6 +13,9 @@ import RepaymentSchedule from '../components/member/RepaymentSchedule'
 import LoanRequestForm from '../components/member/LoanRequestForm'
 import LogTransactionSheet from '../components/member/LogTransactionSheet'
 import History from '../components/member/History'
+import SavingsChart from '../components/member/SavingsChart'
+import LoanProgressBar from '../components/member/LoanProgressBar'
+import NotificationsBell from '../components/ui/NotificationsBell'
 
 export default function MemberDashboard() {
   const { profile, user } = useAuth()
@@ -55,6 +58,7 @@ export default function MemberDashboard() {
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <NotificationsBell />
             <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
               Profile
             </Link>
@@ -96,10 +100,12 @@ export default function MemberDashboard() {
               installments={summary.installments}
               currentMonthKey={summary.currentMonthKey}
             />
+            <LoanProgressBar loan={summary.loan} installments={summary.installments} />
             <RepaymentSchedule
               installments={summary.installments}
               currentMonthKey={summary.currentMonthKey}
             />
+            <SavingsChart />
             <LoanRequestForm
               memberId={user?.id}
               contribution={summary.contribution}

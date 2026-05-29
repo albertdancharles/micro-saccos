@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import { updatePassword } from '../lib/auth'
 import { updateOwnPhone } from '../lib/profile'
 import { getApprovedSavings, getPaidFeesTotal } from '../lib/savings'
+import { buildMemberStatement, downloadBlob } from '../lib/statements'
 import { supabase } from '../supabaseClient'
 import { formatTZS } from '../lib/format'
 
@@ -140,6 +141,50 @@ function ContributionRow({ label, value }) {
   )
 }
 
+function StatementSection({ memberId, memberName, memberEmail }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleDownload() {
+    if (!memberId) return
+    setError('')
+    setBusy(true)
+    try {
+      const blob = await buildMemberStatement(supabase, {
+        memberId,
+        memberName: memberName || '',
+        memberEmail: memberEmail || '',
+      })
+      const slug = (memberName || 'statement')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+      const today = new Date().toISOString().slice(0, 10)
+      downloadBlob(blob, `${slug}-statement-${today}.csv`)
+    } catch (err) {
+      setError(err?.message || 'Could not generate the statement.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-gray-500">
+        Download a CSV with your savings, fees, loans, and full submission history.
+      </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        onClick={handleDownload}
+        disabled={busy}
+        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {busy ? 'Preparing…' : 'Download statement (CSV)'}
+      </button>
+    </div>
+  )
+}
+
 function ContributionsCard({ memberId }) {
   const [savings, setSavings] = useState(null)
   const [fees, setFees] = useState(null)
@@ -229,6 +274,14 @@ export default function Profile() {
 
         <Section title="My contributions">
           <ContributionsCard memberId={user?.id} />
+        </Section>
+
+        <Section title="Statement">
+          <StatementSection
+            memberId={user?.id}
+            memberName={profile?.full_name}
+            memberEmail={user?.email}
+          />
         </Section>
 
         <button
