@@ -23,7 +23,11 @@ function ObligationRow({ title, subtitle, penalty, total, status }) {
 
 export default function ObligationsCard({ fees, installments, currentMonthKey }) {
   const fee = fees.find((f) => monthKey(f.period) === currentMonthKey) || null
-  const inst = installments.find((i) => monthKey(i.due_date) === currentMonthKey) || null
+  // Cancelled installments (loan closed early) are historical, not obligations.
+  const inst =
+    installments.find(
+      (i) => monthKey(i.due_date) === currentMonthKey && i.computed_status !== 'cancelled',
+    ) || null
 
   if (!fee && !inst) return null
 

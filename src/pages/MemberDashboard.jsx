@@ -44,8 +44,19 @@ export default function MemberDashboard() {
     navigate('/login', { replace: true })
   }
 
-  const unpaidFees = summary.fees.filter((f) => f.computed_status !== 'paid')
-  const payableInstallments = summary.installments.filter((i) => i.computed_status !== 'paid')
+  // Hide items the member already has a pending submission for (the server
+  // trigger also blocks duplicates, but filtering keeps the UI clean), and
+  // exclude cancelled installments (loan closed early — historical only).
+  const pending = summary.pendingRelatedIds || new Set()
+  const unpaidFees = summary.fees.filter(
+    (f) => f.computed_status !== 'paid' && !pending.has(f.id),
+  )
+  const payableInstallments = summary.installments.filter(
+    (i) =>
+      i.computed_status !== 'paid' &&
+      i.computed_status !== 'cancelled' &&
+      !pending.has(i.id),
+  )
 
   return (
     <div className="min-h-screen bg-gray-50">

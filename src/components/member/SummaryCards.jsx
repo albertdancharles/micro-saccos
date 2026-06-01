@@ -6,7 +6,14 @@ import { formatTZS } from '../../lib/format'
 import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
 
 export default function SummaryCards({ pool, savings, contribution, loan, amountDue, penaltyDue }) {
-  const loanBalance = loan?.status === 'active' ? Number(loan.principal) : 0
+  // Outstanding loan = remaining principal after any prior repayments.
+  // Falls back to principal for older active loans before migration 011.
+  const loanBalance =
+    loan?.status === 'active'
+      ? Number(loan.outstanding_principal ?? loan.principal)
+      : 0
+  const originalPrincipal = loan?.status === 'active' ? Number(loan.principal) : 0
+  const principalRepaid = Math.max(0, originalPrincipal - loanBalance)
   const contribCap = contributionCeiling(contribution)
   const poolCap = poolCeiling(pool)
   const maxLoanAmount = maxLoan(contribution, pool)
@@ -30,7 +37,13 @@ export default function SummaryCards({ pool, savings, contribution, loan, amount
       <StatCard
         label="My loan balance"
         value={formatTZS(loanBalance)}
-        sub={loan?.status === 'pending' ? 'Request pending' : undefined}
+        sub={
+          loan?.status === 'pending'
+            ? 'Request pending'
+            : principalRepaid > 0
+              ? `Repaid ${formatTZS(principalRepaid)} of ${formatTZS(originalPrincipal)}`
+              : undefined
+        }
       />
       <StatCard
         label="Amount due"

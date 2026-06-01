@@ -22,6 +22,9 @@ const EMPTY = {
   currentMonthKey: '',
   amountDue: 0,
   penaltyDue: 0,
+  // Set of related_ids (fee or installment) that already have a pending
+  // submission, so the LogTransactionSheet can hide them.
+  pendingRelatedIds: new Set(),
 }
 
 export function useMemberSummary() {
@@ -34,13 +37,24 @@ export function useMemberSummary() {
   const load = useCallback(async () => {
     if (!supabase || !memberId) return
     try {
-      const [savings, loan, fees, poolRes] = await Promise.all([
+      const [savings, loan, fees, poolRes, pendingSubsRes] = await Promise.all([
         getApprovedSavings(supabase, memberId),
         getCurrentLoan(supabase, memberId),
         getMyFees(supabase, memberId),
         supabase.from('v_group_pool').select('pool_balance_tzs').single(),
+        supabase
+          .from('payment_submissions')
+          .select('related_id')
+          .eq('member_id', memberId)
+          .eq('status', 'pending')
+          .not('related_id', 'is', null),
       ])
       if (poolRes.error) throw poolRes.error
+      if (pendingSubsRes.error) throw pendingSubsRes.error
+
+      const pendingRelatedIds = new Set(
+        (pendingSubsRes.data || []).map((r) => r.related_id).filter(Boolean),
+      )
 
       const installments = loan?.status === 'active' ? await getInstallments(supabase, loan.id) : []
 
@@ -54,12 +68,14 @@ export function useMemberSummary() {
         .reduce((s, f) => s + Number(f.amount), 0)
       const contribution = savings + paidFees
 
-      // Amount due now = unpaid fees + installments that are overdue or due this month.
+      // Amount due now = unpaid fees + installments that are overdue or due this
+      // month. Cancelled installments are historical, never an obligation.
       const feesDue = fees.filter((f) => f.computed_status !== 'paid')
       const instDue = installments.filter(
         (i) =>
-          i.computed_status === 'overdue' ||
-          (i.computed_status !== 'paid' && monthKey(i.due_date) === currentMonthKey),
+          i.computed_status !== 'paid' &&
+          i.computed_status !== 'cancelled' &&
+          (i.computed_status === 'overdue' || monthKey(i.due_date) === currentMonthKey),
       )
       const due = [...feesDue, ...instDue]
       const amountDue = due.reduce((s, r) => s + Number(r.total_with_penalty), 0)
@@ -76,6 +92,7 @@ export function useMemberSummary() {
         currentMonthKey,
         amountDue,
         penaltyDue,
+        pendingRelatedIds,
       })
       setError(null)
     } catch (err) {

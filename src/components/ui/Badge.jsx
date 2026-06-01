@@ -7,6 +7,7 @@ const STYLES = {
   overdue: 'bg-red-100 text-red-700',
   rejected: 'bg-red-100 text-red-700',
   upcoming: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-400 line-through',
   na: 'bg-gray-100 text-gray-400',
 }
 
@@ -17,6 +18,7 @@ const LABELS = {
   overdue: 'Overdue',
   rejected: 'Rejected',
   upcoming: 'Not due',
+  cancelled: 'Cancelled',
   na: 'N/A',
 }
 
