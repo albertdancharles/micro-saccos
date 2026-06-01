@@ -1454,13 +1454,19 @@ UPDATE loans
  WHERE status = 'active' AND outstanding_principal = 0;
 
 -- --------------------------------------------------------------------------
--- 2. v_installment_status & v_installment_status_money — exclude 'cancelled'
---    from the "what's outstanding" view (they're history, not obligations).
---    The views were already security_invoker over the base table, so they
---    automatically pick up the new column principal_paid via SELECT li.*.
+-- 2. v_installment_status & v_installment_status_money — recognise the new
+--    'cancelled' status and surface principal_paid via SELECT li.*. We DROP
+--    and re-CREATE rather than CREATE OR REPLACE because adding
+--    loan_installments.principal_paid shifts the column ordering, and
+--    Postgres forbids that with CREATE OR REPLACE VIEW. v_installment_status
+--    is dropped with CASCADE so the dependent v_installment_status_money is
+--    also dropped; both are recreated and re-granted below.
 -- --------------------------------------------------------------------------
 
-CREATE OR REPLACE VIEW v_installment_status AS
+DROP VIEW IF EXISTS v_installment_status_money;
+DROP VIEW IF EXISTS v_installment_status CASCADE;
+
+CREATE VIEW v_installment_status AS
 SELECT
   li.*,
   CASE
@@ -1476,12 +1482,15 @@ SELECT
   END AS computed_status
 FROM loan_installments li;
 
-CREATE OR REPLACE VIEW v_installment_status_money AS
+CREATE VIEW v_installment_status_money AS
 SELECT
   i.*,
   round(0.05 * i.total_due * i.penalty_months)               AS penalty_due,
   i.total_due + round(0.05 * i.total_due * i.penalty_months) AS total_with_penalty
 FROM v_installment_status i;
+
+-- Re-grant SELECT (dropped along with the views).
+GRANT SELECT ON v_installment_status, v_installment_status_money TO authenticated;
 
 -- --------------------------------------------------------------------------
 -- 3. Trigger: prevent duplicate / late submissions at the DB level
