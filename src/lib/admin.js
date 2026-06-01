@@ -107,23 +107,24 @@ export async function getAdminData(supabase, currentAdminId = null) {
     .reduce((s, l) => s + Number(l.outstanding_principal ?? l.principal ?? 0), 0)
   const totalAssets = pool + outstandingLoans
 
-  // Per-member contribution = approved savings + paid base monthly fees. Drives
-  // the 3x loan ceiling shown to the admin per pending loan, and the deletion
-  // summary on the member grid + deletion queue. Approved savings adjustments
-  // (migration 013) are added so corrected balances flow through.
+  // Per-member savings now includes deposits, paid monthly fees, and any
+  // admin-approved corrective adjustments. Drives the 3x loan ceiling and the
+  // grid/deletion/edit displays. paidFeesByMember is kept separately for any
+  // breakdown that still wants to call out the fee component.
   const savingsByMember = {}
   for (const r of savingsRes.data) {
     savingsByMember[r.member_id] = (savingsByMember[r.member_id] || 0) + Number(r.amount_claimed)
-  }
-  for (const r of approvedAdjustmentsRes.data) {
-    savingsByMember[r.target_member_id] =
-      (savingsByMember[r.target_member_id] || 0) + Number(r.delta)
   }
   const paidFeesByMember = {}
   for (const f of fees) {
     if (f.status === 'paid') {
       paidFeesByMember[f.member_id] = (paidFeesByMember[f.member_id] || 0) + Number(f.amount)
+      savingsByMember[f.member_id] = (savingsByMember[f.member_id] || 0) + Number(f.amount)
     }
+  }
+  for (const r of approvedAdjustmentsRes.data) {
+    savingsByMember[r.target_member_id] =
+      (savingsByMember[r.target_member_id] || 0) + Number(r.delta)
   }
   const activeLoanByMember = new Set(
     loans.filter((l) => l.status === 'active').map((l) => l.member_id),
@@ -192,8 +193,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
   const pendingLoans = pendingLoansArr
     .map((l) => {
       const savings = savingsByMember[l.member_id] || 0
-      const paidFees = paidFeesByMember[l.member_id] || 0
-      const contribution = savings + paidFees
+      // contribution now equals savings (paid fees are folded in above).
+      const contribution = savings
       const approvals = loanApprovalsBy[l.id] || []
       const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
       const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))

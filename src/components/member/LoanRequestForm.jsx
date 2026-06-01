@@ -59,7 +59,7 @@ export default function LoanRequestForm({ memberId, contribution, pool, loan, on
       <h2 className="text-sm font-semibold text-gray-900 mb-3">Request a loan</h2>
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm mb-3 space-y-1">
-        <Row label="3× your savings + paid fees" value={formatTZS(contribCap)} />
+        <Row label="3× your savings" value={formatTZS(contribCap)} />
         <Row label="25% of group pool" value={formatTZS(poolCap)} />
         <div className="border-t border-gray-200 my-1" />
         <Row label="Maximum you can request" value={formatTZS(eligible)} strong />
@@ -85,7 +85,7 @@ export default function LoanRequestForm({ memberId, contribution, pool, loan, on
           {amount !== '' && overLimit && (
             <p className="text-sm text-red-600">
               Exceeds the maximum of {formatTZS(eligible)} (
-              {contribCap <= poolCap ? '3× your savings + paid fees' : '25% of the group pool'}).
+              {contribCap <= poolCap ? '3× your savings' : '25% of the group pool'}).
             </p>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}

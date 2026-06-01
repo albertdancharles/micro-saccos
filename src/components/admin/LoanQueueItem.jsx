@@ -124,15 +124,15 @@ export default function LoanQueueItem({ loan, onActioned }) {
       )}
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
-        <Row label="Member contribution" value={formatTZS(loan.contribution)} />
-        <Row label="3× contribution" value={formatTZS(loan.contributionCeiling)} />
+        <Row label="Member savings" value={formatTZS(loan.contribution)} />
+        <Row label="3× savings" value={formatTZS(loan.contributionCeiling)} />
         <Row label="25% of pool" value={formatTZS(loan.poolCeiling)} />
         <div className="border-t border-gray-200 my-1" />
         <Row label="Max eligible" value={formatTZS(loan.maxEligible)} />
         <Row label="Requested" value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600">
-            Exceeds the {contribBinds ? '3× contribution' : '25% of pool'} cap; the database will
+            Exceeds the {contribBinds ? '3× savings' : '25% of pool'} cap; the database will
             reject the approval.
           </p>
         )}

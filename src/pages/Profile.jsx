@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { updatePassword } from '../lib/auth'
 import { updateOwnPhone } from '../lib/profile'
-import { getApprovedSavings, getPaidFeesTotal } from '../lib/savings'
+import { getApprovedSavings } from '../lib/savings'
 import { buildMemberStatement, downloadBlob } from '../lib/statements'
 import { supabase } from '../supabaseClient'
 import { formatTZS } from '../lib/format'
@@ -187,17 +187,14 @@ function StatementSection({ memberId, memberName, memberEmail }) {
 
 function ContributionsCard({ memberId }) {
   const [savings, setSavings] = useState(null)
-  const [fees, setFees] = useState(null)
   const [err, setErr] = useState('')
 
   useEffect(() => {
     if (!supabase || !memberId) return
     let cancelled = false
-    Promise.all([getApprovedSavings(supabase, memberId), getPaidFeesTotal(supabase, memberId)])
-      .then(([s, f]) => {
-        if (cancelled) return
-        setSavings(s)
-        setFees(f)
+    getApprovedSavings(supabase, memberId)
+      .then((s) => {
+        if (!cancelled) setSavings(s)
       })
       .catch((e) => {
         if (!cancelled) setErr(e?.message || 'Could not load contributions.')
@@ -208,20 +205,14 @@ function ContributionsCard({ memberId }) {
   }, [memberId])
 
   if (err) return <p className="text-sm text-red-600">{err}</p>
-  if (savings == null || fees == null) return <p className="text-sm text-gray-400">Loading…</p>
+  if (savings == null) return <p className="text-sm text-gray-400">Loading…</p>
 
-  const total = savings + fees
   return (
     <div className="space-y-2">
-      <ContributionRow label="Approved savings" value={savings} />
-      <ContributionRow label="Paid monthly fees" value={fees} />
-      <div className="border-t border-gray-200 my-1" />
-      <div className="flex justify-between text-sm font-semibold">
-        <span className="text-gray-700">Total contribution</span>
-        <span className="text-gray-900">{formatTZS(total)}</span>
-      </div>
+      <ContributionRow label="Total savings" value={savings} />
       <p className="text-xs text-gray-400 mt-2">
-        Your loan ceiling is 3× this amount (capped at 25% of the group pool).
+        Includes your savings deposits, paid monthly fees, and any admin-approved
+        adjustments. Your loan ceiling is 3× this amount (capped at 25% of the group pool).
       </p>
     </div>
   )

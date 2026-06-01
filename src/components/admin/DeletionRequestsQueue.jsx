@@ -90,8 +90,7 @@ function DeletionItem({ request, onActioned }) {
       <div className="rounded-lg bg-white border border-gray-100 p-3 space-y-1">
         <Row label="Email" value={snap.email || '—'} />
         <Row label="Phone" value={snap.phone_number || '—'} />
-        <Row label="Approved savings (will be lost)" value={formatTZS(request.targetSavings)} danger />
-        <Row label="Paid fees (will be lost)" value={formatTZS(request.targetPaidFees)} danger />
+        <Row label="Total savings (will be lost)" value={formatTZS(request.targetSavings)} danger />
         {request.reason && (
           <p className="text-xs text-gray-500 mt-2">
             <span className="font-medium text-gray-700">Reason:</span> {request.reason}

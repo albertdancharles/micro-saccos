@@ -46,13 +46,12 @@ function Form({ target, onSubmitted, onClose }) {
 
       <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
         <div className="flex justify-between">
-          <span className="text-gray-500">Approved savings</span>
+          <span className="text-gray-500">Total savings</span>
           <span className="text-gray-900">{formatTZS(target.savings)}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-gray-500">Paid monthly fees</span>
-          <span className="text-gray-900">{formatTZS(target.paidFees)}</span>
-        </div>
+        <p className="text-xs text-gray-400">
+          Includes deposits, paid monthly fees, and admin adjustments. All erased.
+        </p>
         {target.hasActiveLoan && (
           <p className="text-xs text-red-600 mt-1">
             ⚠ This member has an active loan. Deleting them will wipe the loan and its repayment

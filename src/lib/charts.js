@@ -54,23 +54,36 @@ export async function getPoolHistory(supabase) {
   })
 }
 
-// Builds a monthly cumulative savings series for one member.
+// Builds a monthly cumulative savings series for one member. "Savings" follows
+// the same definition as the dashboard: approved savings deposits plus paid
+// monthly fees (penalties excluded). Adjustments are excluded from the time
+// series because they don't have a meaningful date dimension.
 export async function getSavingsHistory(supabase, memberId) {
-  const { data, error } = await supabase
-    .from('payment_submissions')
-    .select('submitted_at, amount_claimed')
-    .eq('member_id', memberId)
-    .eq('submission_type', 'savings_deposit')
-    .eq('status', 'approved')
-    .order('submitted_at', { ascending: true })
-  if (error) throw error
+  const [depositsRes, feesRes] = await Promise.all([
+    supabase
+      .from('payment_submissions')
+      .select('submitted_at, amount_claimed')
+      .eq('member_id', memberId)
+      .eq('submission_type', 'savings_deposit')
+      .eq('status', 'approved'),
+    supabase
+      .from('monthly_fees')
+      .select('paid_at, amount')
+      .eq('member_id', memberId)
+      .eq('status', 'paid'),
+  ])
+  if (depositsRes.error) throw depositsRes.error
+  if (feesRes.error) throw feesRes.error
 
   const deltaByMonth = new Map()
-  for (const r of data) {
-    const m = monthKey(r.submitted_at)
-    if (!m) continue
-    deltaByMonth.set(m, (deltaByMonth.get(m) || 0) + Number(r.amount_claimed))
+  const add = (when, delta) => {
+    const m = monthKey(when)
+    if (!m) return
+    deltaByMonth.set(m, (deltaByMonth.get(m) || 0) + Number(delta))
   }
+  for (const r of depositsRes.data) add(r.submitted_at, r.amount_claimed)
+  for (const r of feesRes.data) add(r.paid_at, r.amount)
+
   const months = [...deltaByMonth.keys()].sort()
   let running = 0
   return months.map((m) => {
