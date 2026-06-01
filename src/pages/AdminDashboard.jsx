@@ -13,6 +13,8 @@ import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
 import PoolChart from '../components/admin/PoolChart'
 import NotificationsBell from '../components/ui/NotificationsBell'
+import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
+import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -20,6 +22,7 @@ export default function AdminDashboard() {
   const admin = useAdminData()
   const { refresh } = admin
   const [addOpen, setAddOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   useEffect(() => {
     if (!supabase) return
@@ -81,6 +84,10 @@ export default function AdminDashboard() {
               pendingPayments={admin.pendingPayments}
               onActioned={refresh}
             />
+            <DeletionRequestsQueue
+              pendingDeletions={admin.pendingDeletions}
+              onActioned={refresh}
+            />
             <div className="flex justify-end">
               <button
                 onClick={() => setAddOpen(true)}
@@ -89,12 +96,22 @@ export default function AdminDashboard() {
                 + Add member
               </button>
             </div>
-            <MemberGrid rows={admin.gridRows} />
+            <MemberGrid
+              rows={admin.gridRows}
+              currentAdminId={user?.id}
+              onRequestDelete={setDeleteTarget}
+            />
           </>
         )}
       </main>
 
       <AddMemberModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={refresh} />
+      <RequestDeletionModal
+        open={!!deleteTarget}
+        target={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onSubmitted={refresh}
+      />
     </div>
   )
 }

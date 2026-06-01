@@ -11,6 +11,7 @@ const KIND_DOT = {
   loan_rejected: 'bg-red-500',
   new_submission: 'bg-amber-500',
   new_loan: 'bg-amber-500',
+  deletion_requested: 'bg-red-500',
 }
 
 function relativeTime(iso) {

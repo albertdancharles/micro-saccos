@@ -18,6 +18,7 @@ const EMPTY = {
   gridRows: [],
   pendingLoans: [],
   pendingPayments: [],
+  pendingDeletions: [],
   currentMonthKey: '',
 }
 
@@ -59,6 +60,9 @@ export function useAdminData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_approvals' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_requests' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
       .subscribe()
     return () => {
       supabase.removeChannel(channel)

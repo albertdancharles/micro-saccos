@@ -17,6 +17,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsRes,
     subApprovalsRes,
     loanApprovalsRes,
+    deletionRequestsRes,
+    deletionApprovalsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
@@ -31,6 +33,12 @@ export async function getAdminData(supabase, currentAdminId = null) {
       .eq('status', 'approved'),
     supabase.from('submission_approvals').select('*').order('approved_at', { ascending: true }),
     supabase.from('loan_approvals').select('*').order('approved_at', { ascending: true }),
+    supabase
+      .from('deletion_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true }),
+    supabase.from('deletion_approvals').select('*').order('approved_at', { ascending: true }),
   ])
   for (const r of [
     profilesRes,
@@ -42,6 +50,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsRes,
     subApprovalsRes,
     loanApprovalsRes,
+    deletionRequestsRes,
+    deletionApprovalsRes,
   ]) {
     if (r.error) throw r.error
   }
@@ -68,22 +78,12 @@ export async function getAdminData(supabase, currentAdminId = null) {
     if (memberId && monthKey(i.due_date) === currentMonthKey) currentInstByMember[memberId] = i
   }
 
-  // Grid: one row per active member (admin included, Decision #1).
-  const gridRows = profiles.map((p) => {
-    const fee = feeByMember[p.id] || null
-    const installment = currentInstByMember[p.id] || null
-    const statuses = [fee?.computed_status, installment?.computed_status].filter(Boolean)
-    let overall = 'pending'
-    if (statuses.includes('overdue')) overall = 'overdue'
-    else if (statuses.length && statuses.every((s) => s === 'paid')) overall = 'paid'
-    return { id: p.id, name: p.full_name, role: p.role, fee, installment, overall }
-  })
-
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
   const poolCap = poolCeiling(pool)
 
   // Per-member contribution = approved savings + paid base monthly fees. Drives
-  // the 3x loan ceiling shown to the admin per pending loan.
+  // the 3x loan ceiling shown to the admin per pending loan, and the deletion
+  // summary on the member grid + deletion queue.
   const savingsByMember = {}
   for (const r of savingsRes.data) {
     savingsByMember[r.member_id] = (savingsByMember[r.member_id] || 0) + Number(r.amount_claimed)
@@ -94,6 +94,30 @@ export async function getAdminData(supabase, currentAdminId = null) {
       paidFeesByMember[f.member_id] = (paidFeesByMember[f.member_id] || 0) + Number(f.amount)
     }
   }
+  const activeLoanByMember = new Set(
+    loans.filter((l) => l.status === 'active').map((l) => l.member_id),
+  )
+
+  // Grid: one row per active member (admin included, Decision #1).
+  const gridRows = profiles.map((p) => {
+    const fee = feeByMember[p.id] || null
+    const installment = currentInstByMember[p.id] || null
+    const statuses = [fee?.computed_status, installment?.computed_status].filter(Boolean)
+    let overall = 'pending'
+    if (statuses.includes('overdue')) overall = 'overdue'
+    else if (statuses.length && statuses.every((s) => s === 'paid')) overall = 'paid'
+    return {
+      id: p.id,
+      name: p.full_name,
+      role: p.role,
+      fee,
+      installment,
+      overall,
+      savings: savingsByMember[p.id] || 0,
+      paidFees: paidFeesByMember[p.id] || 0,
+      hasActiveLoan: activeLoanByMember.has(p.id),
+    }
+  })
 
   const feesThisPeriod = fees.filter((f) => f.period === currentPeriod)
   const pendingSubs = subs.filter((s) => s.status === 'pending')
@@ -195,7 +219,58 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
-  return { stats, gridRows, pendingLoans, pendingPayments, currentMonthKey }
+  // Pending member-deletion requests with approval state.
+  const deletionApprovalsBy = {}
+  for (const a of deletionApprovalsRes.data) {
+    ;(deletionApprovalsBy[a.request_id] ||= []).push(a)
+  }
+  const pendingDeletions = deletionRequestsRes.data.map((r) => {
+    const approvals = deletionApprovalsBy[r.id] || []
+    const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+    const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+    const isSelf = currentAdminId === r.target_member_id
+    const targetSavings = savingsByMember[r.target_member_id] || 0
+    const targetPaidFees = paidFeesByMember[r.target_member_id] || 0
+    return {
+      ...r,
+      requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
+      approvalsCount: approvals.length,
+      requiredApprovals,
+      approverNames,
+      iApproved,
+      isSelf,
+      canApprove: !iApproved && !isSelf,
+      targetSavings,
+      targetPaidFees,
+    }
+  })
+
+  return { stats, gridRows, pendingLoans, pendingPayments, pendingDeletions, currentMonthKey }
+}
+
+// Admin: open a deletion request for another member. Returns the request id.
+// Server-side blocks self-targeting, deletion of the last admin, and overlapping
+// pending requests for the same target.
+export async function requestMemberDeletion(supabase, targetMemberId, reason) {
+  const { data, error } = await supabase.rpc('request_member_deletion', {
+    p_target_member_id: targetMemberId,
+    p_reason: reason || null,
+  })
+  if (error) throw error
+  return data
+}
+
+// Admin: vote on an existing pending deletion request. When the 2-of-N threshold
+// is reached the RPC executes the deletion in the same transaction.
+export async function approveMemberDeletion(supabase, requestId) {
+  const { error } = await supabase.rpc('approve_member_deletion', { p_request_id: requestId })
+  if (error) throw error
+}
+
+// Admin: cancel a pending deletion request.
+export async function cancelMemberDeletion(supabase, requestId) {
+  const { error } = await supabase.rpc('cancel_member_deletion', { p_request_id: requestId })
+  if (error) throw error
 }
 
 // Admin: create a new member via the admin-create-member Edge Function (which holds

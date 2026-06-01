@@ -9,12 +9,18 @@ import Badge from '../components/ui/Badge'
 
 const ACTION_LABEL = {
   approve_submission: 'Approved payment',
+  partial_approve_submission: 'Partially approved payment',
   reject_submission: 'Rejected payment',
   approve_loan: 'Approved loan',
+  partial_approve_loan: 'Partially approved loan',
   reject_loan: 'Rejected loan',
   generate_monthly_fees: 'Generated monthly fees',
   update_phone: 'Updated phone',
   create_member: 'Added member',
+  request_member_deletion: 'Requested member deletion',
+  partial_approve_member_deletion: 'Partially approved deletion',
+  execute_member_deletion: 'Deleted member',
+  cancel_member_deletion: 'Cancelled deletion',
 }
 
 const ACTION_BADGE = {
@@ -22,9 +28,15 @@ const ACTION_BADGE = {
   approve_loan: 'approved',
   reject_submission: 'rejected',
   reject_loan: 'rejected',
+  partial_approve_submission: 'pending',
+  partial_approve_loan: 'pending',
   generate_monthly_fees: 'pending',
   update_phone: 'pending',
   create_member: 'approved',
+  request_member_deletion: 'pending',
+  partial_approve_member_deletion: 'pending',
+  execute_member_deletion: 'rejected',
+  cancel_member_deletion: 'pending',
 }
 
 function summary(row) {
@@ -44,6 +56,14 @@ function summary(row) {
       return `${d.old || '—'} → ${d.new || '—'}`
     case 'create_member':
       return `${d.full_name || ''} (${d.email || ''})`
+    case 'request_member_deletion':
+      return `${d.target_name || ''}${d.reason ? ` · reason: ${d.reason}` : ''}`
+    case 'partial_approve_member_deletion':
+      return `${d.approvals}/${d.required} approved`
+    case 'execute_member_deletion':
+      return `${d.full_name || ''} (${d.email || ''}) · role: ${d.role || '—'}`
+    case 'cancel_member_deletion':
+      return 'Request cancelled'
     default:
       return JSON.stringify(d)
   }
