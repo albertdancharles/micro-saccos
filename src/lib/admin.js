@@ -193,12 +193,23 @@ export async function getAdminData(supabase, currentAdminId = null) {
   const pendingPayments = pendingSubs.map((s) => {
     let suggested = Number(s.amount_claimed)
     let penalty = 0
+    // Identifying context the admin needs to know *what* is being paid:
+    //   - monthly_fee: the period (e.g., May 2026)
+    //   - loan_installment: which installment (#1/2/3) and its due date
+    let period = null
+    let installmentNumber = null
+    let dueDate = null
     if (s.submission_type === 'monthly_fee' && feeById[s.related_id]) {
-      suggested = Number(feeById[s.related_id].total_with_penalty)
-      penalty = Number(feeById[s.related_id].penalty_due)
+      const fee = feeById[s.related_id]
+      suggested = Number(fee.total_with_penalty)
+      penalty = Number(fee.penalty_due)
+      period = fee.period
     } else if (s.submission_type === 'loan_installment' && instById[s.related_id]) {
-      suggested = Number(instById[s.related_id].total_with_penalty)
-      penalty = Number(instById[s.related_id].penalty_due)
+      const inst = instById[s.related_id]
+      suggested = Number(inst.total_with_penalty)
+      penalty = Number(inst.penalty_due)
+      installmentNumber = inst.installment_number
+      dueDate = inst.due_date
     }
     const approvals = subApprovalsBy[s.id] || []
     const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
@@ -209,6 +220,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
       memberName: profileName[s.member_id] || 'Unknown',
       suggested,
       penalty,
+      period,
+      installmentNumber,
+      dueDate,
       approvalsCount: approvals.length,
       requiredApprovals,
       approverNames,

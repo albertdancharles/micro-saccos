@@ -4,7 +4,7 @@
 //   * Self-submissions can never be approved by the same person.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
-import { formatTZS } from '../../lib/format'
+import { formatTZS, formatMonth, formatDate } from '../../lib/format'
 import { getSignedUrl } from '../../lib/storage'
 import { approveSubmission, rejectSubmission } from '../../lib/payments'
 
@@ -92,7 +92,18 @@ export default function PaymentQueueItem({ submission, onActioned }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-medium text-gray-900">{submission.memberName}</p>
-          <p className="text-xs text-gray-400">{TYPE_LABEL[submission.submission_type]}</p>
+          <p className="text-xs text-gray-400">
+            {TYPE_LABEL[submission.submission_type]}
+            {submission.submission_type === 'monthly_fee' && submission.period && (
+              <> · for {formatMonth(submission.period)}</>
+            )}
+            {submission.submission_type === 'loan_installment' && submission.installmentNumber && (
+              <>
+                {' '}· #{submission.installmentNumber}
+                {submission.dueDate ? ` · due ${formatDate(submission.dueDate)}` : ''}
+              </>
+            )}
+          </p>
         </div>
         <div className="text-right">
           <p className="text-sm text-gray-500">Claimed</p>
