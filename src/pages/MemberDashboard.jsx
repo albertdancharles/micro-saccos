@@ -100,6 +100,8 @@ export default function MemberDashboard() {
           <>
             <SummaryCards
               pool={summary.pool}
+              outstandingLoans={summary.outstandingLoans}
+              totalAssets={summary.totalAssets}
               savings={summary.savings}
               contribution={summary.contribution}
               loan={summary.loan}

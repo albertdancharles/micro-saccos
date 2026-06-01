@@ -8,6 +8,8 @@ import { getAdminData } from '../lib/admin'
 const EMPTY = {
   stats: {
     pool: 0,
+    outstandingLoans: 0,
+    totalAssets: 0,
     feesPaid: 0,
     feesTotal: 0,
     activeLoans: 0,

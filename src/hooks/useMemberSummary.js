@@ -13,6 +13,8 @@ const monthKey = (dateStr) => (dateStr ? String(dateStr).slice(0, 7) : '')
 
 const EMPTY = {
   pool: 0,
+  outstandingLoans: 0,
+  totalAssets: 0,
   savings: 0,
   paidFees: 0,
   contribution: 0,
@@ -37,11 +39,14 @@ export function useMemberSummary() {
   const load = useCallback(async () => {
     if (!supabase || !memberId) return
     try {
-      const [savings, loan, fees, poolRes, pendingSubsRes] = await Promise.all([
+      const [savings, loan, fees, assetsRes, pendingSubsRes] = await Promise.all([
         getApprovedSavings(supabase, memberId),
         getCurrentLoan(supabase, memberId),
         getMyFees(supabase, memberId),
-        supabase.from('v_group_pool').select('pool_balance_tzs').single(),
+        supabase
+          .from('v_group_assets')
+          .select('pool_balance_tzs, outstanding_loans_tzs, total_assets_tzs')
+          .single(),
         supabase
           .from('payment_submissions')
           .select('related_id')
@@ -49,7 +54,7 @@ export function useMemberSummary() {
           .eq('status', 'pending')
           .not('related_id', 'is', null),
       ])
-      if (poolRes.error) throw poolRes.error
+      if (assetsRes.error) throw assetsRes.error
       if (pendingSubsRes.error) throw pendingSubsRes.error
 
       const pendingRelatedIds = new Set(
@@ -82,7 +87,9 @@ export function useMemberSummary() {
       const penaltyDue = due.reduce((s, r) => s + Number(r.penalty_due), 0)
 
       setData({
-        pool: Number(poolRes.data?.pool_balance_tzs ?? 0),
+        pool: Number(assetsRes.data?.pool_balance_tzs ?? 0),
+        outstandingLoans: Number(assetsRes.data?.outstanding_loans_tzs ?? 0),
+        totalAssets: Number(assetsRes.data?.total_assets_tzs ?? 0),
         savings,
         paidFees,
         contribution,

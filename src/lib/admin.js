@@ -80,6 +80,13 @@ export async function getAdminData(supabase, currentAdminId = null) {
 
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
   const poolCap = poolCeiling(pool)
+  // Total group assets = liquid pool + everything still owed by active borrowers.
+  // outstanding_principal falls back to principal for older active loans that
+  // pre-date migration 011.
+  const outstandingLoans = loans
+    .filter((l) => l.status === 'active')
+    .reduce((s, l) => s + Number(l.outstanding_principal ?? l.principal ?? 0), 0)
+  const totalAssets = pool + outstandingLoans
 
   // Per-member contribution = approved savings + paid base monthly fees. Drives
   // the 3x loan ceiling shown to the admin per pending loan, and the deletion
@@ -142,6 +149,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
 
   const stats = {
     pool,
+    outstandingLoans,
+    totalAssets,
     feesPaid: feesThisPeriod.filter((f) => f.status === 'paid').length,
     feesTotal: feesThisPeriod.length || profiles.length,
     activeLoans: loans.filter((l) => l.status === 'active').length,
