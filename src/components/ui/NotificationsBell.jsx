@@ -12,6 +12,8 @@ const KIND_DOT = {
   new_submission: 'bg-amber-500',
   new_loan: 'bg-amber-500',
   deletion_requested: 'bg-red-500',
+  savings_edit_requested: 'bg-amber-500',
+  savings_edited: 'bg-emerald-500',
 }
 
 function relativeTime(iso) {

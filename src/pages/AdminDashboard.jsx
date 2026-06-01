@@ -15,6 +15,8 @@ import PoolChart from '../components/admin/PoolChart'
 import NotificationsBell from '../components/ui/NotificationsBell'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
+import SavingsEditQueue from '../components/admin/SavingsEditQueue'
+import RequestSavingsEditModal from '../components/admin/RequestSavingsEditModal'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -23,6 +25,7 @@ export default function AdminDashboard() {
   const { refresh } = admin
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [editSavingsTarget, setEditSavingsTarget] = useState(null)
 
   useEffect(() => {
     if (!supabase) return
@@ -88,6 +91,10 @@ export default function AdminDashboard() {
               pendingDeletions={admin.pendingDeletions}
               onActioned={refresh}
             />
+            <SavingsEditQueue
+              pendingSavingsEdits={admin.pendingSavingsEdits}
+              onActioned={refresh}
+            />
             <div className="flex justify-end">
               <button
                 onClick={() => setAddOpen(true)}
@@ -100,6 +107,7 @@ export default function AdminDashboard() {
               rows={admin.gridRows}
               currentAdminId={user?.id}
               onRequestDelete={setDeleteTarget}
+              onRequestEditSavings={setEditSavingsTarget}
             />
           </>
         )}
@@ -110,6 +118,12 @@ export default function AdminDashboard() {
         open={!!deleteTarget}
         target={deleteTarget}
         onClose={() => setDeleteTarget(null)}
+        onSubmitted={refresh}
+      />
+      <RequestSavingsEditModal
+        open={!!editSavingsTarget}
+        target={editSavingsTarget}
+        onClose={() => setEditSavingsTarget(null)}
         onSubmitted={refresh}
       />
     </div>

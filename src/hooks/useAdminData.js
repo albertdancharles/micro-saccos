@@ -21,6 +21,7 @@ const EMPTY = {
   pendingLoans: [],
   pendingPayments: [],
   pendingDeletions: [],
+  pendingSavingsEdits: [],
   currentMonthKey: '',
 }
 
@@ -64,6 +65,8 @@ export function useAdminData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_approvals' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_requests' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustments' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustment_approvals' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
       .subscribe()
     return () => {

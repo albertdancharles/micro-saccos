@@ -19,6 +19,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
     loanApprovalsRes,
     deletionRequestsRes,
     deletionApprovalsRes,
+    savingsEditsRes,
+    approvedAdjustmentsRes,
+    savingsEditApprovalsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
@@ -39,6 +42,19 @@ export async function getAdminData(supabase, currentAdminId = null) {
       .eq('status', 'pending')
       .order('created_at', { ascending: true }),
     supabase.from('deletion_approvals').select('*').order('approved_at', { ascending: true }),
+    supabase
+      .from('savings_adjustments')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('savings_adjustments')
+      .select('target_member_id, delta')
+      .eq('status', 'approved'),
+    supabase
+      .from('savings_adjustment_approvals')
+      .select('*')
+      .order('approved_at', { ascending: true }),
   ])
   for (const r of [
     profilesRes,
@@ -52,6 +68,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
     loanApprovalsRes,
     deletionRequestsRes,
     deletionApprovalsRes,
+    savingsEditsRes,
+    approvedAdjustmentsRes,
+    savingsEditApprovalsRes,
   ]) {
     if (r.error) throw r.error
   }
@@ -90,10 +109,15 @@ export async function getAdminData(supabase, currentAdminId = null) {
 
   // Per-member contribution = approved savings + paid base monthly fees. Drives
   // the 3x loan ceiling shown to the admin per pending loan, and the deletion
-  // summary on the member grid + deletion queue.
+  // summary on the member grid + deletion queue. Approved savings adjustments
+  // (migration 013) are added so corrected balances flow through.
   const savingsByMember = {}
   for (const r of savingsRes.data) {
     savingsByMember[r.member_id] = (savingsByMember[r.member_id] || 0) + Number(r.amount_claimed)
+  }
+  for (const r of approvedAdjustmentsRes.data) {
+    savingsByMember[r.target_member_id] =
+      (savingsByMember[r.target_member_id] || 0) + Number(r.delta)
   }
   const paidFeesByMember = {}
   for (const f of fees) {
@@ -268,7 +292,69 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
-  return { stats, gridRows, pendingLoans, pendingPayments, pendingDeletions, currentMonthKey }
+  // Pending savings-edit requests (migration 013). Requester does NOT auto-vote
+  // and target cannot approve, so canApprove gates them out.
+  const savingsEditApprovalsBy = {}
+  for (const a of savingsEditApprovalsRes.data) {
+    ;(savingsEditApprovalsBy[a.adjustment_id] ||= []).push(a)
+  }
+  const pendingSavingsEdits = savingsEditsRes.data.map((r) => {
+    const approvals = savingsEditApprovalsBy[r.id] || []
+    const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+    const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+    const isRequester = currentAdminId === r.requested_by
+    const isTarget = currentAdminId === r.target_member_id
+    // Required approvals = min(2, count of admins OTHER than the requester).
+    const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
+    const reqRequired = Math.min(2, otherAdmins)
+    return {
+      ...r,
+      requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
+      targetName: profileName[r.target_member_id] || 'Unknown',
+      currentSavings: savingsByMember[r.target_member_id] || 0,
+      approvalsCount: approvals.length,
+      requiredApprovals: reqRequired,
+      approverNames,
+      iApproved,
+      isRequester,
+      isTarget,
+      canApprove: !iApproved && !isRequester && !isTarget,
+    }
+  })
+
+  return {
+    stats,
+    gridRows,
+    pendingLoans,
+    pendingPayments,
+    pendingDeletions,
+    pendingSavingsEdits,
+    currentMonthKey,
+  }
+}
+
+// Admin: open a request to adjust a member's savings by a positive or negative
+// delta. Target can be any non-admin member OR the caller themselves; never
+// another admin. The requester's vote does NOT auto-count toward the threshold
+// — two OTHER admins must approve before the adjustment applies.
+export async function requestSavingsEdit(supabase, targetMemberId, delta, reason) {
+  const { data, error } = await supabase.rpc('request_savings_edit', {
+    p_target_member_id: targetMemberId,
+    p_delta: delta,
+    p_reason: reason,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function approveSavingsEdit(supabase, requestId) {
+  const { error } = await supabase.rpc('approve_savings_edit', { p_request_id: requestId })
+  if (error) throw error
+}
+
+export async function cancelSavingsEdit(supabase, requestId) {
+  const { error } = await supabase.rpc('cancel_savings_edit', { p_request_id: requestId })
+  if (error) throw error
 }
 
 // Admin: open a deletion request for another member. Returns the request id.

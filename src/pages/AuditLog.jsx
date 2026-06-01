@@ -21,6 +21,10 @@ const ACTION_LABEL = {
   partial_approve_member_deletion: 'Partially approved deletion',
   execute_member_deletion: 'Deleted member',
   cancel_member_deletion: 'Cancelled deletion',
+  request_savings_edit: 'Requested savings edit',
+  partial_approve_savings_edit: 'Partially approved savings edit',
+  execute_savings_edit: 'Applied savings edit',
+  cancel_savings_edit: 'Cancelled savings edit',
 }
 
 const ACTION_BADGE = {
@@ -37,6 +41,10 @@ const ACTION_BADGE = {
   partial_approve_member_deletion: 'pending',
   execute_member_deletion: 'rejected',
   cancel_member_deletion: 'pending',
+  request_savings_edit: 'pending',
+  partial_approve_savings_edit: 'pending',
+  execute_savings_edit: 'approved',
+  cancel_savings_edit: 'pending',
 }
 
 function summary(row) {
@@ -63,6 +71,14 @@ function summary(row) {
     case 'execute_member_deletion':
       return `${d.full_name || ''} (${d.email || ''}) · role: ${d.role || '—'}`
     case 'cancel_member_deletion':
+      return 'Request cancelled'
+    case 'request_savings_edit':
+      return `${d.target_name || ''} · ${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
+    case 'partial_approve_savings_edit':
+      return `${d.approvals}/${d.required} approved`
+    case 'execute_savings_edit':
+      return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
+    case 'cancel_savings_edit':
       return 'Request cancelled'
     default:
       return JSON.stringify(d)

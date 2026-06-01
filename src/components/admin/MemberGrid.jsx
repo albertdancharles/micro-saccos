@@ -27,7 +27,12 @@ function InterestCell({ installment }) {
   )
 }
 
-export default function MemberGrid({ rows, currentAdminId, onRequestDelete }) {
+export default function MemberGrid({
+  rows,
+  currentAdminId,
+  onRequestDelete,
+  onRequestEditSavings,
+}) {
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-4">
       <h2 className="text-sm font-semibold text-gray-900 mb-3">Members</h2>
@@ -65,7 +70,17 @@ export default function MemberGrid({ rows, currentAdminId, onRequestDelete }) {
                   <td className="py-2 pr-3">
                     <Badge status={r.overall} />
                   </td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {/* Edit savings: allowed on non-admin members and the
+                        current admin's own row; blocked for other admins. */}
+                    {(r.role !== 'admin' || isSelf) && (
+                      <button
+                        onClick={() => onRequestEditSavings?.(r)}
+                        className="text-xs text-emerald-700 hover:text-emerald-800 mr-2"
+                      >
+                        Edit savings
+                      </button>
+                    )}
                     {!isSelf && (
                       <button
                         onClick={() => onRequestDelete?.(r)}
