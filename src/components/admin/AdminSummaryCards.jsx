@@ -4,13 +4,23 @@
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
 
-export default function AdminSummaryCards({ stats }) {
+export default function AdminSummaryCards({ stats, onEditTotalAssets }) {
   const outstanding = Number(stats.outstandingLoans ?? 0)
   const total = Number(stats.totalAssets ?? stats.pool)
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
-        <p className="text-xs text-sky-700">Total group assets</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs text-sky-700">Total group assets</p>
+          {onEditTotalAssets && (
+            <button
+              onClick={onEditTotalAssets}
+              className="text-xs font-medium text-sky-700 hover:text-sky-800"
+            >
+              Edit
+            </button>
+          )}
+        </div>
         <p className="mt-1 text-2xl font-semibold text-sky-900">{formatTZS(total)}</p>
         <p className="mt-1 text-xs text-sky-700/80">
           {formatTZS(stats.pool)} in the pool · {formatTZS(outstanding)} out on loans

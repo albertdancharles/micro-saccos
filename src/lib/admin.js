@@ -22,6 +22,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsEditsRes,
     approvedAdjustmentsRes,
     savingsEditApprovalsRes,
+    poolEditsRes,
+    poolEditApprovalsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
@@ -55,6 +57,15 @@ export async function getAdminData(supabase, currentAdminId = null) {
       .from('savings_adjustment_approvals')
       .select('*')
       .order('approved_at', { ascending: true }),
+    supabase
+      .from('pool_adjustments')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('pool_adjustment_approvals')
+      .select('*')
+      .order('approved_at', { ascending: true }),
   ])
   for (const r of [
     profilesRes,
@@ -71,6 +82,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsEditsRes,
     approvedAdjustmentsRes,
     savingsEditApprovalsRes,
+    poolEditsRes,
+    poolEditApprovalsRes,
   ]) {
     if (r.error) throw r.error
   }
@@ -323,6 +336,31 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
+  // Pending pool-edit requests (migration 015). Same 2-of-N pattern as savings
+  // edits: requester does NOT auto-vote and can't approve their own request.
+  const poolEditApprovalsBy = {}
+  for (const a of poolEditApprovalsRes.data) {
+    ;(poolEditApprovalsBy[a.adjustment_id] ||= []).push(a)
+  }
+  const pendingPoolEdits = poolEditsRes.data.map((r) => {
+    const approvals = poolEditApprovalsBy[r.id] || []
+    const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+    const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+    const isRequester = currentAdminId === r.requested_by
+    const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
+    const reqRequired = Math.min(2, otherAdmins)
+    return {
+      ...r,
+      requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
+      approvalsCount: approvals.length,
+      requiredApprovals: reqRequired,
+      approverNames,
+      iApproved,
+      isRequester,
+      canApprove: !iApproved && !isRequester,
+    }
+  })
+
   return {
     stats,
     gridRows,
@@ -330,8 +368,31 @@ export async function getAdminData(supabase, currentAdminId = null) {
     pendingPayments,
     pendingDeletions,
     pendingSavingsEdits,
+    pendingPoolEdits,
     currentMonthKey,
   }
+}
+
+// Admin: open a request to adjust the group pool by a positive or negative
+// delta. Total assets (= pool + outstanding loans) shifts by the same amount.
+// The requester's vote does NOT auto-count — two OTHER admins must approve.
+export async function requestPoolEdit(supabase, delta, reason) {
+  const { data, error } = await supabase.rpc('request_pool_edit', {
+    p_delta: delta,
+    p_reason: reason,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function approvePoolEdit(supabase, requestId) {
+  const { error } = await supabase.rpc('approve_pool_edit', { p_request_id: requestId })
+  if (error) throw error
+}
+
+export async function cancelPoolEdit(supabase, requestId) {
+  const { error } = await supabase.rpc('cancel_pool_edit', { p_request_id: requestId })
+  if (error) throw error
 }
 
 // Admin: open a request to adjust a member's savings by a positive or negative

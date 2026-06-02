@@ -14,6 +14,7 @@ const KIND_DOT = {
   deletion_requested: 'bg-red-500',
   savings_edit_requested: 'bg-amber-500',
   savings_edited: 'bg-emerald-500',
+  pool_edit_requested: 'bg-sky-500',
 }
 
 function relativeTime(iso) {

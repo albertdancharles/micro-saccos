@@ -25,6 +25,10 @@ const ACTION_LABEL = {
   partial_approve_savings_edit: 'Partially approved savings edit',
   execute_savings_edit: 'Applied savings edit',
   cancel_savings_edit: 'Cancelled savings edit',
+  request_pool_edit: 'Requested pool edit',
+  partial_approve_pool_edit: 'Partially approved pool edit',
+  execute_pool_edit: 'Applied pool edit',
+  cancel_pool_edit: 'Cancelled pool edit',
 }
 
 const ACTION_BADGE = {
@@ -45,6 +49,10 @@ const ACTION_BADGE = {
   partial_approve_savings_edit: 'pending',
   execute_savings_edit: 'approved',
   cancel_savings_edit: 'pending',
+  request_pool_edit: 'pending',
+  partial_approve_pool_edit: 'pending',
+  execute_pool_edit: 'approved',
+  cancel_pool_edit: 'pending',
 }
 
 function summary(row) {
@@ -79,6 +87,14 @@ function summary(row) {
     case 'execute_savings_edit':
       return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'cancel_savings_edit':
+      return 'Request cancelled'
+    case 'request_pool_edit':
+      return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
+    case 'partial_approve_pool_edit':
+      return `${d.approvals}/${d.required} approved`
+    case 'execute_pool_edit':
+      return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
+    case 'cancel_pool_edit':
       return 'Request cancelled'
     default:
       return JSON.stringify(d)

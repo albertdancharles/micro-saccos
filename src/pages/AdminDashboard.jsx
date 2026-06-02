@@ -17,6 +17,8 @@ import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 import SavingsEditQueue from '../components/admin/SavingsEditQueue'
 import RequestSavingsEditModal from '../components/admin/RequestSavingsEditModal'
+import PoolEditQueue from '../components/admin/PoolEditQueue'
+import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -26,6 +28,7 @@ export default function AdminDashboard() {
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [editSavingsTarget, setEditSavingsTarget] = useState(null)
+  const [poolEditOpen, setPoolEditOpen] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
@@ -80,7 +83,10 @@ export default function AdminDashboard() {
           <p className="text-center text-gray-400 py-8">Loading…</p>
         ) : (
           <>
-            <AdminSummaryCards stats={admin.stats} />
+            <AdminSummaryCards
+              stats={admin.stats}
+              onEditTotalAssets={() => setPoolEditOpen(true)}
+            />
             <PoolChart />
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
@@ -93,6 +99,11 @@ export default function AdminDashboard() {
             />
             <SavingsEditQueue
               pendingSavingsEdits={admin.pendingSavingsEdits}
+              onActioned={refresh}
+            />
+            <PoolEditQueue
+              pendingPoolEdits={admin.pendingPoolEdits}
+              stats={admin.stats}
               onActioned={refresh}
             />
             <div className="flex justify-end">
@@ -124,6 +135,12 @@ export default function AdminDashboard() {
         open={!!editSavingsTarget}
         target={editSavingsTarget}
         onClose={() => setEditSavingsTarget(null)}
+        onSubmitted={refresh}
+      />
+      <RequestPoolEditModal
+        open={poolEditOpen}
+        stats={admin.stats}
+        onClose={() => setPoolEditOpen(false)}
         onSubmitted={refresh}
       />
     </div>
