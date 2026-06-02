@@ -13,9 +13,9 @@ const TYPE_LABEL = {
   loan_installment: 'Loan repayment',
 }
 
-export default function History({ refreshKey }) {
+export default function History({ refreshKey, memberId: overrideMemberId = null }) {
   const { user } = useAuth()
-  const memberId = user?.id ?? null
+  const memberId = overrideMemberId ?? user?.id ?? null
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
 

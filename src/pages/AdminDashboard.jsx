@@ -17,6 +17,8 @@ import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 import SavingsEditQueue from '../components/admin/SavingsEditQueue'
 import RequestSavingsEditModal from '../components/admin/RequestSavingsEditModal'
+import RoleChangeQueue from '../components/admin/RoleChangeQueue'
+import RequestRoleChangeModal from '../components/admin/RequestRoleChangeModal'
 import PoolEditQueue from '../components/admin/PoolEditQueue'
 import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
 
@@ -28,6 +30,7 @@ export default function AdminDashboard() {
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [editSavingsTarget, setEditSavingsTarget] = useState(null)
+  const [roleChangeTarget, setRoleChangeTarget] = useState(null)
   const [poolEditOpen, setPoolEditOpen] = useState(false)
 
   useEffect(() => {
@@ -101,6 +104,10 @@ export default function AdminDashboard() {
               pendingSavingsEdits={admin.pendingSavingsEdits}
               onActioned={refresh}
             />
+            <RoleChangeQueue
+              pendingRoleChanges={admin.pendingRoleChanges}
+              onActioned={refresh}
+            />
             <PoolEditQueue
               pendingPoolEdits={admin.pendingPoolEdits}
               stats={admin.stats}
@@ -119,6 +126,7 @@ export default function AdminDashboard() {
               currentAdminId={user?.id}
               onRequestDelete={setDeleteTarget}
               onRequestEditSavings={setEditSavingsTarget}
+              onRequestRoleChange={setRoleChangeTarget}
             />
           </>
         )}
@@ -141,6 +149,12 @@ export default function AdminDashboard() {
         open={poolEditOpen}
         stats={admin.stats}
         onClose={() => setPoolEditOpen(false)}
+        onSubmitted={refresh}
+      />
+      <RequestRoleChangeModal
+        open={!!roleChangeTarget}
+        target={roleChangeTarget}
+        onClose={() => setRoleChangeTarget(null)}
         onSubmitted={refresh}
       />
     </div>

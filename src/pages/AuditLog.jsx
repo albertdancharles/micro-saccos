@@ -29,6 +29,10 @@ const ACTION_LABEL = {
   partial_approve_pool_edit: 'Partially approved pool edit',
   execute_pool_edit: 'Applied pool edit',
   cancel_pool_edit: 'Cancelled pool edit',
+  request_role_change: 'Requested role change',
+  partial_approve_role_change: 'Partially approved role change',
+  execute_role_change: 'Applied role change',
+  cancel_role_change: 'Cancelled role change',
 }
 
 const ACTION_BADGE = {
@@ -53,6 +57,10 @@ const ACTION_BADGE = {
   partial_approve_pool_edit: 'pending',
   execute_pool_edit: 'approved',
   cancel_pool_edit: 'pending',
+  request_role_change: 'pending',
+  partial_approve_role_change: 'pending',
+  execute_role_change: 'approved',
+  cancel_role_change: 'pending',
 }
 
 function summary(row) {
@@ -95,6 +103,14 @@ function summary(row) {
     case 'execute_pool_edit':
       return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'cancel_pool_edit':
+      return 'Request cancelled'
+    case 'request_role_change':
+      return `${d.target_name || ''} · ${d.change_type || ''} · reason: ${d.reason || '—'}`
+    case 'partial_approve_role_change':
+      return `${d.approvals}/${d.required} approved`
+    case 'execute_role_change':
+      return `${d.change_type || ''} → ${d.new_role || '—'}`
+    case 'cancel_role_change':
       return 'Request cancelled'
     default:
       return JSON.stringify(d)

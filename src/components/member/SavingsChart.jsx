@@ -16,9 +16,9 @@ import { formatTZS, formatMonth } from '../../lib/format'
 
 const fmtMonthShort = (s) => (s ? formatMonth(`${s}-01`) : '')
 
-export default function SavingsChart() {
+export default function SavingsChart({ memberId: overrideMemberId = null }) {
   const { user } = useAuth()
-  const memberId = user?.id ?? null
+  const memberId = overrideMemberId ?? user?.id ?? null
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

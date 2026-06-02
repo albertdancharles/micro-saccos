@@ -2,6 +2,7 @@
 // Monthly fee + this-month loan interest with badges + penalty; whole row turns
 // danger when anything is overdue. Scrolls horizontally on small screens (§13).
 // A "Delete" link per row (hidden for self) opens the 2-of-N deletion request flow.
+import { Link } from 'react-router-dom'
 import Badge from '../ui/Badge'
 import { formatTZS } from '../../lib/format'
 
@@ -32,6 +33,7 @@ export default function MemberGrid({
   currentAdminId,
   onRequestDelete,
   onRequestEditSavings,
+  onRequestRoleChange,
 }) {
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-4">
@@ -71,14 +73,33 @@ export default function MemberGrid({
                     <Badge status={r.overall} />
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
-                    {/* Edit savings: allowed on non-admin members and the
-                        current admin's own row; blocked for other admins. */}
+                    {/* View dashboard: allowed for non-admin members + self;
+                        hidden for other admins. */}
+                    {(r.role !== 'admin' || isSelf) && (
+                      <Link
+                        to={`/admin/member/${r.id}`}
+                        className="text-xs text-sky-700 hover:text-sky-800 mr-2"
+                      >
+                        View
+                      </Link>
+                    )}
+                    {/* Edit savings: same visibility rule as View. */}
                     {(r.role !== 'admin' || isSelf) && (
                       <button
                         onClick={() => onRequestEditSavings?.(r)}
                         className="text-xs text-emerald-700 hover:text-emerald-800 mr-2"
                       >
                         Edit savings
+                      </button>
+                    )}
+                    {/* Role change: promote a member or revoke another admin.
+                        The current admin can't promote/demote themselves. */}
+                    {!isSelf && (
+                      <button
+                        onClick={() => onRequestRoleChange?.(r)}
+                        className="text-xs text-amber-700 hover:text-amber-800 mr-2"
+                      >
+                        {r.role === 'admin' ? 'Revoke admin' : 'Make admin'}
                       </button>
                     )}
                     {!isSelf && (

@@ -17,22 +17,24 @@ import SavingsChart from '../components/member/SavingsChart'
 import LoanProgressBar from '../components/member/LoanProgressBar'
 import NotificationsBell from '../components/ui/NotificationsBell'
 
-export default function MemberDashboard() {
+export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const { profile, user } = useAuth()
   const navigate = useNavigate()
-  const summary = useMemberSummary()
+  const isView = !!viewAs
+  const summary = useMemberSummary(viewAs)
   const { refresh } = summary
   const [sheetOpen, setSheetOpen] = useState(false)
   const [version, setVersion] = useState(0) // bumps to refetch history after a submit
 
-  // Self-healing fee generation, then refresh so the current fee shows immediately.
+  // Self-healing fee generation runs only when a member views their own
+  // dashboard — in view mode an admin is just looking, no side effects.
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase || isView) return
     supabase.rpc('ensure_current_fees').then(({ error }) => {
       if (error) console.error('ensure_current_fees failed', error)
       refresh()
     })
-  }, [refresh])
+  }, [isView, refresh])
 
   function handleSubmitted() {
     refresh()
@@ -63,30 +65,52 @@ export default function MemberDashboard() {
       <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between">
           <div className="min-w-0">
-            <p className="text-xs text-gray-400">Micro-SACCOS</p>
+            <p className="text-xs text-gray-400">
+              {isView ? 'Viewing as admin' : 'Micro-SACCOS'}
+            </p>
             <h1 className="text-lg font-semibold text-gray-900 truncate">
-              {profile?.full_name || user?.email}
+              {isView ? viewedName || 'Member' : profile?.full_name || user?.email}
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
-            <NotificationsBell />
-            <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
-              Profile
-            </Link>
-            <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700">
-              Sign out
-            </button>
+            {isView ? (
+              <Link to="/admin" className="text-sm text-gray-500 hover:text-gray-700">
+                ← Back to admin
+              </Link>
+            ) : (
+              <>
+                <NotificationsBell />
+                <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
+                  Profile
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Sign out
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
 
       <main className="max-w-md mx-auto px-6 py-6 space-y-4">
-        <button
-          onClick={() => setSheetOpen(true)}
-          className="w-full rounded-xl bg-emerald-600 text-white font-medium py-3 hover:bg-emerald-700 transition-colors"
-        >
-          + Log a transaction
-        </button>
+        {!isView && (
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="w-full rounded-xl bg-emerald-600 text-white font-medium py-3 hover:bg-emerald-700 transition-colors"
+          >
+            + Log a transaction
+          </button>
+        )}
+        {isView && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+            Read-only view. Submitting payments, requesting loans, and editing on
+            this member's behalf are disabled. Use the savings edit / approvals
+            queue on the admin dashboard to act.
+          </div>
+        )}
 
         {summary.error && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -95,7 +119,7 @@ export default function MemberDashboard() {
         )}
 
         {summary.loading ? (
-          <p className="text-center text-gray-400 py-8">Loading your dashboard…</p>
+          <p className="text-center text-gray-400 py-8">Loading dashboard…</p>
         ) : (
           <>
             <SummaryCards
@@ -118,27 +142,31 @@ export default function MemberDashboard() {
               installments={summary.installments}
               currentMonthKey={summary.currentMonthKey}
             />
-            <SavingsChart />
-            <LoanRequestForm
-              memberId={user?.id}
-              contribution={summary.contribution}
-              pool={summary.pool}
-              loan={summary.loan}
-              onSubmitted={handleSubmitted}
-            />
-            <History refreshKey={version} />
+            <SavingsChart memberId={viewAs} />
+            {!isView && (
+              <LoanRequestForm
+                memberId={user?.id}
+                contribution={summary.contribution}
+                pool={summary.pool}
+                loan={summary.loan}
+                onSubmitted={handleSubmitted}
+              />
+            )}
+            <History refreshKey={version} memberId={viewAs} />
           </>
         )}
       </main>
 
-      <LogTransactionSheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        memberId={user?.id}
-        unpaidFees={unpaidFees}
-        payableInstallments={payableInstallments}
-        onSubmitted={handleSubmitted}
-      />
+      {!isView && (
+        <LogTransactionSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          memberId={user?.id}
+          unpaidFees={unpaidFees}
+          payableInstallments={payableInstallments}
+          onSubmitted={handleSubmitted}
+        />
+      )}
     </div>
   )
 }

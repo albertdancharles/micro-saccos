@@ -10,6 +10,7 @@ import MemberDashboard from './pages/MemberDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import Profile from './pages/Profile'
 import AuditLog from './pages/AuditLog'
+import ViewMember from './pages/ViewMember'
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/audit" element={<AuditLog />} />
+            <Route path="/admin/member/:memberId" element={<ViewMember />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

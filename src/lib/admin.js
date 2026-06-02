@@ -24,6 +24,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsEditApprovalsRes,
     poolEditsRes,
     poolEditApprovalsRes,
+    roleChangeRequestsRes,
+    roleChangeApprovalsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     supabase.from('v_fee_status_money').select('*'),
@@ -66,6 +68,15 @@ export async function getAdminData(supabase, currentAdminId = null) {
       .from('pool_adjustment_approvals')
       .select('*')
       .order('approved_at', { ascending: true }),
+    supabase
+      .from('role_change_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('role_change_approvals')
+      .select('*')
+      .order('approved_at', { ascending: true }),
   ])
   for (const r of [
     profilesRes,
@@ -84,6 +95,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
     savingsEditApprovalsRes,
     poolEditsRes,
     poolEditApprovalsRes,
+    roleChangeRequestsRes,
+    roleChangeApprovalsRes,
   ]) {
     if (r.error) throw r.error
   }
@@ -361,6 +374,34 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
+  // Pending admin role-change requests. Same pattern: requester does NOT
+  // auto-vote, target can't approve (handled in DB), other admins must approve.
+  const roleChangeApprovalsBy = {}
+  for (const a of roleChangeApprovalsRes.data) {
+    ;(roleChangeApprovalsBy[a.request_id] ||= []).push(a)
+  }
+  const pendingRoleChanges = roleChangeRequestsRes.data.map((r) => {
+    const approvals = roleChangeApprovalsBy[r.id] || []
+    const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
+    const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
+    const isRequester = currentAdminId === r.requested_by
+    const isTarget = currentAdminId === r.target_member_id
+    const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
+    const reqRequired = Math.min(2, otherAdmins)
+    return {
+      ...r,
+      requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
+      targetName: profileName[r.target_member_id] || 'Unknown',
+      approvalsCount: approvals.length,
+      requiredApprovals: reqRequired,
+      approverNames,
+      iApproved,
+      isRequester,
+      isTarget,
+      canApprove: !iApproved && !isRequester && !isTarget,
+    }
+  })
+
   return {
     stats,
     gridRows,
@@ -369,6 +410,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     pendingDeletions,
     pendingSavingsEdits,
     pendingPoolEdits,
+    pendingRoleChanges,
     currentMonthKey,
   }
 }
@@ -392,6 +434,29 @@ export async function approvePoolEdit(supabase, requestId) {
 
 export async function cancelPoolEdit(supabase, requestId) {
   const { error } = await supabase.rpc('cancel_pool_edit', { p_request_id: requestId })
+  if (error) throw error
+}
+
+// Admin: open a request to promote a member to admin or revoke an admin's role.
+// Requester does NOT auto-vote — two OTHER admins must approve. The DB blocks
+// promoting an existing admin, demoting a non-admin, and demoting the last admin.
+export async function requestRoleChange(supabase, targetMemberId, changeType, reason) {
+  const { data, error } = await supabase.rpc('request_role_change', {
+    p_target_member_id: targetMemberId,
+    p_change_type: changeType,
+    p_reason: reason,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function approveRoleChange(supabase, requestId) {
+  const { error } = await supabase.rpc('approve_role_change', { p_request_id: requestId })
+  if (error) throw error
+}
+
+export async function cancelRoleChange(supabase, requestId) {
+  const { error } = await supabase.rpc('cancel_role_change', { p_request_id: requestId })
   if (error) throw error
 }
 

@@ -15,6 +15,8 @@ const KIND_DOT = {
   savings_edit_requested: 'bg-amber-500',
   savings_edited: 'bg-emerald-500',
   pool_edit_requested: 'bg-sky-500',
+  role_change_requested: 'bg-amber-500',
+  role_changed: 'bg-emerald-500',
 }
 
 function relativeTime(iso) {

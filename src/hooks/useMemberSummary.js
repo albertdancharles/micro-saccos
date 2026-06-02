@@ -29,9 +29,12 @@ const EMPTY = {
   pendingRelatedIds: new Set(),
 }
 
-export function useMemberSummary() {
+// `overrideMemberId` lets an admin view another member's dashboard. When null,
+// the hook loads data for the currently signed-in user. RLS allows admins to
+// read every member's rows, so the same queries work in both contexts.
+export function useMemberSummary(overrideMemberId = null) {
   const { user } = useAuth()
-  const memberId = user?.id ?? null
+  const memberId = overrideMemberId ?? user?.id ?? null
   const [data, setData] = useState(EMPTY)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
