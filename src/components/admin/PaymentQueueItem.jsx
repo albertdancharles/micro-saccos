@@ -43,7 +43,6 @@ export default function PaymentQueueItem({ submission, onActioned }) {
 
   async function handleApprove() {
     setError('')
-    // Second admin always sends the first approver's amount — locked above.
     const amt = hasPriorApproval ? lockedAmount : Number(amount)
     if (!(amt >= 0)) return setError('Enter the amount received.')
     setBusy(true)
@@ -80,7 +79,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
 
   let approvalNote = null
   if (submission.isSelf) {
-    approvalNote = 'You can\'t approve your own submission.'
+    approvalNote = "You can't approve your own submission."
   } else if (submission.iApproved) {
     approvalNote = `You've already approved (${submission.approvalsCount}/${submission.requiredApprovals}). Awaiting another admin.`
   } else if (hasPriorApproval) {
@@ -88,11 +87,11 @@ export default function PaymentQueueItem({ submission, onActioned }) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 transition-shadow hover:shadow-[0_1px_3px_rgba(15,23,42,0.04),0_4px_12px_-6px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-medium text-gray-900">{submission.memberName}</p>
-          <p className="text-xs text-gray-400">
+        <div className="min-w-0">
+          <p className="font-medium text-slate-900">{submission.memberName}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
             {TYPE_LABEL[submission.submission_type]}
             {submission.submission_type === 'monthly_fee' && submission.period && (
               <> · for {formatMonth(submission.period)}</>
@@ -105,30 +104,38 @@ export default function PaymentQueueItem({ submission, onActioned }) {
             )}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-500">Claimed</p>
-          <p className="font-semibold text-gray-900">{formatTZS(submission.amount_claimed)}</p>
+        <div className="text-right shrink-0">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Claimed</p>
+          <p className="font-semibold text-slate-900 tabular-nums">
+            {formatTZS(submission.amount_claimed)}
+          </p>
           {submission.penalty > 0 && (
-            <p className="text-xs text-red-600">incl. {formatTZS(submission.penalty)} penalty</p>
+            <p className="text-xs text-red-600 tabular-nums">
+              incl. {formatTZS(submission.penalty)} penalty
+            </p>
           )}
         </div>
       </div>
 
       {approvalNote && (
-        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-amber-800">
+        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 ring-1 ring-inset ring-amber-200/70 text-amber-800">
           {approvalNote}
         </p>
       )}
 
       {proofUrl ? (
         <a href={proofUrl} target="_blank" rel="noreferrer">
-          <img src={proofUrl} alt="Payment proof" className="max-h-48 rounded-lg border border-gray-100" />
+          <img
+            src={proofUrl}
+            alt="Payment proof"
+            className="max-h-48 rounded-lg border border-slate-100"
+          />
         </a>
       ) : (
         <button
           onClick={viewProof}
           disabled={loadingProof}
-          className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+          className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
         >
           {loadingProof ? 'Loading…' : 'View screenshot'}
         </button>
@@ -141,20 +148,19 @@ export default function PaymentQueueItem({ submission, onActioned }) {
             onChange={(e) => setReason(e.target.value)}
             rows={2}
             placeholder="Reason for rejection"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="input-field"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
-            <button
-              onClick={handleReject}
-              disabled={busy}
-              className="flex-1 rounded-lg bg-red-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-            >
+            <button onClick={handleReject} disabled={busy} className="btn-danger flex-1">
               {busy ? 'Rejecting…' : 'Confirm reject'}
             </button>
             <button
-              onClick={() => { setRejecting(false); setError('') }}
-              className="flex-1 rounded-lg border border-gray-300 text-sm py-2"
+              onClick={() => {
+                setRejecting(false)
+                setError('')
+              }}
+              className="btn-secondary flex-1"
             >
               Cancel
             </button>
@@ -162,11 +168,13 @@ export default function PaymentQueueItem({ submission, onActioned }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">Amount received (TSh)</label>
+          <label className="block text-sm font-medium text-slate-700">
+            Amount received (TSh)
+          </label>
           {hasPriorApproval ? (
-            <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-900">
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 tabular-nums">
               {formatTZS(lockedAmount)}{' '}
-              <span className="text-xs text-gray-400">(locked by first approver)</span>
+              <span className="text-xs text-slate-400">(locked by first approver)</span>
             </p>
           ) : (
             <input
@@ -176,22 +184,19 @@ export default function PaymentQueueItem({ submission, onActioned }) {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               disabled={!submission.canApprove}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 disabled:bg-gray-50 disabled:text-gray-400"
+              className="input-field tabular-nums"
             />
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             <button
               onClick={handleApprove}
               disabled={busy || !submission.canApprove}
-              className="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary flex-1"
             >
               {approveLabel}
             </button>
-            <button
-              onClick={() => setRejecting(true)}
-              className="rounded-lg border border-gray-300 text-sm px-4 py-2 text-gray-600"
-            >
+            <button onClick={() => setRejecting(true)} className="btn-secondary">
               Reject
             </button>
           </div>

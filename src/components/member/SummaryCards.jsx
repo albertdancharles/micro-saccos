@@ -1,9 +1,43 @@
-// Member summary cards (build plan §9). 2×2 grid of metrics + a full-width
-// "Max loan" card showing the 25%-of-pool ceiling (the sole rule, surfaced on the
-// dashboard so members know their capacity without opening the loan form).
+// Member summary cards (build plan §9). Refined hero card for "Total group
+// assets" — soft sky tint, generous numeric type, clear breakdown — followed
+// by the 2x2 grid of StatCards and an emerald-accented "Max loan" card.
+// Honors UI/UX Pro Max §6 typography (tabular nums), §5 layout, §4 elevation.
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
 import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
+
+function HeroCard({ label, value, sub, tone = 'sky' }) {
+  const palette =
+    tone === 'sky'
+      ? {
+          ring: 'ring-sky-200/70',
+          bg: 'from-sky-50 to-white',
+          chip: 'text-sky-700',
+          text: 'text-sky-900',
+          sub: 'text-sky-700/75',
+        }
+      : {
+          ring: 'ring-emerald-200/70',
+          bg: 'from-emerald-50 to-white',
+          chip: 'text-emerald-700',
+          text: 'text-emerald-900',
+          sub: 'text-emerald-700/75',
+        }
+
+  return (
+    <div
+      className={`relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br ${palette.bg} p-5 ring-1 ${palette.ring} shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]`}
+    >
+      <p className={`text-[11px] font-semibold uppercase tracking-wide ${palette.chip}`}>
+        {label}
+      </p>
+      <p className={`mt-1 text-[28px] font-semibold leading-tight tabular-nums ${palette.text}`}>
+        {value}
+      </p>
+      {sub && <p className={`mt-1.5 text-xs ${palette.sub}`}>{sub}</p>}
+    </div>
+  )
+}
 
 export default function SummaryCards({
   pool,
@@ -15,39 +49,38 @@ export default function SummaryCards({
   amountDue,
   penaltyDue,
 }) {
-  // Outstanding loan = remaining principal after any prior repayments.
-  // Falls back to principal for older active loans before migration 011.
   const loanBalance =
     loan?.status === 'active'
       ? Number(loan.outstanding_principal ?? loan.principal)
       : 0
   const originalPrincipal = loan?.status === 'active' ? Number(loan.principal) : 0
   const principalRepaid = Math.max(0, originalPrincipal - loanBalance)
+
   const contribCap = contributionCeiling(contribution)
   const poolCap = poolCeiling(pool)
   const maxLoanAmount = maxLoan(contribution, pool)
   const hasOpenLoan = loan?.status === 'pending' || loan?.status === 'active'
-  // Which rule is binding? Helps the member know why the max is what it is.
+
   const bindingNote =
     maxLoanAmount === 0
       ? contribCap === 0
         ? 'Make a savings deposit or pay your monthly fee to become eligible.'
         : 'Group pool is currently too low to issue a loan.'
       : contribCap < poolCap
-        ? 'Limited by 3× your savings + paid fees.'
+        ? 'Limited by 3× your savings.'
         : contribCap === poolCap
           ? 'Both rules cap at the same amount.'
           : 'Limited by 25% of the group pool.'
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      <div className="col-span-2 rounded-2xl border border-sky-200 bg-sky-50 p-4">
-        <p className="text-xs text-sky-700">Total group assets</p>
-        <p className="mt-1 text-2xl font-semibold text-sky-900">{formatTZS(totalAssets)}</p>
-        <p className="mt-1 text-xs text-sky-700/80">
-          {formatTZS(pool)} in the pool · {formatTZS(outstandingLoans)} out on loans
-        </p>
-      </div>
+      <HeroCard
+        label="Total group assets"
+        value={formatTZS(totalAssets)}
+        sub={`${formatTZS(pool)} in the pool · ${formatTZS(outstandingLoans)} out on loans`}
+        tone="sky"
+      />
+
       <StatCard label="Group pool" value={formatTZS(pool)} />
       <StatCard label="My savings" value={formatTZS(savings)} />
       <StatCard
@@ -67,16 +100,13 @@ export default function SummaryCards({
         danger={amountDue > 0}
         sub={penaltyDue > 0 ? `Incl. ${formatTZS(penaltyDue)} penalty` : undefined}
       />
-      <div className="col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-        <p className="text-xs text-emerald-700">Max loan you can request</p>
-        <p className="mt-1 text-2xl font-semibold text-emerald-900">{formatTZS(maxLoanAmount)}</p>
-        <p className="mt-1 text-xs text-emerald-700/80">
-          {bindingNote}
-          {hasOpenLoan && maxLoanAmount > 0
-            ? ' Available once your current loan is closed.'
-            : ''}
-        </p>
-      </div>
+
+      <HeroCard
+        label="Max loan you can request"
+        value={formatTZS(maxLoanAmount)}
+        sub={`${bindingNote}${hasOpenLoan && maxLoanAmount > 0 ? ' Available once your current loan is closed.' : ''}`}
+        tone="emerald"
+      />
     </div>
   )
 }

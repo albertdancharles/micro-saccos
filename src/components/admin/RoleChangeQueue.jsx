@@ -59,21 +59,28 @@ function ChangeItem({ request, onActioned }) {
   }
 
   return (
-    <div className={`rounded-xl border p-4 space-y-3 ${
-      isPromote ? 'border-emerald-200 bg-emerald-50/30' : 'border-red-200 bg-red-50/30'
-    }`}>
+    <div
+      className={`rounded-xl border p-4 space-y-3 ${
+        isPromote
+          ? 'border-emerald-200/80 bg-emerald-50/40'
+          : 'border-red-200/80 bg-red-50/40'
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-gray-900">
+          <p className="font-medium text-slate-900">
             {verb} {request.targetName}
           </p>
-          <p className="text-xs text-gray-500">
-            Requested by {request.requesterName} · {formatDate(request.created_at?.slice(0, 10))}
+          <p className="text-xs text-slate-500 mt-0.5">
+            Requested by {request.requesterName} ·{' '}
+            {formatDate(request.created_at?.slice(0, 10))}
           </p>
         </div>
         <span
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-            isPromote ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${
+            isPromote
+              ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+              : 'bg-red-50 text-red-700 ring-red-200'
           }`}
         >
           {isPromote ? 'promote' : 'revoke'}
@@ -81,15 +88,15 @@ function ChangeItem({ request, onActioned }) {
       </div>
 
       {note && (
-        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-amber-800">
+        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 ring-1 ring-inset ring-amber-200/70 text-amber-800">
           {note}
         </p>
       )}
 
       {request.reason && (
-        <div className="rounded-lg bg-white border border-gray-100 p-3">
-          <p className="text-xs text-gray-500">
-            <span className="font-medium text-gray-700">Reason:</span> {request.reason}
+        <div className="rounded-lg bg-white ring-1 ring-inset ring-slate-100 p-3">
+          <p className="text-xs text-slate-500">
+            <span className="font-medium text-slate-700">Reason:</span> {request.reason}
           </p>
         </div>
       )}
@@ -100,17 +107,11 @@ function ChangeItem({ request, onActioned }) {
         <button
           onClick={handleApprove}
           disabled={busy || !request.canApprove}
-          className={`flex-1 rounded-lg text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-            isPromote ? 'bg-emerald-600' : 'bg-red-600'
-          }`}
+          className={`${isPromote ? 'btn-primary' : 'btn-danger'} flex-1`}
         >
           {approveLabel}
         </button>
-        <button
-          onClick={handleCancel}
-          disabled={busy}
-          className="rounded-lg border border-gray-300 text-sm px-4 py-2 text-gray-600"
-        >
+        <button onClick={handleCancel} disabled={busy} className="btn-secondary">
           Cancel request
         </button>
       </div>
@@ -122,8 +123,8 @@ export default function RoleChangeQueue({ pendingRoleChanges, onActioned }) {
   if (!pendingRoleChanges || pendingRoleChanges.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900 mb-3">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+      <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
         Pending role changes ({pendingRoleChanges.length})
       </h2>
       <div className="space-y-3">

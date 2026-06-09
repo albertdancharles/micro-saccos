@@ -25,7 +25,10 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const selectedFee = useMemo(() => unpaidFees.find((f) => f.id === feeId) || null, [unpaidFees, feeId])
+  const selectedFee = useMemo(
+    () => unpaidFees.find((f) => f.id === feeId) || null,
+    [unpaidFees, feeId],
+  )
   const selectedInst = useMemo(
     () => payableInstallments.find((i) => i.id === instId) || null,
     [payableInstallments, instId],
@@ -76,7 +79,11 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
         memberId,
         submissionType: type,
         relatedId:
-          type === 'monthly_fee' ? selectedFee.id : type === 'loan_installment' ? selectedInst.id : null,
+          type === 'monthly_fee'
+            ? selectedFee.id
+            : type === 'loan_installment'
+              ? selectedInst.id
+              : null,
         amountClaimed: amt,
         proofUrl: path,
       })
@@ -89,22 +96,18 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
     }
   }
 
-  const inputClass =
-    'w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none'
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Type selector */}
       <div className="grid grid-cols-3 gap-2">
         {TYPES.map((t) => (
           <button
             type="button"
             key={t.key}
             onClick={() => chooseType(t.key)}
-            className={`rounded-lg border px-2 py-2 text-xs font-medium ${
+            className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-all duration-150 ${
               type === t.key
-                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                : 'border-gray-200 text-gray-600'
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                : 'border-slate-200 text-slate-600 hover:border-slate-300'
             }`}
           >
             {t.label}
@@ -114,9 +117,13 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
 
       {type === 'monthly_fee' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Which fee?</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Which fee?</label>
           {unpaidFees.length ? (
-            <select value={feeId} onChange={(e) => chooseFee(e.target.value)} className={inputClass}>
+            <select
+              value={feeId}
+              onChange={(e) => chooseFee(e.target.value)}
+              className="input-field"
+            >
               <option value="">Select a month…</option>
               {unpaidFees.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -126,32 +133,41 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
               ))}
             </select>
           ) : (
-            <p className="text-sm text-gray-500">No outstanding fees. 🎉</p>
+            <p className="text-sm text-slate-500">No outstanding fees.</p>
           )}
         </div>
       )}
 
       {type === 'loan_installment' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Which installment?</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Which installment?
+          </label>
           {payableInstallments.length ? (
-            <select value={instId} onChange={(e) => chooseInst(e.target.value)} className={inputClass}>
+            <select
+              value={instId}
+              onChange={(e) => chooseInst(e.target.value)}
+              className="input-field"
+            >
               <option value="">Select an installment…</option>
               {payableInstallments.map((i) => (
                 <option key={i.id} value={i.id}>
-                  #{i.installment_number} · due {formatDate(i.due_date)} — {formatTZS(i.total_with_penalty)}
+                  #{i.installment_number} · due {formatDate(i.due_date)} —{' '}
+                  {formatTZS(i.total_with_penalty)}
                   {Number(i.penalty_due) > 0 ? ' (incl. penalty)' : ''}
                 </option>
               ))}
             </select>
           ) : (
-            <p className="text-sm text-gray-500">No installments to pay.</p>
+            <p className="text-sm text-slate-500">No installments to pay.</p>
           )}
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Amount paid (TSh)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Amount paid (TSh)
+        </label>
         <input
           type="number"
           min="0"
@@ -159,22 +175,18 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="Amount"
-          className={inputClass}
+          className="input-field tabular-nums"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Payment proof</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Payment proof</label>
         <UploadZone file={file} onSelect={setFile} />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-      >
+      <button type="submit" disabled={busy} className="btn-primary w-full">
         {busy ? 'Submitting…' : 'Submit for approval'}
       </button>
     </form>

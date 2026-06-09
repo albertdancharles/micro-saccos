@@ -1,14 +1,17 @@
 // Status badge (build plan §9). Covers obligation statuses (paid/pending/overdue/
-// upcoming/na) and submission statuses (approved/pending/rejected).
+// upcoming/cancelled/na) and submission statuses (approved/pending/rejected).
+// Uses an inset ring instead of a solid background so badges read as pills on
+// any background (cards, table rows, modals) — UI/UX Pro Max §6 semantic color
+// + state clarity. Tone-paired text/ring keeps contrast >= 4.5:1.
 const STYLES = {
-  paid: 'bg-emerald-100 text-emerald-700',
-  approved: 'bg-emerald-100 text-emerald-700',
-  pending: 'bg-amber-100 text-amber-700',
-  overdue: 'bg-red-100 text-red-700',
-  rejected: 'bg-red-100 text-red-700',
-  upcoming: 'bg-gray-100 text-gray-500',
-  cancelled: 'bg-gray-100 text-gray-400 line-through',
-  na: 'bg-gray-100 text-gray-400',
+  paid:      'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  approved:  'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  pending:   'bg-amber-50 text-amber-700 ring-amber-200',
+  overdue:   'bg-red-50 text-red-700 ring-red-200',
+  rejected:  'bg-red-50 text-red-700 ring-red-200',
+  upcoming:  'bg-slate-50 text-slate-600 ring-slate-200',
+  cancelled: 'bg-slate-50 text-slate-400 ring-slate-200 line-through',
+  na:        'bg-slate-50 text-slate-400 ring-slate-200',
 }
 
 const LABELS = {
@@ -26,7 +29,7 @@ export default function Badge({ status }) {
   const key = String(status || 'na').toLowerCase()
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-5 ring-1 ring-inset ${
         STYLES[key] || STYLES.na
       }`}
     >

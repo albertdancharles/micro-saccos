@@ -35,10 +35,10 @@ function Form({ target, onSubmitted, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div
-        className={`rounded-lg border p-3 text-sm space-y-1 ${
+        className={`rounded-xl ring-1 ring-inset p-3 text-sm space-y-1 ${
           danger
-            ? 'border-red-200 bg-red-50 text-red-700'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            ? 'bg-red-50 ring-red-200 text-red-800'
+            : 'bg-emerald-50 ring-emerald-200 text-emerald-800'
         }`}
       >
         <p className="font-semibold">{verb}</p>
@@ -52,7 +52,7 @@ function Form({ target, onSubmitted, onClose }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -62,13 +62,13 @@ function Form({ target, onSubmitted, onClose }) {
               ? 'e.g. trusted treasurer, served as group secretary'
               : 'e.g. stepping down, no longer active in committee'
           }
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+          className="input-field"
         />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+      <div className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 text-xs text-amber-800">
         Two <strong>other</strong> admins must approve before the role flips. You can't
         approve your own request.
       </div>
@@ -77,17 +77,11 @@ function Form({ target, onSubmitted, onClose }) {
         <button
           type="submit"
           disabled={busy}
-          className={`flex-1 rounded-lg text-white font-medium py-2.5 disabled:opacity-50 ${
-            danger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
-          }`}
+          className={`${danger ? 'btn-danger' : 'btn-primary'} flex-1`}
         >
           {busy ? 'Submitting…' : `Request ${isPromote ? 'promotion' : 'revocation'}`}
         </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-gray-300 px-4 py-2.5 text-gray-600"
-        >
+        <button type="button" onClick={onClose} className="btn-secondary">
           Cancel
         </button>
       </div>
@@ -96,8 +90,7 @@ function Form({ target, onSubmitted, onClose }) {
 }
 
 export default function RequestRoleChangeModal({ open, onClose, target, onSubmitted }) {
-  const title =
-    target?.role === 'admin' ? 'Revoke admin role' : 'Promote to admin'
+  const title = target?.role === 'admin' ? 'Revoke admin role' : 'Promote to admin'
   return (
     <Modal open={open} onClose={onClose} title={title}>
       {open && target && <Form target={target} onSubmitted={onSubmitted} onClose={onClose} />}

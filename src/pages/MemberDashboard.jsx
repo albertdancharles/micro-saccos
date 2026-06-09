@@ -61,31 +61,37 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[var(--color-app-bg)]">
+      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
+        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-gray-400">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
               {isView ? 'Viewing as admin' : 'Micro-SACCOS'}
             </p>
-            <h1 className="text-lg font-semibold text-gray-900 truncate">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
               {isView ? viewedName || 'Member' : profile?.full_name || user?.email}
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
             {isView ? (
-              <Link to="/admin" className="text-sm text-gray-500 hover:text-gray-700">
-                ← Back to admin
+              <Link
+                to="/admin"
+                className="text-sm font-medium text-slate-500 hover:text-slate-800"
+              >
+                ← Admin
               </Link>
             ) : (
               <>
                 <NotificationsBell />
-                <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
+                <Link
+                  to="/profile"
+                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
+                >
                   Profile
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="text-sm text-gray-500 hover:text-gray-700"
+                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
                 >
                   Sign out
                 </button>
@@ -97,15 +103,12 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
 
       <main className="max-w-md mx-auto px-6 py-6 space-y-4">
         {!isView && (
-          <button
-            onClick={() => setSheetOpen(true)}
-            className="w-full rounded-xl bg-emerald-600 text-white font-medium py-3 hover:bg-emerald-700 transition-colors"
-          >
+          <button onClick={() => setSheetOpen(true)} className="btn-primary w-full !min-h-12">
             + Log a transaction
           </button>
         )}
         {isView && (
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+          <div className="rounded-xl border border-sky-200/70 bg-sky-50/80 p-3 text-sm text-sky-800">
             Read-only view. Submitting payments, requesting loans, and editing on
             this member's behalf are disabled. Use the savings edit / approvals
             queue on the admin dashboard to act.
@@ -113,13 +116,13 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
         )}
 
         {summary.error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {summary.error}
           </div>
         )}
 
         {summary.loading ? (
-          <p className="text-center text-gray-400 py-8">Loading dashboard…</p>
+          <p className="text-center text-slate-400 py-8">Loading dashboard…</p>
         ) : (
           <>
             <SummaryCards

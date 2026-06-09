@@ -12,8 +12,12 @@ import { buildDisbursementPath, uploadPaymentProof, getSignedUrl } from '../../l
 function Row({ label, value, danger }) {
   return (
     <div className="flex justify-between">
-      <span className="text-gray-500">{label}</span>
-      <span className={danger ? 'font-medium text-red-600' : 'text-gray-700'}>{value}</span>
+      <span className="text-slate-500">{label}</span>
+      <span
+        className={`tabular-nums ${danger ? 'font-semibold text-red-600' : 'text-slate-700'}`}
+      >
+        {value}
+      </span>
     </div>
   )
 }
@@ -48,7 +52,6 @@ export default function LoanQueueItem({ loan, onActioned }) {
     setBusy(true)
     try {
       if (hasPriorApproval) {
-        // Second admin: confirm using the first approver's proof URL (no upload).
         await approveLoan(supabase, loan.id, loan.firstProofUrl)
       } else {
         if (!file) {
@@ -84,7 +87,9 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
   const willFinalize = loan.approvalsCount + 1 >= loan.requiredApprovals
   const approveLabel = busy
-    ? hasPriorApproval ? 'Confirming…' : 'Approving…'
+    ? hasPriorApproval
+      ? 'Confirming…'
+      : 'Approving…'
     : willFinalize
       ? hasPriorApproval
         ? `Confirm & disburse (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
@@ -93,7 +98,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
   let approvalNote = null
   if (loan.isSelf) {
-    approvalNote = 'You can\'t approve your own loan.'
+    approvalNote = "You can't approve your own loan."
   } else if (loan.iApproved) {
     approvalNote = `You've already approved (${loan.approvalsCount}/${loan.requiredApprovals}). Awaiting another admin.`
   } else if (hasPriorApproval) {
@@ -101,39 +106,43 @@ export default function LoanQueueItem({ loan, onActioned }) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 transition-shadow hover:shadow-[0_1px_3px_rgba(15,23,42,0.04),0_4px_12px_-6px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="font-medium text-gray-900">{loan.memberName}</p>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-slate-900">{loan.memberName}</p>
             {!loan.hasPriorLoan && (
-              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200">
                 First-time borrower
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400">Requested {formatDate(loan.requested_at?.slice(0, 10))}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Requested {formatDate(loan.requested_at?.slice(0, 10))}
+          </p>
         </div>
-        <p className="text-lg font-semibold text-gray-900">{formatTZS(loan.principal)}</p>
+        <p className="text-lg font-semibold text-slate-900 tabular-nums shrink-0">
+          {formatTZS(loan.principal)}
+        </p>
       </div>
 
       {approvalNote && (
-        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-amber-800">
+        <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 ring-1 ring-inset ring-amber-200/70 text-amber-800">
           {approvalNote}
         </p>
       )}
 
-      <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+      <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <Row label="Member savings" value={formatTZS(loan.contribution)} />
-        <Row label="3× savings" value={formatTZS(loan.contributionCeiling)} />
+        <Row label="5× savings" value={formatTZS(loan.contributionCeiling)} />
         <Row label="25% of pool" value={formatTZS(loan.poolCeiling)} />
-        <div className="border-t border-gray-200 my-1" />
+        <div className="border-t border-slate-200 my-1" />
         <Row label="Max eligible" value={formatTZS(loan.maxEligible)} />
         <Row label="Requested" value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
-          <p className="text-xs text-red-600">
-            Exceeds the {contribBinds ? '3× savings' : '25% of pool'} cap; the database will
-            reject the approval.
+          <p className="text-xs text-red-600 pt-1">
+            Exceeds the {contribBinds ? '5× savings' : '25% of pool'} cap; the database
+            will reject the approval.
           </p>
         )}
       </div>
@@ -145,20 +154,19 @@ export default function LoanQueueItem({ loan, onActioned }) {
             onChange={(e) => setReason(e.target.value)}
             rows={2}
             placeholder="Reason for rejection"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="input-field"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
-            <button
-              onClick={handleReject}
-              disabled={busy}
-              className="flex-1 rounded-lg bg-red-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-            >
+            <button onClick={handleReject} disabled={busy} className="btn-danger flex-1">
               {busy ? 'Rejecting…' : 'Confirm reject'}
             </button>
             <button
-              onClick={() => { setRejecting(false); setError('') }}
-              className="flex-1 rounded-lg border border-gray-300 text-sm py-2"
+              onClick={() => {
+                setRejecting(false)
+                setError('')
+              }}
+              className="btn-secondary flex-1"
             >
               Cancel
             </button>
@@ -168,16 +176,22 @@ export default function LoanQueueItem({ loan, onActioned }) {
         <div className="space-y-3">
           {hasPriorApproval ? (
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Disbursement proof (from first approver)</p>
+              <p className="text-sm font-medium text-slate-700 mb-1">
+                Disbursement proof (from first approver)
+              </p>
               {proofUrl ? (
                 <a href={proofUrl} target="_blank" rel="noreferrer">
-                  <img src={proofUrl} alt="Disbursement proof" className="max-h-48 rounded-lg border border-gray-100" />
+                  <img
+                    src={proofUrl}
+                    alt="Disbursement proof"
+                    className="max-h-48 rounded-lg border border-slate-100"
+                  />
                 </a>
               ) : (
                 <button
                   onClick={viewProof}
                   disabled={loadingProof}
-                  className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                  className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
                 >
                   {loadingProof ? 'Loading…' : 'View proof'}
                 </button>
@@ -185,23 +199,20 @@ export default function LoanQueueItem({ loan, onActioned }) {
             </div>
           ) : (
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Disbursement proof</p>
+              <p className="text-sm font-medium text-slate-700 mb-1">Disbursement proof</p>
               <UploadZone file={file} onSelect={setFile} />
             </div>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             <button
               onClick={handleApprove}
               disabled={busy || !loan.canApprove}
-              className="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary flex-1"
             >
               {approveLabel}
             </button>
-            <button
-              onClick={() => setRejecting(true)}
-              className="rounded-lg border border-gray-300 text-sm px-4 py-2 text-gray-600"
-            >
+            <button onClick={() => setRejecting(true)} className="btn-secondary">
               Reject
             </button>
           </div>

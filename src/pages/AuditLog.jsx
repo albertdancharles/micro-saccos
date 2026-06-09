@@ -158,14 +158,16 @@ export default function AuditLog() {
   }, [load])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[var(--color-app-bg)]">
+      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-gray-400">Micro-SACCOS · Admin</p>
-            <h1 className="text-lg font-semibold text-gray-900">Audit log</h1>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
+              Micro-SACCOS · Admin
+            </p>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900">Audit log</h1>
           </div>
-          <Link to="/admin" className="text-sm text-gray-500 hover:text-gray-700">
+          <Link to="/admin" className="text-sm font-medium text-slate-500 hover:text-slate-800">
             ← Back
           </Link>
         </div>
@@ -173,33 +175,38 @@ export default function AuditLog() {
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
         {loading ? (
-          <p className="text-center text-gray-400 py-8">Loading…</p>
+          <p className="text-center text-slate-400 py-8">Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="text-center text-gray-400 py-8">No audit entries yet.</p>
+          <p className="text-center text-slate-400 py-8">No audit entries yet.</p>
         ) : (
-          <section className="rounded-2xl border border-gray-100 bg-white">
-            <ul className="divide-y divide-gray-50">
+          <section className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+            <ul className="divide-y divide-slate-100">
               {rows.map((r) => (
-                <li key={r.id} className="p-4 flex items-start justify-between gap-3">
+                <li
+                  key={r.id}
+                  className="px-5 py-4 flex items-start justify-between gap-3 transition-colors hover:bg-slate-50/60"
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-slate-900">
                         {ACTION_LABEL[r.action] || r.action}
                       </span>
                       <Badge status={ACTION_BADGE[r.action] || 'pending'} />
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{summary(r)}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">{summary(r)}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
                       by {actors[r.actor_id] || (r.actor_id ? 'unknown' : 'system')}
                     </p>
                   </div>
-                  <p className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{formatWhen(r.at)}</p>
+                  <p className="text-xs text-slate-400 shrink-0 whitespace-nowrap tabular-nums">
+                    {formatWhen(r.at)}
+                  </p>
                 </li>
               ))}
             </ul>

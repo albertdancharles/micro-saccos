@@ -11,13 +11,10 @@ import { buildMemberStatement, downloadBlob } from '../lib/statements'
 import { supabase } from '../supabaseClient'
 import { formatTZS } from '../lib/format'
 
-const inputClass =
-  'w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
-
 function Section({ title, children }) {
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900 mb-3">{title}</h2>
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+      <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">{title}</h2>
       {children}
     </section>
   )
@@ -48,21 +45,17 @@ function PhoneForm({ initialPhone, onSaved }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Phone number</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Phone number</label>
         <input
-          className={inputClass}
+          className="input-field"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+255…"
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-emerald-600">{notice}</p>}
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50"
-      >
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <button type="submit" disabled={busy} className="btn-primary w-full">
         {busy ? 'Saving…' : 'Save phone'}
       </button>
     </form>
@@ -98,10 +91,10 @@ function PasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">New password</label>
         <input
           type="password"
-          className={inputClass}
+          className="input-field"
           value={pw}
           onChange={(e) => setPw(e.target.value)}
           autoComplete="new-password"
@@ -109,10 +102,10 @@ function PasswordForm() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Confirm</label>
         <input
           type="password"
-          className={inputClass}
+          className="input-field"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           autoComplete="new-password"
@@ -120,12 +113,8 @@ function PasswordForm() {
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-emerald-600">{notice}</p>}
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50"
-      >
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <button type="submit" disabled={busy} className="btn-primary w-full">
         {busy ? 'Saving…' : 'Change password'}
       </button>
     </form>
@@ -135,8 +124,8 @@ function PasswordForm() {
 function ContributionRow({ label, value }) {
   return (
     <div className="flex justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-gray-900">{formatTZS(value)}</span>
+      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-900 tabular-nums">{formatTZS(value)}</span>
     </div>
   )
 }
@@ -170,15 +159,11 @@ function StatementSection({ memberId, memberName, memberEmail }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-slate-500">
         Download a CSV with your savings, fees, loans, and full submission history.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        onClick={handleDownload}
-        disabled={busy}
-        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50"
-      >
+      <button onClick={handleDownload} disabled={busy} className="btn-primary w-full">
         {busy ? 'Preparing…' : 'Download statement (CSV)'}
       </button>
     </div>
@@ -205,14 +190,14 @@ function ContributionsCard({ memberId }) {
   }, [memberId])
 
   if (err) return <p className="text-sm text-red-600">{err}</p>
-  if (savings == null) return <p className="text-sm text-gray-400">Loading…</p>
+  if (savings == null) return <p className="text-sm text-slate-400">Loading…</p>
 
   return (
     <div className="space-y-2">
       <ContributionRow label="Total savings" value={savings} />
-      <p className="text-xs text-gray-400 mt-2">
+      <p className="text-xs text-slate-400 mt-2">
         Includes your savings deposits, paid monthly fees, and any admin-approved
-        adjustments. Your loan ceiling is 3× this amount (capped at 25% of the group pool).
+        adjustments. Your loan ceiling is 5× this amount (capped at 25% of the group pool).
       </p>
     </div>
   )
@@ -224,14 +209,21 @@ export default function Profile() {
   const home = profile?.role === 'admin' ? '/admin' : '/dashboard'
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[var(--color-app-bg)]">
+      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
+        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-gray-400">Micro-SACCOS</p>
-            <h1 className="text-lg font-semibold text-gray-900 truncate">Profile</h1>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
+              Micro-SACCOS
+            </p>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
+              Profile
+            </h1>
           </div>
-          <Link to={home} className="text-sm text-gray-500 hover:text-gray-700 shrink-0">
+          <Link
+            to={home}
+            className="text-sm font-medium text-slate-500 hover:text-slate-800 shrink-0"
+          >
             ← Back
           </Link>
         </div>
@@ -241,16 +233,16 @@ export default function Profile() {
         <Section title="Account">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Name</span>
-              <span className="text-gray-900">{profile?.full_name || '—'}</span>
+              <span className="text-slate-500">Name</span>
+              <span className="text-slate-900">{profile?.full_name || '—'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Email</span>
-              <span className="text-gray-900 break-all">{user?.email}</span>
+              <span className="text-slate-500">Email</span>
+              <span className="text-slate-900 break-all">{user?.email}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Role</span>
-              <span className="text-gray-900 capitalize">{profile?.role}</span>
+              <span className="text-slate-500">Role</span>
+              <span className="text-slate-900 capitalize">{profile?.role}</span>
             </div>
           </div>
         </Section>
@@ -277,7 +269,7 @@ export default function Profile() {
 
         <button
           onClick={() => navigate(home, { replace: true })}
-          className="w-full rounded-lg border border-gray-200 py-2 text-sm text-gray-600 hover:bg-white"
+          className="btn-secondary w-full"
         >
           Back to dashboard
         </button>

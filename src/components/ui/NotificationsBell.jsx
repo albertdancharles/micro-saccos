@@ -1,5 +1,6 @@
-// Notifications bell + dropdown (Phase 4). Live-updates via the useNotifications
-// hook; click outside or Escape to close.
+// Notifications bell + dropdown. Live-updates via the useNotifications hook;
+// click outside or Escape to close. UI/UX Pro Max: 44pt touch target,
+// focus-visible ring, soft-shadow popover with backdrop-blur, refined dot tokens.
 import { useEffect, useRef, useState } from 'react'
 import { useNotifications } from '../../hooks/useNotifications'
 
@@ -39,6 +40,7 @@ function BellIcon() {
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden
     >
       <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
@@ -51,7 +53,6 @@ export default function NotificationsBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
-  // Close on outside click or Escape.
   useEffect(() => {
     if (!open) return
     function onDown(e) {
@@ -72,49 +73,62 @@ export default function NotificationsBell() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative text-gray-500 hover:text-gray-700"
+        className="relative inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100/70 transition-colors"
         aria-label={`Notifications${unreadCount ? ` (${unreadCount} unread)` : ''}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <BellIcon />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-medium leading-none">
+          <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none ring-2 ring-white">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl bg-white shadow-xl border border-gray-100 z-30">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 sticky top-0 bg-white">
-            <p className="text-sm font-semibold text-gray-900">Notifications</p>
+        <div
+          data-sheet-enter
+          role="dialog"
+          aria-label="Notifications"
+          className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl bg-white/95 backdrop-blur shadow-[0_6px_14px_-8px_rgba(15,23,42,0.12),0_12px_32px_-16px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 z-30"
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur">
+            <p className="text-sm font-semibold tracking-tight text-slate-900">Notifications</p>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="text-xs text-emerald-600 hover:text-emerald-700"
+                className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2"
               >
                 Mark all read
               </button>
             )}
           </div>
           {items.length === 0 ? (
-            <p className="px-4 py-8 text-sm text-gray-400 text-center">No notifications yet.</p>
+            <p className="px-4 py-8 text-sm text-slate-400 text-center">
+              No notifications yet.
+            </p>
           ) : (
-            <ul className="divide-y divide-gray-50">
+            <ul className="divide-y divide-slate-100">
               {items.map((n) => (
                 <li
                   key={n.id}
-                  className={`px-4 py-3 ${!n.read_at ? 'bg-emerald-50/50' : ''}`}
+                  className={`px-4 py-3 transition-colors ${
+                    !n.read_at ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'
+                  }`}
                 >
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2.5">
                     <span
                       className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                        KIND_DOT[n.kind] || 'bg-gray-400'
+                        KIND_DOT[n.kind] || 'bg-slate-400'
                       }`}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900">{n.title}</p>
-                      {n.body && <p className="text-xs text-gray-500 mt-0.5">{n.body}</p>}
-                      <p className="text-xs text-gray-400 mt-0.5">{relativeTime(n.created_at)}</p>
+                      <p className="text-sm font-medium text-slate-900">{n.title}</p>
+                      {n.body && <p className="text-xs text-slate-500 mt-0.5">{n.body}</p>}
+                      <p className="text-xs text-slate-400 mt-1 tabular-nums">
+                        {relativeTime(n.created_at)}
+                      </p>
                     </div>
                   </div>
                 </li>

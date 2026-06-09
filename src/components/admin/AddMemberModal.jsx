@@ -19,9 +19,6 @@ function suggestEmail(name) {
   return `${local}@umojagroup.app`
 }
 
-const inputClass =
-  'w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
-
 function Form({ onCreated, onClose }) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -61,23 +58,21 @@ function Form({ onCreated, onClose }) {
   if (created) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-gray-600">
-          Member created. Share these temp credentials — they change the password on first login.
+        <p className="text-sm text-slate-600">
+          Member created. Share these temp credentials — they change the password on first
+          login.
         </p>
-        <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+        <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-2">
           <div className="flex justify-between gap-3">
-            <span className="text-gray-500">Email</span>
-            <span className="font-mono text-gray-900 break-all">{created.email}</span>
+            <span className="text-slate-500">Email</span>
+            <span className="font-mono text-slate-900 break-all">{created.email}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-gray-500">Temp password</span>
-            <span className="font-mono text-gray-900">{created.password}</span>
+            <span className="text-slate-500">Temp password</span>
+            <span className="font-mono text-slate-900">{created.password}</span>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700"
-        >
+        <button onClick={onClose} className="btn-primary w-full">
           Done
         </button>
       </div>
@@ -87,13 +82,18 @@ function Form({ onCreated, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
-        <input className={inputClass} value={fullName} onChange={(e) => onNameChange(e.target.value)} placeholder="e.g. Jane Mushi" />
+        <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
+        <input
+          className="input-field"
+          value={fullName}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="e.g. Jane Mushi"
+        />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Email (login)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Email (login)</label>
         <input
-          className={inputClass}
+          className="input-field"
           type="email"
           value={email}
           onChange={(e) => {
@@ -102,20 +102,23 @@ function Form({ onCreated, onClose }) {
           }}
           placeholder="jane.mushi@umojagroup.app"
         />
-        <p className="mt-1 text-xs text-gray-400">A real email enables self-service password reset; otherwise you reset it for them.</p>
+        <p className="mt-1 text-xs text-slate-400">
+          A real email enables self-service password reset; otherwise you reset it for them.
+        </p>
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Phone number</label>
-        <input className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+255…" />
+        <label className="block text-sm font-medium text-slate-700 mb-1">Phone number</label>
+        <input
+          className="input-field"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+255…"
+        />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-emerald-600 text-white font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50"
-      >
+      <button type="submit" disabled={busy} className="btn-primary w-full">
         {busy ? 'Creating…' : 'Create member'}
       </button>
     </form>

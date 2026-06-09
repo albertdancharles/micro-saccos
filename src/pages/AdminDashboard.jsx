@@ -47,28 +47,41 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[var(--color-app-bg)]">
+      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-gray-400">Micro-SACCOS · Admin</p>
-            <h1 className="text-lg font-semibold text-gray-900 truncate">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
+              Micro-SACCOS · Admin
+            </p>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
               {profile?.full_name || user?.email}
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <NotificationsBell />
-            {/* Admin is also a contributing member (Decision #1). */}
-            <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
-              My member view
+            <Link
+              to="/dashboard"
+              className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
+              My view
             </Link>
-            <Link to="/admin/audit" className="text-sm text-gray-500 hover:text-gray-700">
-              Audit log
+            <Link
+              to="/admin/audit"
+              className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
+              Audit
             </Link>
-            <Link to="/profile" className="text-sm text-gray-500 hover:text-gray-700">
+            <Link
+              to="/profile"
+              className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
               Profile
             </Link>
-            <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700">
+            <button
+              onClick={handleSignOut}
+              className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
               Sign out
             </button>
           </div>
@@ -77,13 +90,13 @@ export default function AdminDashboard() {
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
         {admin.error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {admin.error}
           </div>
         )}
 
         {admin.loading ? (
-          <p className="text-center text-gray-400 py-8">Loading…</p>
+          <p className="text-center text-slate-400 py-8">Loading…</p>
         ) : (
           <>
             <AdminSummaryCards
@@ -116,7 +129,7 @@ export default function AdminDashboard() {
             <div className="flex justify-end">
               <button
                 onClick={() => setAddOpen(true)}
-                className="rounded-lg border border-emerald-600 text-emerald-700 text-sm font-medium px-4 py-2 hover:bg-emerald-50"
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-emerald-700 text-sm font-medium px-4 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50 hover:ring-emerald-300 active:scale-[0.99] transition-all duration-150"
               >
                 + Add member
               </button>
