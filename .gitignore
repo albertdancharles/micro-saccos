@@ -21,6 +21,10 @@ dist-ssr
 supabase/.temp
 supabase/.branches
 
+# Claude Code / skills tooling artifacts
+.agents/
+skills-lock.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
