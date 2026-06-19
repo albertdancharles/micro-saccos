@@ -5,13 +5,14 @@ import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatDate } from '../../lib/format'
 import { approveRoleChange, cancelRoleChange } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function ChangeItem({ request, onActioned }) {
+  const { t } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const isPromote = request.change_type === 'promote'
-  const verb = isPromote ? 'Promote' : 'Revoke admin from'
 
   async function handleApprove() {
     setError('')
@@ -20,7 +21,7 @@ function ChangeItem({ request, onActioned }) {
       await approveRoleChange(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not approve the role change.')
+      setError(err?.message || t('Could not approve the role change.'))
     } finally {
       setBusy(false)
     }
@@ -28,13 +29,13 @@ function ChangeItem({ request, onActioned }) {
 
   async function handleCancel() {
     setError('')
-    if (!window.confirm('Cancel this role-change request?')) return
+    if (!window.confirm(t('Cancel this role-change request?'))) return
     setBusy(true)
     try {
       await cancelRoleChange(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not cancel.')
+      setError(err?.message || t('Could not cancel.'))
     } finally {
       setBusy(false)
     }
@@ -42,21 +43,34 @@ function ChangeItem({ request, onActioned }) {
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy
-    ? 'Working…'
+    ? t('Working…')
     : willFinalize
-      ? `Approve & apply (${request.approvalsCount + 1}/${request.requiredApprovals})`
-      : `Submit approval (${request.approvalsCount + 1}/${request.requiredApprovals})`
+      ? t('Approve & apply ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
+      : t('Submit approval ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
 
   let note = null
   if (request.isRequester) {
-    note = "You opened this request — you can't vote on it. Awaiting other admins."
+    note = t("You opened this request — you can't vote on it. Awaiting other admins.")
   } else if (request.isTarget) {
-    note = "This change targets you — you can't approve it."
+    note = t("This change targets you — you can't approve it.")
   } else if (request.iApproved) {
-    note = `You've already approved (${request.approvalsCount}/${request.requiredApprovals}). Awaiting another admin.`
+    note = t("You've already approved ({a}/{r}). Awaiting another admin.")
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   } else if (request.approvalsCount > 0) {
-    note = `Approved by ${request.approverNames.join(', ')} (${request.approvalsCount}/${request.requiredApprovals}).`
+    note = t('Approved by {names} ({a}/{r}).')
+      .replace('{names}', request.approverNames.join(', '))
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   }
+
+  const title = isPromote
+    ? t('Promote {name}').replace('{name}', request.targetName)
+    : t('Revoke admin from {name}').replace('{name}', request.targetName)
 
   return (
     <div
@@ -68,12 +82,11 @@ function ChangeItem({ request, onActioned }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-slate-900">
-            {verb} {request.targetName}
-          </p>
+          <p className="font-medium text-slate-900">{title}</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Requested by {request.requesterName} ·{' '}
-            {formatDate(request.created_at?.slice(0, 10))}
+            {t('Requested by {name} · {date}')
+              .replace('{name}', request.requesterName)
+              .replace('{date}', formatDate(request.created_at?.slice(0, 10)))}
           </p>
         </div>
         <span
@@ -83,7 +96,7 @@ function ChangeItem({ request, onActioned }) {
               : 'bg-red-50 text-red-700 ring-red-200'
           }`}
         >
-          {isPromote ? 'promote' : 'revoke'}
+          {isPromote ? t('promote') : t('revoke')}
         </span>
       </div>
 
@@ -96,7 +109,7 @@ function ChangeItem({ request, onActioned }) {
       {request.reason && (
         <div className="rounded-lg bg-white ring-1 ring-inset ring-slate-100 p-3">
           <p className="text-xs text-slate-500">
-            <span className="font-medium text-slate-700">Reason:</span> {request.reason}
+            <span className="font-medium text-slate-700">{t('Reason:')}</span> {request.reason}
           </p>
         </div>
       )}
@@ -112,7 +125,7 @@ function ChangeItem({ request, onActioned }) {
           {approveLabel}
         </button>
         <button onClick={handleCancel} disabled={busy} className="btn-secondary">
-          Cancel request
+          {t('Cancel request')}
         </button>
       </div>
     </div>
@@ -120,12 +133,13 @@ function ChangeItem({ request, onActioned }) {
 }
 
 export default function RoleChangeQueue({ pendingRoleChanges, onActioned }) {
+  const { t } = useLanguage()
   if (!pendingRoleChanges || pendingRoleChanges.length === 0) return null
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
-        Pending role changes ({pendingRoleChanges.length})
+        {t('Pending role changes ({n})').replace('{n}', pendingRoleChanges.length)}
       </h2>
       <div className="space-y-3">
         {pendingRoleChanges.map((r) => (

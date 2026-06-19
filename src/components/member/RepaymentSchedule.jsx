@@ -5,16 +5,18 @@
 // its own column.
 import Badge from '../ui/Badge'
 import { formatTZS, formatDate } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
 export default function RepaymentSchedule({ installments, currentMonthKey }) {
+  const { t } = useLanguage()
   if (!installments.length) return null
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
-        Repayment schedule
+        {t('Repayment schedule')}
       </h2>
       <ul className="divide-y divide-slate-100">
         {installments.map((i) => {
@@ -27,11 +29,11 @@ export default function RepaymentSchedule({ installments, currentMonthKey }) {
           const principalPaid = Number(i.principal_paid) || 0
           const breakdown = isPaid
             ? principalPaid > 0
-              ? 'Principal + interest'
-              : 'Interest'
+              ? t('Principal + interest')
+              : t('Interest')
             : principalDue > 0
-              ? 'Principal + interest'
-              : 'Interest'
+              ? t('Principal + interest')
+              : t('Interest')
           return (
             <li
               key={i.id}
@@ -48,11 +50,13 @@ export default function RepaymentSchedule({ installments, currentMonthKey }) {
                   #{i.installment_number} · {breakdown}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {isCancelled ? 'Cancelled — loan closed early' : `Due ${formatDate(i.due_date)}`}
+                  {isCancelled
+                    ? t('Cancelled — loan closed early')
+                    : t('Due {date}').replace('{date}', formatDate(i.due_date))}
                 </p>
                 {isPaid && principalPaid > 0 && (
                   <p className="text-xs text-emerald-700 mt-1 tabular-nums">
-                    Repaid {formatTZS(principalPaid)} principal
+                    {t('Repaid {amount} principal').replace('{amount}', formatTZS(principalPaid))}
                   </p>
                 )}
               </div>

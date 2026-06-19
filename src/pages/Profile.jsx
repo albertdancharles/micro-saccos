@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 import { updatePassword } from '../lib/auth'
 import { updateOwnPhone } from '../lib/profile'
 import { getApprovedSavings } from '../lib/savings'
@@ -21,6 +22,7 @@ function Section({ title, children }) {
 }
 
 function PhoneForm({ initialPhone, onSaved }) {
+  const { t } = useLanguage()
   const [phone, setPhone] = useState(initialPhone || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -33,10 +35,10 @@ function PhoneForm({ initialPhone, onSaved }) {
     setBusy(true)
     try {
       await updateOwnPhone(phone.trim())
-      setNotice('Phone number updated.')
+      setNotice(t('Phone number updated.'))
       onSaved?.()
     } catch (err) {
-      setError(err?.message || 'Could not update phone.')
+      setError(err?.message || t('Could not update phone.'))
     } finally {
       setBusy(false)
     }
@@ -45,7 +47,7 @@ function PhoneForm({ initialPhone, onSaved }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Phone number</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Phone number')}</label>
         <input
           className="input-field"
           value={phone}
@@ -56,13 +58,14 @@ function PhoneForm({ initialPhone, onSaved }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <button type="submit" disabled={busy} className="btn-primary w-full">
-        {busy ? 'Saving…' : 'Save phone'}
+        {busy ? t('Saving…') : t('Save phone')}
       </button>
     </form>
   )
 }
 
 function PasswordForm() {
+  const { t } = useLanguage()
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
@@ -73,16 +76,16 @@ function PasswordForm() {
     e.preventDefault()
     setError('')
     setNotice('')
-    if (pw.length < 8) return setError('Use at least 8 characters.')
-    if (pw !== confirm) return setError('Passwords do not match.')
+    if (pw.length < 8) return setError(t('Use at least 8 characters.'))
+    if (pw !== confirm) return setError(t('Passwords do not match.'))
     setBusy(true)
     try {
       await updatePassword(pw)
-      setNotice('Password changed.')
+      setNotice(t('Password changed.'))
       setPw('')
       setConfirm('')
     } catch (err) {
-      setError(err?.message || 'Could not change password.')
+      setError(err?.message || t('Could not change password.'))
     } finally {
       setBusy(false)
     }
@@ -91,31 +94,31 @@ function PasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">New password</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('New password')}</label>
         <input
           type="password"
           className="input-field"
           value={pw}
           onChange={(e) => setPw(e.target.value)}
           autoComplete="new-password"
-          placeholder="At least 8 characters"
+          placeholder={t('At least 8 characters')}
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Confirm</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Confirm')}</label>
         <input
           type="password"
           className="input-field"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           autoComplete="new-password"
-          placeholder="Re-enter password"
+          placeholder={t('Re-enter password')}
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <button type="submit" disabled={busy} className="btn-primary w-full">
-        {busy ? 'Saving…' : 'Change password'}
+        {busy ? t('Saving…') : t('Change password')}
       </button>
     </form>
   )
@@ -131,6 +134,7 @@ function ContributionRow({ label, value }) {
 }
 
 function StatementSection({ memberId, memberName, memberEmail }) {
+  const { t } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -151,7 +155,7 @@ function StatementSection({ memberId, memberName, memberEmail }) {
       const today = new Date().toISOString().slice(0, 10)
       downloadBlob(blob, `${slug}-statement-${today}.csv`)
     } catch (err) {
-      setError(err?.message || 'Could not generate the statement.')
+      setError(err?.message || t('Could not generate the statement.'))
     } finally {
       setBusy(false)
     }
@@ -160,17 +164,18 @@ function StatementSection({ memberId, memberName, memberEmail }) {
   return (
     <div className="space-y-2">
       <p className="text-sm text-slate-500">
-        Download a CSV with your savings, fees, loans, and full submission history.
+        {t('Download a CSV with your savings, fees, loans, and full submission history.')}
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button onClick={handleDownload} disabled={busy} className="btn-primary w-full">
-        {busy ? 'Preparing…' : 'Download statement (CSV)'}
+        {busy ? t('Preparing…') : t('Download statement (CSV)')}
       </button>
     </div>
   )
 }
 
 function ContributionsCard({ memberId }) {
+  const { t } = useLanguage()
   const [savings, setSavings] = useState(null)
   const [err, setErr] = useState('')
 
@@ -182,22 +187,21 @@ function ContributionsCard({ memberId }) {
         if (!cancelled) setSavings(s)
       })
       .catch((e) => {
-        if (!cancelled) setErr(e?.message || 'Could not load contributions.')
+        if (!cancelled) setErr(e?.message || t('Could not load contributions.'))
       })
     return () => {
       cancelled = true
     }
-  }, [memberId])
+  }, [memberId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (err) return <p className="text-sm text-red-600">{err}</p>
-  if (savings == null) return <p className="text-sm text-slate-400">Loading…</p>
+  if (savings == null) return <p className="text-sm text-slate-400">{t('Loading…')}</p>
 
   return (
     <div className="space-y-2">
-      <ContributionRow label="Total savings" value={savings} />
+      <ContributionRow label={t('Total savings')} value={savings} />
       <p className="text-xs text-slate-400 mt-2">
-        Includes your savings deposits, paid monthly fees, and any admin-approved
-        adjustments. Your loan ceiling is 5× this amount (capped at 25% of the group pool).
+        {t("Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is 5× this amount (capped at 25% of the group pool).")}
       </p>
     </div>
   )
@@ -205,6 +209,7 @@ function ContributionsCard({ memberId }) {
 
 export default function Profile() {
   const { profile, user, refreshProfile } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const home = profile?.role === 'admin' ? '/admin' : '/dashboard'
 
@@ -214,52 +219,52 @@ export default function Profile() {
         <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              Micro-SACCOS
+              {t('Micro-SACCOS')}
             </p>
             <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
-              Profile
+              {t('Profile')}
             </h1>
           </div>
           <Link
             to={home}
             className="text-sm font-medium text-slate-500 hover:text-slate-800 shrink-0"
           >
-            ← Back
+            {t('← Back')}
           </Link>
         </div>
       </header>
 
       <main className="max-w-md mx-auto px-6 py-6 space-y-4">
-        <Section title="Account">
+        <Section title={t('Account')}>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">Name</span>
+              <span className="text-slate-500">{t('Name')}</span>
               <span className="text-slate-900">{profile?.full_name || '—'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Email</span>
+              <span className="text-slate-500">{t('Email')}</span>
               <span className="text-slate-900 break-all">{user?.email}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Role</span>
+              <span className="text-slate-500">{t('Role')}</span>
               <span className="text-slate-900 capitalize">{profile?.role}</span>
             </div>
           </div>
         </Section>
 
-        <Section title="Phone number">
+        <Section title={t('Phone number')}>
           <PhoneForm initialPhone={profile?.phone_number} onSaved={refreshProfile} />
         </Section>
 
-        <Section title="Change password">
+        <Section title={t('Change password')}>
           <PasswordForm />
         </Section>
 
-        <Section title="My contributions">
+        <Section title={t('My contributions')}>
           <ContributionsCard memberId={user?.id} />
         </Section>
 
-        <Section title="Statement">
+        <Section title={t('Statement')}>
           <StatementSection
             memberId={user?.id}
             memberName={profile?.full_name}
@@ -271,7 +276,7 @@ export default function Profile() {
           onClick={() => navigate(home, { replace: true })}
           className="btn-secondary w-full"
         >
-          Back to dashboard
+          {t('Back to dashboard')}
         </button>
       </main>
     </div>

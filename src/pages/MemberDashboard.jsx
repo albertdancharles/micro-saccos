@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 import { useMemberSummary } from '../hooks/useMemberSummary'
 import { signOut } from '../lib/auth'
 import { supabase } from '../supabaseClient'
@@ -16,9 +17,11 @@ import History from '../components/member/History'
 import SavingsChart from '../components/member/SavingsChart'
 import LoanProgressBar from '../components/member/LoanProgressBar'
 import NotificationsBell from '../components/ui/NotificationsBell'
+import LangToggle from '../components/ui/LangToggle'
 
 export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const { profile, user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const isView = !!viewAs
   const summary = useMemberSummary(viewAs)
@@ -66,7 +69,7 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
         <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {isView ? 'Viewing as admin' : 'Micro-SACCOS'}
+              {isView ? t('Viewing as admin') : t('Micro-SACCOS')}
             </p>
             <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
               {isView ? viewedName || 'Member' : profile?.full_name || user?.email}
@@ -78,22 +81,23 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
                 to="/admin"
                 className="text-sm font-medium text-slate-500 hover:text-slate-800"
               >
-                ← Admin
+                {t('← Admin')}
               </Link>
             ) : (
               <>
+                <LangToggle />
                 <NotificationsBell />
                 <Link
                   to="/profile"
                   className="text-sm font-medium text-slate-500 hover:text-slate-800"
                 >
-                  Profile
+                  {t('Profile')}
                 </Link>
                 <button
                   onClick={handleSignOut}
                   className="text-sm font-medium text-slate-500 hover:text-slate-800"
                 >
-                  Sign out
+                  {t('Sign out')}
                 </button>
               </>
             )}
@@ -104,14 +108,12 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
       <main className="max-w-md mx-auto px-6 py-6 space-y-4">
         {!isView && (
           <button onClick={() => setSheetOpen(true)} className="btn-primary w-full !min-h-12">
-            + Log a transaction
+            {t('+ Log a transaction')}
           </button>
         )}
         {isView && (
           <div className="rounded-xl border border-sky-200/70 bg-sky-50/80 p-3 text-sm text-sky-800">
-            Read-only view. Submitting payments, requesting loans, and editing on
-            this member's behalf are disabled. Use the savings edit / approvals
-            queue on the admin dashboard to act.
+            {t("Read-only view. Submitting payments, requesting loans, and editing on this member's behalf are disabled. Use the savings edit / approvals queue on the admin dashboard to act.")}
           </div>
         )}
 
@@ -122,7 +124,7 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
         )}
 
         {summary.loading ? (
-          <p className="text-center text-slate-400 py-8">Loading dashboard…</p>
+          <p className="text-center text-slate-400 py-8">{t('Loading dashboard…')}</p>
         ) : (
           <>
             <SummaryCards

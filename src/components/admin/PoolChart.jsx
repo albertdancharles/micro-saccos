@@ -12,6 +12,7 @@ import {
 import { supabase } from '../../supabaseClient'
 import { getPoolHistory } from '../../lib/charts'
 import { formatTZS, formatMonth } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function fmtMonthShort(s) {
   // 'YYYY-MM' → 'Jun 26'
@@ -20,6 +21,7 @@ function fmtMonthShort(s) {
 }
 
 export default function PoolChart() {
+  const { t } = useLanguage()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -31,11 +33,11 @@ export default function PoolChart() {
       setError(null)
     } catch (err) {
       console.error('PoolChart load failed', err)
-      setError(err?.message || 'Could not load the chart.')
+      setError(err?.message || t('Could not load the chart.'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -44,13 +46,15 @@ export default function PoolChart() {
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900 mb-3">Group pool over time</h2>
+      <h2 className="text-sm font-semibold text-gray-900 mb-3">{t('Group pool over time')}</h2>
       {loading ? (
-        <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+        <p className="text-sm text-gray-400 py-8 text-center">{t('Loading…')}</p>
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : data.length === 0 ? (
-        <p className="text-sm text-gray-400 py-8 text-center">No history yet. Approve a payment to see the chart fill in.</p>
+        <p className="text-sm text-gray-400 py-8 text-center">
+          {t('No history yet. Approve a payment to see the chart fill in.')}
+        </p>
       ) : (
         <div className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -69,7 +73,7 @@ export default function PoolChart() {
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#e5e7eb' }}
                 labelFormatter={fmtMonthShort}
-                formatter={(v) => [formatTZS(v), 'Pool']}
+                formatter={(v) => [formatTZS(v), t('Pool')]}
               />
               <Line
                 type="monotone"

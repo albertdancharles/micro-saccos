@@ -5,6 +5,7 @@ import { useState } from 'react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../supabaseClient'
 import { createMember } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 // firstname.lastname@umojagroup.app from a full name.
 function suggestEmail(name) {
@@ -20,6 +21,7 @@ function suggestEmail(name) {
 }
 
 function Form({ onCreated, onClose }) {
+  const { t } = useLanguage()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [emailEdited, setEmailEdited] = useState(false)
@@ -37,7 +39,7 @@ function Form({ onCreated, onClose }) {
     e.preventDefault()
     setError('')
     if (!fullName.trim() || !email.trim() || !phone.trim()) {
-      return setError('Name, email, and phone are all required.')
+      return setError(t('Name, email, and phone are all required.'))
     }
     setBusy(true)
     try {
@@ -49,7 +51,7 @@ function Form({ onCreated, onClose }) {
       setCreated(result)
       onCreated?.()
     } catch (err) {
-      setError(err?.message || 'Could not create the member.')
+      setError(err?.message || t('Could not create the member.'))
     } finally {
       setBusy(false)
     }
@@ -59,21 +61,20 @@ function Form({ onCreated, onClose }) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Member created. Share these temp credentials — they change the password on first
-          login.
+          {t('Member created. Share these temp credentials — they change the password on first login.')}
         </p>
         <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-2">
           <div className="flex justify-between gap-3">
-            <span className="text-slate-500">Email</span>
+            <span className="text-slate-500">{t('Email')}</span>
             <span className="font-mono text-slate-900 break-all">{created.email}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-slate-500">Temp password</span>
+            <span className="text-slate-500">{t('Temp password')}</span>
             <span className="font-mono text-slate-900">{created.password}</span>
           </div>
         </div>
         <button onClick={onClose} className="btn-primary w-full">
-          Done
+          {t('Done')}
         </button>
       </div>
     )
@@ -82,7 +83,7 @@ function Form({ onCreated, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Full name')}</label>
         <input
           className="input-field"
           value={fullName}
@@ -91,7 +92,7 @@ function Form({ onCreated, onClose }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Email (login)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Email (login)')}</label>
         <input
           className="input-field"
           type="email"
@@ -103,11 +104,11 @@ function Form({ onCreated, onClose }) {
           placeholder="jane.mushi@umojagroup.app"
         />
         <p className="mt-1 text-xs text-slate-400">
-          A real email enables self-service password reset; otherwise you reset it for them.
+          {t('A real email enables self-service password reset; otherwise you reset it for them.')}
         </p>
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Phone number</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Phone number')}</label>
         <input
           className="input-field"
           value={phone}
@@ -119,15 +120,16 @@ function Form({ onCreated, onClose }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <button type="submit" disabled={busy} className="btn-primary w-full">
-        {busy ? 'Creating…' : 'Create member'}
+        {busy ? t('Creating…') : t('Create member')}
       </button>
     </form>
   )
 }
 
 export default function AddMemberModal({ open, onClose, onCreated }) {
+  const { t } = useLanguage()
   return (
-    <Modal open={open} onClose={onClose} title="Add a member">
+    <Modal open={open} onClose={onClose} title={t('Add a member')}>
       {open && <Form onCreated={onCreated} onClose={onClose} />}
     </Modal>
   )

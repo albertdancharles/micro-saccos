@@ -5,12 +5,14 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 import { supabase } from '../supabaseClient'
 import MemberDashboard from './MemberDashboard'
 
 export default function ViewMember() {
   const { memberId } = useParams()
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [blocked, setBlocked] = useState(false)
@@ -44,7 +46,7 @@ export default function ViewMember() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-500 bg-[var(--color-app-bg)]">
-        Loading…
+        {t('Loading…')}
       </div>
     )
   }

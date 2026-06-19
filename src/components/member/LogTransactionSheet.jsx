@@ -9,14 +9,17 @@ import { supabase } from '../../supabaseClient'
 import { formatTZS, formatMonth, formatDate } from '../../lib/format'
 import { buildProofPath, uploadPaymentProof } from '../../lib/storage'
 import { submitPayment } from '../../lib/payments'
-
-const TYPES = [
-  { key: 'savings_deposit', label: 'Savings' },
-  { key: 'monthly_fee', label: 'Monthly fee' },
-  { key: 'loan_installment', label: 'Loan repayment' },
-]
+import { useLanguage } from '../../hooks/useLanguage'
 
 function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitted, onClose }) {
+  const { t } = useLanguage()
+
+  const TYPES = [
+    { key: 'savings_deposit', label: t('Savings') },
+    { key: 'monthly_fee', label: t('Monthly fee') },
+    { key: 'loan_installment', label: t('Loan repayment') },
+  ]
+
   const [type, setType] = useState('savings_deposit')
   const [feeId, setFeeId] = useState('')
   const [instId, setInstId] = useState('')
@@ -58,11 +61,11 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
     e.preventDefault()
     setError('')
     const amt = Number(amount)
-    if (!(amt > 0)) return setError('Enter a valid amount.')
-    if (!file) return setError('Upload a payment screenshot.')
-    if (type === 'monthly_fee' && !selectedFee) return setError('Choose which fee you are paying.')
+    if (!(amt > 0)) return setError(t('Enter a valid amount.'))
+    if (!file) return setError(t('Upload a payment screenshot.'))
+    if (type === 'monthly_fee' && !selectedFee) return setError(t('Choose which fee you are paying.'))
     if (type === 'loan_installment' && !selectedInst)
-      return setError('Choose which installment you are paying.')
+      return setError(t('Choose which installment you are paying.'))
 
     setBusy(true)
     try {
@@ -90,7 +93,7 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
       onSubmitted?.()
       onClose()
     } catch (err) {
-      setError(err?.message || 'Could not submit. Please try again.')
+      setError(err?.message || t('Could not submit. Please try again.'))
     } finally {
       setBusy(false)
     }
@@ -99,41 +102,41 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        {TYPES.map((t) => (
+        {TYPES.map((tp) => (
           <button
             type="button"
-            key={t.key}
-            onClick={() => chooseType(t.key)}
+            key={tp.key}
+            onClick={() => chooseType(tp.key)}
             className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-all duration-150 ${
-              type === t.key
+              type === tp.key
                 ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                 : 'border-slate-200 text-slate-600 hover:border-slate-300'
             }`}
           >
-            {t.label}
+            {tp.label}
           </button>
         ))}
       </div>
 
       {type === 'monthly_fee' && (
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Which fee?</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">{t('Which fee?')}</label>
           {unpaidFees.length ? (
             <select
               value={feeId}
               onChange={(e) => chooseFee(e.target.value)}
               className="input-field"
             >
-              <option value="">Select a month…</option>
+              <option value="">{t('Select a month…')}</option>
               {unpaidFees.map((f) => (
                 <option key={f.id} value={f.id}>
                   {formatMonth(f.period)} — {formatTZS(f.total_with_penalty)}
-                  {Number(f.penalty_due) > 0 ? ' (incl. penalty)' : ''}
+                  {Number(f.penalty_due) > 0 ? ` ${t('(incl. penalty)')}` : ''}
                 </option>
               ))}
             </select>
           ) : (
-            <p className="text-sm text-slate-500">No outstanding fees.</p>
+            <p className="text-sm text-slate-500">{t('No outstanding fees.')}</p>
           )}
         </div>
       )}
@@ -141,7 +144,7 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
       {type === 'loan_installment' && (
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Which installment?
+            {t('Which installment?')}
           </label>
           {payableInstallments.length ? (
             <select
@@ -149,24 +152,24 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
               onChange={(e) => chooseInst(e.target.value)}
               className="input-field"
             >
-              <option value="">Select an installment…</option>
+              <option value="">{t('Select an installment…')}</option>
               {payableInstallments.map((i) => (
                 <option key={i.id} value={i.id}>
-                  #{i.installment_number} · due {formatDate(i.due_date)} —{' '}
+                  #{i.installment_number} · {t('due')} {formatDate(i.due_date)} —{' '}
                   {formatTZS(i.total_with_penalty)}
-                  {Number(i.penalty_due) > 0 ? ' (incl. penalty)' : ''}
+                  {Number(i.penalty_due) > 0 ? ` ${t('(incl. penalty)')}` : ''}
                 </option>
               ))}
             </select>
           ) : (
-            <p className="text-sm text-slate-500">No installments to pay.</p>
+            <p className="text-sm text-slate-500">{t('No installments to pay.')}</p>
           )}
         </div>
       )}
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">
-          Amount paid (TSh)
+          {t('Amount paid (TSh)')}
         </label>
         <input
           type="number"
@@ -174,20 +177,20 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
           inputMode="numeric"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          placeholder="Amount"
+          placeholder={t('Amount')}
           className="input-field tabular-nums"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Payment proof</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Payment proof')}</label>
         <UploadZone file={file} onSelect={setFile} />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <button type="submit" disabled={busy} className="btn-primary w-full">
-        {busy ? 'Submitting…' : 'Submit for approval'}
+        {busy ? t('Submitting…') : t('Submit for approval')}
       </button>
     </form>
   )
@@ -201,8 +204,9 @@ export default function LogTransactionSheet({
   payableInstallments,
   onSubmitted,
 }) {
+  const { t } = useLanguage()
   return (
-    <Modal open={open} onClose={onClose} title="Log a transaction">
+    <Modal open={open} onClose={onClose} title={t('Log a transaction')}>
       {open && (
         <TransactionForm
           memberId={memberId}

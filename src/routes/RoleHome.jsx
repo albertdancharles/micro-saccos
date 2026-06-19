@@ -2,14 +2,16 @@
 // Mounted at "/" inside the protected tree, so it always has a session.
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 
 export default function RoleHome() {
   const { profile, loadingProfile } = useAuth()
+  const { t } = useLanguage()
 
   if (loadingProfile && !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
-        Loading…
+        {t('Loading…')}
       </div>
     )
   }

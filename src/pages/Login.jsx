@@ -4,7 +4,9 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 import { signIn, sendPasswordReset } from '../lib/auth'
+import LangToggle from '../components/ui/LangToggle'
 
 function BrandMark() {
   return (
@@ -18,6 +20,7 @@ function BrandMark() {
 
 export default function Login() {
   const { session } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,7 +39,7 @@ export default function Login() {
       await signIn(email.trim(), password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err?.message || 'Sign in failed. Check your email and password.')
+      setError(err?.message || t('Sign in failed. Check your email and password.'))
     } finally {
       setBusy(false)
     }
@@ -46,14 +49,14 @@ export default function Login() {
     setError('')
     setNotice('')
     if (!email.trim()) {
-      setError('Enter your email first, then tap “Forgot password?”.')
+      setError(t('Enter your email first, then tap "Forgot password?".'))
       return
     }
     try {
       await sendPasswordReset(email.trim())
-      setNotice('If that email exists, a reset link is on its way.')
+      setNotice(t('If that email exists, a reset link is on its way.'))
     } catch (err) {
-      setError(err?.message || 'Could not send the reset email.')
+      setError(err?.message || t('Could not send the reset email.'))
     }
   }
 
@@ -69,11 +72,14 @@ export default function Login() {
           <div className="flex flex-col items-center text-center mb-8">
             <BrandMark />
             <h1 className="mt-4 text-[22px] font-semibold tracking-tight text-slate-900">
-              Welcome back
+              {t('Welcome back')}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Micro-SACCOS · Umoja Group
             </p>
+            <div className="mt-2">
+              <LangToggle />
+            </div>
           </div>
 
           <form
@@ -82,7 +88,7 @@ export default function Login() {
           >
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1.5">
-                Email
+                {t('Email')}
               </label>
               <input
                 id="email"
@@ -99,14 +105,14 @@ export default function Login() {
             <div>
               <div className="flex items-baseline justify-between mb-1.5">
                 <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-                  Password
+                  {t('Password')}
                 </label>
                 <button
                   type="button"
                   onClick={handleForgot}
                   className="text-xs font-medium text-emerald-700 hover:text-emerald-800"
                 >
-                  Forgot?
+                  {t('Forgot?')}
                 </button>
               </div>
               <input
@@ -133,12 +139,12 @@ export default function Login() {
             )}
 
             <button type="submit" disabled={busy} className="btn-primary w-full">
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? t('Signing in…') : t('Sign in')}
             </button>
           </form>
 
           <p className="mt-6 text-center text-xs text-slate-400">
-            A small group, big trust. Your savings are visible only to you and the admin team.
+            {t('A small group, big trust. Your savings are visible only to you and the admin team.')}
           </p>
         </div>
       </div>

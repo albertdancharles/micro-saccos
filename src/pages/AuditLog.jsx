@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { getRecentAudit } from '../lib/audit'
 import { formatTZS } from '../lib/format'
+import { useLanguage } from '../hooks/useLanguage'
 import Badge from '../components/ui/Badge'
 
 const ACTION_LABEL = {
@@ -63,7 +64,7 @@ const ACTION_BADGE = {
   cancel_role_change: 'pending',
 }
 
-function summary(row) {
+function summary(row, t) {
   const d = row.details || {}
   switch (row.action) {
     case 'approve_submission':
@@ -87,7 +88,7 @@ function summary(row) {
     case 'execute_member_deletion':
       return `${d.full_name || ''} (${d.email || ''}) · role: ${d.role || '—'}`
     case 'cancel_member_deletion':
-      return 'Request cancelled'
+      return t('Request cancelled')
     case 'request_savings_edit':
       return `${d.target_name || ''} · ${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'partial_approve_savings_edit':
@@ -95,7 +96,7 @@ function summary(row) {
     case 'execute_savings_edit':
       return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'cancel_savings_edit':
-      return 'Request cancelled'
+      return t('Request cancelled')
     case 'request_pool_edit':
       return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'partial_approve_pool_edit':
@@ -103,7 +104,7 @@ function summary(row) {
     case 'execute_pool_edit':
       return `${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
     case 'cancel_pool_edit':
-      return 'Request cancelled'
+      return t('Request cancelled')
     case 'request_role_change':
       return `${d.target_name || ''} · ${d.change_type || ''} · reason: ${d.reason || '—'}`
     case 'partial_approve_role_change':
@@ -111,7 +112,7 @@ function summary(row) {
     case 'execute_role_change':
       return `${d.change_type || ''} → ${d.new_role || '—'}`
     case 'cancel_role_change':
-      return 'Request cancelled'
+      return t('Request cancelled')
     default:
       return JSON.stringify(d)
   }
@@ -131,6 +132,7 @@ function formatWhen(at) {
 }
 
 export default function AuditLog() {
+  const { t } = useLanguage()
   const [rows, setRows] = useState([])
   const [actors, setActors] = useState({})
   const [loading, setLoading] = useState(true)
@@ -145,11 +147,11 @@ export default function AuditLog() {
       setError(null)
     } catch (err) {
       console.error('Failed to load audit log', err)
-      setError(err?.message || 'Could not load the audit log.')
+      setError(err?.message || t('Could not load the audit log.'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // load() sets state only after an await (no synchronous cascade) — false positive.
@@ -163,12 +165,12 @@ export default function AuditLog() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              Micro-SACCOS · Admin
+              {t('Micro-SACCOS · Admin')}
             </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900">Audit log</h1>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900">{t('Audit log')}</h1>
           </div>
           <Link to="/admin" className="text-sm font-medium text-slate-500 hover:text-slate-800">
-            ← Back
+            {t('← Back')}
           </Link>
         </div>
       </header>
@@ -181,9 +183,9 @@ export default function AuditLog() {
         )}
 
         {loading ? (
-          <p className="text-center text-slate-400 py-8">Loading…</p>
+          <p className="text-center text-slate-400 py-8">{t('Loading…')}</p>
         ) : rows.length === 0 ? (
-          <p className="text-center text-slate-400 py-8">No audit entries yet.</p>
+          <p className="text-center text-slate-400 py-8">{t('No audit entries yet.')}</p>
         ) : (
           <section className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
             <ul className="divide-y divide-slate-100">
@@ -195,13 +197,13 @@ export default function AuditLog() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-slate-900">
-                        {ACTION_LABEL[r.action] || r.action}
+                        {t(ACTION_LABEL[r.action] || r.action)}
                       </span>
                       <Badge status={ACTION_BADGE[r.action] || 'pending'} />
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{summary(r)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{summary(r, t)}</p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      by {actors[r.actor_id] || (r.actor_id ? 'unknown' : 'system')}
+                      {t('by')} {actors[r.actor_id] || (r.actor_id ? t('unknown') : t('system'))}
                     </p>
                   </div>
                   <p className="text-xs text-slate-400 shrink-0 whitespace-nowrap tabular-nums">

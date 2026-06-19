@@ -3,6 +3,8 @@
 // Uses an inset ring instead of a solid background so badges read as pills on
 // any background (cards, table rows, modals) — UI/UX Pro Max §6 semantic color
 // + state clarity. Tone-paired text/ring keeps contrast >= 4.5:1.
+import { useLanguage } from '../../hooks/useLanguage'
+
 const STYLES = {
   paid:      'bg-emerald-50 text-emerald-700 ring-emerald-200',
   approved:  'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -26,6 +28,7 @@ const LABELS = {
 }
 
 export default function Badge({ status }) {
+  const { t } = useLanguage()
   const key = String(status || 'na').toLowerCase()
   return (
     <span
@@ -33,7 +36,7 @@ export default function Badge({ status }) {
         STYLES[key] || STYLES.na
       }`}
     >
-      {LABELS[key] || status}
+      {LABELS[key] ? t(LABELS[key]) : status}
     </span>
   )
 }

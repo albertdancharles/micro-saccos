@@ -4,8 +4,11 @@
 //   * Sticky header with close button has 44pt hit area (touch-target-size).
 //   * Close on Escape or backdrop click (escape-routes).
 import { useEffect } from 'react'
+import { useLanguage } from '../../hooks/useLanguage'
 
 export default function Modal({ open, onClose, title, children }) {
+  const { t } = useLanguage()
+
   useEffect(() => {
     if (!open) return
     const onKey = (e) => e.key === 'Escape' && onClose()
@@ -37,7 +40,7 @@ export default function Modal({ open, onClose, title, children }) {
           <button
             onClick={onClose}
             className="-mr-2 inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            aria-label="Close"
+            aria-label={t('Close')}
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />

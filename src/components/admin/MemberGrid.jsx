@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom'
 import Badge from '../ui/Badge'
 import { formatTZS } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function FeeCell({ fee }) {
   if (!fee) return <Badge status="na" />
@@ -40,23 +41,26 @@ export default function MemberGrid({
   onRequestEditSavings,
   onRequestRoleChange,
 }) {
+  const { t } = useLanguage()
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">Members</h2>
-        <span className="text-xs text-slate-400 tabular-nums">{rows.length} total</span>
+        <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">{t('Members')}</h2>
+        <span className="text-xs text-slate-400 tabular-nums">
+          {t('{n} total').replace('{n}', rows.length)}
+        </span>
       </div>
       <div className="overflow-x-auto -mx-5 px-5">
         <table className="w-full text-sm min-w-[34rem]">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
               <th className="py-2 pr-3 font-semibold">#</th>
-              <th className="py-2 pr-3 font-semibold">Member</th>
-              <th className="py-2 pr-3 font-semibold">Monthly fee</th>
-              <th className="py-2 pr-3 font-semibold">Loan interest</th>
-              <th className="py-2 pr-3 font-semibold">Overall</th>
-              <th className="py-2 font-semibold text-right pr-1" aria-label="Actions">
-                Actions
+              <th className="py-2 pr-3 font-semibold">{t('Member')}</th>
+              <th className="py-2 pr-3 font-semibold">{t('Monthly fee')}</th>
+              <th className="py-2 pr-3 font-semibold">{t('Loan interest')}</th>
+              <th className="py-2 pr-3 font-semibold">{t('Overall')}</th>
+              <th className="py-2 font-semibold text-right pr-1" aria-label={t('Actions')}>
+                {t('Actions')}
               </th>
             </tr>
           </thead>
@@ -77,7 +81,7 @@ export default function MemberGrid({
                     <span className="font-medium text-slate-900">{r.name}</span>
                     {r.role === 'admin' && (
                       <span className="ml-1.5 inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
-                        admin
+                        {t('admin')}
                       </span>
                     )}
                   </td>
@@ -97,7 +101,7 @@ export default function MemberGrid({
                           to={`/admin/member/${r.id}`}
                           className="text-xs font-medium text-sky-700 hover:text-sky-800 hover:underline underline-offset-2"
                         >
-                          View
+                          {t('View')}
                         </Link>
                       )}
                       {(r.role !== 'admin' || isSelf) && (
@@ -105,7 +109,7 @@ export default function MemberGrid({
                           onClick={() => onRequestEditSavings?.(r)}
                           className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2"
                         >
-                          Edit savings
+                          {t('Edit savings')}
                         </button>
                       )}
                       {!isSelf && (
@@ -113,7 +117,7 @@ export default function MemberGrid({
                           onClick={() => onRequestRoleChange?.(r)}
                           className="text-xs font-medium text-amber-700 hover:text-amber-800 hover:underline underline-offset-2"
                         >
-                          {r.role === 'admin' ? 'Revoke admin' : 'Make admin'}
+                          {r.role === 'admin' ? t('Revoke admin') : t('Make admin')}
                         </button>
                       )}
                       {!isSelf && (
@@ -121,7 +125,7 @@ export default function MemberGrid({
                           onClick={() => onRequestDelete?.(r)}
                           className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline underline-offset-2"
                         >
-                          Delete
+                          {t('Delete')}
                         </button>
                       )}
                     </div>

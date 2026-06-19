@@ -5,6 +5,7 @@
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
 import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function HeroCard({ label, value, sub, tone = 'sky' }) {
   const palette =
@@ -49,6 +50,7 @@ export default function SummaryCards({
   amountDue,
   penaltyDue,
 }) {
+  const { t } = useLanguage()
   const loanBalance =
     loan?.status === 'active'
       ? Number(loan.outstanding_principal ?? loan.principal)
@@ -64,47 +66,57 @@ export default function SummaryCards({
   const bindingNote =
     maxLoanAmount === 0
       ? contribCap === 0
-        ? 'Make a savings deposit or pay your monthly fee to become eligible.'
-        : 'Group pool is currently too low to issue a loan.'
+        ? t('Make a savings deposit or pay your monthly fee to become eligible.')
+        : t('Group pool is currently too low to issue a loan.')
       : contribCap < poolCap
-        ? 'Limited by 3× your savings.'
+        ? t('Limited by 3× your savings.')
         : contribCap === poolCap
-          ? 'Both rules cap at the same amount.'
-          : 'Limited by 25% of the group pool.'
+          ? t('Both rules cap at the same amount.')
+          : t('Limited by 25% of the group pool.')
+
+  const loanSub =
+    loan?.status === 'pending'
+      ? t('Request pending')
+      : principalRepaid > 0
+        ? t('Repaid {amount} of {total}')
+            .replace('{amount}', formatTZS(principalRepaid))
+            .replace('{total}', formatTZS(originalPrincipal))
+        : undefined
+
+  const dueSub = penaltyDue > 0
+    ? t('Incl. {penalty} penalty').replace('{penalty}', formatTZS(penaltyDue))
+    : undefined
+
+  const maxLoanSub = bindingNote +
+    (hasOpenLoan && maxLoanAmount > 0 ? ' ' + t('Available once your current loan is closed.') : '')
 
   return (
     <div className="grid grid-cols-2 gap-3">
       <HeroCard
-        label="Total group assets"
+        label={t('Total group assets')}
         value={formatTZS(totalAssets)}
-        sub={`${formatTZS(pool)} in the pool · ${formatTZS(outstandingLoans)} out on loans`}
+        sub={`${formatTZS(pool)} ${t('in the pool')} · ${formatTZS(outstandingLoans)} ${t('out on loans')}`}
         tone="sky"
       />
 
-      <StatCard label="Group pool" value={formatTZS(pool)} />
-      <StatCard label="My savings" value={formatTZS(savings)} />
+      <StatCard label={t('Group pool')} value={formatTZS(pool)} />
+      <StatCard label={t('My savings')} value={formatTZS(savings)} />
       <StatCard
-        label="My loan balance"
+        label={t('My loan balance')}
         value={formatTZS(loanBalance)}
-        sub={
-          loan?.status === 'pending'
-            ? 'Request pending'
-            : principalRepaid > 0
-              ? `Repaid ${formatTZS(principalRepaid)} of ${formatTZS(originalPrincipal)}`
-              : undefined
-        }
+        sub={loanSub}
       />
       <StatCard
-        label="Amount due"
+        label={t('Amount due')}
         value={formatTZS(amountDue)}
         danger={amountDue > 0}
-        sub={penaltyDue > 0 ? `Incl. ${formatTZS(penaltyDue)} penalty` : undefined}
+        sub={dueSub}
       />
 
       <HeroCard
-        label="Max loan you can request"
+        label={t('Max loan you can request')}
         value={formatTZS(maxLoanAmount)}
-        sub={`${bindingNote}${hasOpenLoan && maxLoanAmount > 0 ? ' Available once your current loan is closed.' : ''}`}
+        sub={maxLoanSub}
         tone="emerald"
       />
     </div>

@@ -7,6 +7,7 @@ import { supabase } from '../../supabaseClient'
 import { formatTZS, formatMonth, formatDate } from '../../lib/format'
 import { getSignedUrl } from '../../lib/storage'
 import { approveSubmission, rejectSubmission } from '../../lib/payments'
+import { useLanguage } from '../../hooks/useLanguage'
 
 const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
@@ -15,6 +16,7 @@ const TYPE_LABEL = {
 }
 
 export default function PaymentQueueItem({ submission, onActioned }) {
+  const { t } = useLanguage()
   const firstAmount = submission.firstAmount
   const hasPriorApproval = submission.approvalsCount > 0
   const lockedAmount = hasPriorApproval ? Number(firstAmount) : null
@@ -44,7 +46,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
   async function handleApprove() {
     setError('')
     const amt = hasPriorApproval ? lockedAmount : Number(amount)
-    if (!(amt >= 0)) return setError('Enter the amount received.')
+    if (!(amt >= 0)) return setError(t('Enter the amount received.'))
     setBusy(true)
     try {
       await approveSubmission(supabase, submission.id, amt)
@@ -58,7 +60,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
 
   async function handleReject() {
     setError('')
-    if (!reason.trim()) return setError('Add a short reason for the rejection.')
+    if (!reason.trim()) return setError(t('Add a short reason for the rejection.'))
     setBusy(true)
     try {
       await rejectSubmission(supabase, submission.id, reason.trim())
@@ -72,18 +74,27 @@ export default function PaymentQueueItem({ submission, onActioned }) {
 
   const willFinalize = submission.approvalsCount + 1 >= submission.requiredApprovals
   const approveLabel = busy
-    ? 'Approving…'
+    ? t('Approving…')
     : willFinalize
-      ? `Approve (${submission.approvalsCount + 1}/${submission.requiredApprovals})`
-      : `Submit approval (${submission.approvalsCount + 1}/${submission.requiredApprovals})`
+      ? t('Approve ({a}/{r})')
+          .replace('{a}', submission.approvalsCount + 1)
+          .replace('{r}', submission.requiredApprovals)
+      : t('Submit approval ({a}/{r})')
+          .replace('{a}', submission.approvalsCount + 1)
+          .replace('{r}', submission.requiredApprovals)
 
   let approvalNote = null
   if (submission.isSelf) {
-    approvalNote = "You can't approve your own submission."
+    approvalNote = t("You can't approve your own submission.")
   } else if (submission.iApproved) {
-    approvalNote = `You've already approved (${submission.approvalsCount}/${submission.requiredApprovals}). Awaiting another admin.`
+    approvalNote = t("You've already approved ({a}/{r}). Awaiting another admin.")
+      .replace('{a}', submission.approvalsCount)
+      .replace('{r}', submission.requiredApprovals)
   } else if (hasPriorApproval) {
-    approvalNote = `Approved by ${submission.approverNames.join(', ')} (${submission.approvalsCount}/${submission.requiredApprovals}).`
+    approvalNote = t('Approved by {names} ({a}/{r}).')
+      .replace('{names}', submission.approverNames.join(', '))
+      .replace('{a}', submission.approvalsCount)
+      .replace('{r}', submission.requiredApprovals)
   }
 
   return (
@@ -92,26 +103,28 @@ export default function PaymentQueueItem({ submission, onActioned }) {
         <div className="min-w-0">
           <p className="font-medium text-slate-900">{submission.memberName}</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            {TYPE_LABEL[submission.submission_type]}
+            {t(TYPE_LABEL[submission.submission_type])}
             {submission.submission_type === 'monthly_fee' && submission.period && (
-              <> · for {formatMonth(submission.period)}</>
+              <> · {t('for {month}').replace('{month}', formatMonth(submission.period))}</>
             )}
             {submission.submission_type === 'loan_installment' && submission.installmentNumber && (
               <>
                 {' '}· #{submission.installmentNumber}
-                {submission.dueDate ? ` · due ${formatDate(submission.dueDate)}` : ''}
+                {submission.dueDate
+                  ? ` · ${t('due')} ${formatDate(submission.dueDate)}`
+                  : ''}
               </>
             )}
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Claimed</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('Claimed')}</p>
           <p className="font-semibold text-slate-900 tabular-nums">
             {formatTZS(submission.amount_claimed)}
           </p>
           {submission.penalty > 0 && (
             <p className="text-xs text-red-600 tabular-nums">
-              incl. {formatTZS(submission.penalty)} penalty
+              {t('incl. {p} penalty').replace('{p}', formatTZS(submission.penalty))}
             </p>
           )}
         </div>
@@ -137,7 +150,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
           disabled={loadingProof}
           className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
         >
-          {loadingProof ? 'Loading…' : 'View screenshot'}
+          {loadingProof ? t('Loading…') : t('View screenshot')}
         </button>
       )}
 
@@ -147,13 +160,13 @@ export default function PaymentQueueItem({ submission, onActioned }) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={2}
-            placeholder="Reason for rejection"
+            placeholder={t('Reason for rejection')}
             className="input-field"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button onClick={handleReject} disabled={busy} className="btn-danger flex-1">
-              {busy ? 'Rejecting…' : 'Confirm reject'}
+              {busy ? t('Rejecting…') : t('Confirm reject')}
             </button>
             <button
               onClick={() => {
@@ -162,19 +175,19 @@ export default function PaymentQueueItem({ submission, onActioned }) {
               }}
               className="btn-secondary flex-1"
             >
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         </div>
       ) : (
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-700">
-            Amount received (TSh)
+            {t('Amount received (TSh)')}
           </label>
           {hasPriorApproval ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 tabular-nums">
               {formatTZS(lockedAmount)}{' '}
-              <span className="text-xs text-slate-400">(locked by first approver)</span>
+              <span className="text-xs text-slate-400">{t('(locked by first approver)')}</span>
             </p>
           ) : (
             <input
@@ -197,7 +210,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
               {approveLabel}
             </button>
             <button onClick={() => setRejecting(true)} className="btn-secondary">
-              Reject
+              {t('Reject')}
             </button>
           </div>
         </div>

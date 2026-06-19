@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import LoanQueueItem from './LoanQueueItem'
 import PaymentQueueItem from './PaymentQueueItem'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function TabButton({ active, onClick, children, count }) {
   return (
@@ -35,12 +36,13 @@ function TabButton({ active, onClick, children, count }) {
 }
 
 export default function ApprovalsQueue({ pendingLoans, pendingPayments, onActioned }) {
+  const { t } = useLanguage()
   const [tab, setTab] = useState('payments')
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
-        Approvals
+        {t('Approvals')}
       </h2>
 
       <div className="flex gap-1 rounded-xl bg-slate-100/80 p-1 mb-4" role="tablist">
@@ -49,14 +51,14 @@ export default function ApprovalsQueue({ pendingLoans, pendingPayments, onAction
           onClick={() => setTab('payments')}
           count={pendingPayments.length}
         >
-          Payments
+          {t('Payments')}
         </TabButton>
         <TabButton
           active={tab === 'loans'}
           onClick={() => setTab('loans')}
           count={pendingLoans.length}
         >
-          Loans
+          {t('Loans')}
         </TabButton>
       </div>
 
@@ -69,7 +71,7 @@ export default function ApprovalsQueue({ pendingLoans, pendingPayments, onAction
           </div>
         ) : (
           <p className="text-sm text-slate-400 text-center py-8">
-            All caught up — no payments awaiting review.
+            {t('All caught up — no payments awaiting review.')}
           </p>
         )
       ) : pendingLoans.length ? (
@@ -80,7 +82,7 @@ export default function ApprovalsQueue({ pendingLoans, pendingPayments, onAction
         </div>
       ) : (
         <p className="text-sm text-slate-400 text-center py-8">
-          No loan requests awaiting review.
+          {t('No loan requests awaiting review.')}
         </p>
       )}
     </section>

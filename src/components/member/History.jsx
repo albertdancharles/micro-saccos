@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { getMySubmissions } from '../../lib/payments'
 import Badge from '../ui/Badge'
 import { formatTZS, formatDate } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
@@ -15,6 +16,7 @@ const TYPE_LABEL = {
 
 export default function History({ refreshKey, memberId: overrideMemberId = null }) {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const memberId = overrideMemberId ?? user?.id ?? null
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -37,11 +39,11 @@ export default function History({ refreshKey, memberId: overrideMemberId = null 
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
-      <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">History</h2>
+      <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">{t('History')}</h2>
       {loading ? (
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-slate-400">{t('Loading…')}</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">No submissions yet.</p>
+        <p className="text-sm text-slate-400">{t('No submissions yet.')}</p>
       ) : (
         <ul className="divide-y divide-slate-100">
           {rows.map((r) => (
@@ -51,14 +53,18 @@ export default function History({ refreshKey, memberId: overrideMemberId = null 
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900">
-                  {TYPE_LABEL[r.submission_type] || r.submission_type}
+                  {t(TYPE_LABEL[r.submission_type] || r.submission_type)}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Sent {formatDate(r.submitted_at?.slice(0, 10))}
-                  {r.reviewed_at ? ` · reviewed ${formatDate(r.reviewed_at.slice(0, 10))}` : ''}
+                  {t('Sent {date}').replace('{date}', formatDate(r.submitted_at?.slice(0, 10)))}
+                  {r.reviewed_at
+                    ? ` · ${t('reviewed {date}').replace('{date}', formatDate(r.reviewed_at.slice(0, 10)))}`
+                    : ''}
                 </p>
                 {r.status === 'rejected' && r.rejection_reason && (
-                  <p className="text-xs text-red-600 mt-1">Reason: {r.rejection_reason}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {t('Reason: {reason}').replace('{reason}', r.rejection_reason)}
+                  </p>
                 )}
               </div>
               <div className="text-right shrink-0 flex flex-col items-end gap-1">

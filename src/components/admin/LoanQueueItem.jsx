@@ -8,6 +8,7 @@ import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveLoan, rejectLoan } from '../../lib/loans'
 import { buildDisbursementPath, uploadPaymentProof, getSignedUrl } from '../../lib/storage'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger }) {
   return (
@@ -23,6 +24,7 @@ function Row({ label, value, danger }) {
 }
 
 export default function LoanQueueItem({ loan, onActioned }) {
+  const { t } = useLanguage()
   const hasPriorApproval = loan.approvalsCount > 0
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -55,7 +57,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
         await approveLoan(supabase, loan.id, loan.firstProofUrl)
       } else {
         if (!file) {
-          setError('Upload the M-Pesa disbursement screenshot first.')
+          setError(t('Upload the M-Pesa disbursement screenshot first.'))
           setBusy(false)
           return
         }
@@ -65,7 +67,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
       }
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not approve the loan.')
+      setError(err?.message || t('Could not approve the loan.'))
     } finally {
       setBusy(false)
     }
@@ -73,13 +75,13 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
   async function handleReject() {
     setError('')
-    if (!reason.trim()) return setError('Add a short reason for the rejection.')
+    if (!reason.trim()) return setError(t('Add a short reason for the rejection.'))
     setBusy(true)
     try {
       await rejectLoan(supabase, loan.id, reason.trim())
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not reject the loan.')
+      setError(err?.message || t('Could not reject the loan.'))
     } finally {
       setBusy(false)
     }
@@ -88,21 +90,32 @@ export default function LoanQueueItem({ loan, onActioned }) {
   const willFinalize = loan.approvalsCount + 1 >= loan.requiredApprovals
   const approveLabel = busy
     ? hasPriorApproval
-      ? 'Confirming…'
-      : 'Approving…'
+      ? t('Confirming…')
+      : t('Approving…')
     : willFinalize
       ? hasPriorApproval
-        ? `Confirm & disburse (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
-        : `Approve & disburse (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
-      : `Submit approval (${loan.approvalsCount + 1}/${loan.requiredApprovals})`
+        ? t('Confirm & disburse ({a}/{r})')
+            .replace('{a}', loan.approvalsCount + 1)
+            .replace('{r}', loan.requiredApprovals)
+        : t('Approve & disburse ({a}/{r})')
+            .replace('{a}', loan.approvalsCount + 1)
+            .replace('{r}', loan.requiredApprovals)
+      : t('Submit approval ({a}/{r})')
+          .replace('{a}', loan.approvalsCount + 1)
+          .replace('{r}', loan.requiredApprovals)
 
   let approvalNote = null
   if (loan.isSelf) {
-    approvalNote = "You can't approve your own loan."
+    approvalNote = t("You can't approve your own loan.")
   } else if (loan.iApproved) {
-    approvalNote = `You've already approved (${loan.approvalsCount}/${loan.requiredApprovals}). Awaiting another admin.`
+    approvalNote = t("You've already approved ({a}/{r}). Awaiting another admin.")
+      .replace('{a}', loan.approvalsCount)
+      .replace('{r}', loan.requiredApprovals)
   } else if (hasPriorApproval) {
-    approvalNote = `Approved by ${loan.approverNames.join(', ')} (${loan.approvalsCount}/${loan.requiredApprovals}).`
+    approvalNote = t('Approved by {names} ({a}/{r}).')
+      .replace('{names}', loan.approverNames.join(', '))
+      .replace('{a}', loan.approvalsCount)
+      .replace('{r}', loan.requiredApprovals)
   }
 
   return (
@@ -113,12 +126,12 @@ export default function LoanQueueItem({ loan, onActioned }) {
             <p className="font-medium text-slate-900">{loan.memberName}</p>
             {!loan.hasPriorLoan && (
               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                First-time borrower
+                {t('First-time borrower')}
               </span>
             )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Requested {formatDate(loan.requested_at?.slice(0, 10))}
+            {t('Requested {date}').replace('{date}', formatDate(loan.requested_at?.slice(0, 10)))}
           </p>
         </div>
         <p className="text-lg font-semibold text-slate-900 tabular-nums shrink-0">
@@ -133,16 +146,16 @@ export default function LoanQueueItem({ loan, onActioned }) {
       )}
 
       <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
-        <Row label="Member savings" value={formatTZS(loan.contribution)} />
-        <Row label="5× savings" value={formatTZS(loan.contributionCeiling)} />
-        <Row label="25% of pool" value={formatTZS(loan.poolCeiling)} />
+        <Row label={t('Member savings')} value={formatTZS(loan.contribution)} />
+        <Row label={t('5× savings')} value={formatTZS(loan.contributionCeiling)} />
+        <Row label={t('25% of pool')} value={formatTZS(loan.poolCeiling)} />
         <div className="border-t border-slate-200 my-1" />
-        <Row label="Max eligible" value={formatTZS(loan.maxEligible)} />
-        <Row label="Requested" value={formatTZS(loan.principal)} danger={overLimit} />
+        <Row label={t('Max eligible')} value={formatTZS(loan.maxEligible)} />
+        <Row label={t('Requested')} value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600 pt-1">
-            Exceeds the {contribBinds ? '5× savings' : '25% of pool'} cap; the database
-            will reject the approval.
+            {t('Exceeds the {cap} cap; the database will reject the approval.')
+              .replace('{cap}', contribBinds ? t('5× savings') : t('25% of pool'))}
           </p>
         )}
       </div>
@@ -153,13 +166,13 @@ export default function LoanQueueItem({ loan, onActioned }) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={2}
-            placeholder="Reason for rejection"
+            placeholder={t('Reason for rejection')}
             className="input-field"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button onClick={handleReject} disabled={busy} className="btn-danger flex-1">
-              {busy ? 'Rejecting…' : 'Confirm reject'}
+              {busy ? t('Rejecting…') : t('Confirm reject')}
             </button>
             <button
               onClick={() => {
@@ -168,7 +181,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
               }}
               className="btn-secondary flex-1"
             >
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         </div>
@@ -177,13 +190,13 @@ export default function LoanQueueItem({ loan, onActioned }) {
           {hasPriorApproval ? (
             <div>
               <p className="text-sm font-medium text-slate-700 mb-1">
-                Disbursement proof (from first approver)
+                {t('Disbursement proof (from first approver)')}
               </p>
               {proofUrl ? (
                 <a href={proofUrl} target="_blank" rel="noreferrer">
                   <img
                     src={proofUrl}
-                    alt="Disbursement proof"
+                    alt={t('Disbursement proof')}
                     className="max-h-48 rounded-lg border border-slate-100"
                   />
                 </a>
@@ -193,13 +206,13 @@ export default function LoanQueueItem({ loan, onActioned }) {
                   disabled={loadingProof}
                   className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
                 >
-                  {loadingProof ? 'Loading…' : 'View proof'}
+                  {loadingProof ? t('Loading…') : t('View proof')}
                 </button>
               )}
             </div>
           ) : (
             <div>
-              <p className="text-sm font-medium text-slate-700 mb-1">Disbursement proof</p>
+              <p className="text-sm font-medium text-slate-700 mb-1">{t('Disbursement proof')}</p>
               <UploadZone file={file} onSelect={setFile} />
             </div>
           )}
@@ -213,7 +226,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
               {approveLabel}
             </button>
             <button onClick={() => setRejecting(true)} className="btn-secondary">
-              Reject
+              {t('Reject')}
             </button>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approvePoolEdit, cancelPoolEdit } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger, accent }) {
   return (
@@ -25,6 +26,7 @@ function Row({ label, value, danger, accent }) {
 }
 
 function EditItem({ request, stats, onActioned }) {
+  const { t } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -41,7 +43,7 @@ function EditItem({ request, stats, onActioned }) {
       await approvePoolEdit(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not approve the edit.')
+      setError(err?.message || t('Could not approve the edit.'))
     } finally {
       setBusy(false)
     }
@@ -49,13 +51,13 @@ function EditItem({ request, stats, onActioned }) {
 
   async function handleCancel() {
     setError('')
-    if (!window.confirm('Cancel this pool edit request?')) return
+    if (!window.confirm(t('Cancel this pool edit request?'))) return
     setBusy(true)
     try {
       await cancelPoolEdit(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not cancel.')
+      setError(err?.message || t('Could not cancel.'))
     } finally {
       setBusy(false)
     }
@@ -63,28 +65,38 @@ function EditItem({ request, stats, onActioned }) {
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy
-    ? 'Working…'
+    ? t('Working…')
     : willFinalize
-      ? `Approve & apply (${request.approvalsCount + 1}/${request.requiredApprovals})`
-      : `Submit approval (${request.approvalsCount + 1}/${request.requiredApprovals})`
+      ? t('Approve & apply ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
+      : t('Submit approval ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
 
   let note = null
   if (request.isRequester) {
-    note = "You opened this request — you can't vote on it. Awaiting other admins."
+    note = t("You opened this request — you can't vote on it. Awaiting other admins.")
   } else if (request.iApproved) {
-    note = `You've already approved (${request.approvalsCount}/${request.requiredApprovals}). Awaiting another admin.`
+    note = t("You've already approved ({a}/{r}). Awaiting another admin.")
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   } else if (request.approvalsCount > 0) {
-    note = `Approved by ${request.approverNames.join(', ')} (${request.approvalsCount}/${request.requiredApprovals}).`
+    note = t('Approved by {names} ({a}/{r}).')
+      .replace('{names}', request.approverNames.join(', '))
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   }
 
   return (
     <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-slate-900">Adjust group pool</p>
+          <p className="font-medium text-slate-900">{t('Adjust group pool')}</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Requested by {request.requesterName} ·{' '}
-            {formatDate(request.created_at?.slice(0, 10))}
+            {t('Requested by {name} · {date}')
+              .replace('{name}', request.requesterName)
+              .replace('{date}', formatDate(request.created_at?.slice(0, 10)))}
           </p>
         </div>
         <p
@@ -104,22 +116,22 @@ function EditItem({ request, stats, onActioned }) {
       )}
 
       <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 space-y-1">
-        <Row label="Current pool" value={formatTZS(currentPool)} />
+        <Row label={t('Current pool')} value={formatTZS(currentPool)} />
         <Row
-          label="After edit · pool"
+          label={t('After edit · pool')}
           value={formatTZS(projectedPool)}
           danger={projectedPool < 0}
           accent={delta > 0}
         />
-        <Row label="Current total assets" value={formatTZS(currentTotal)} />
+        <Row label={t('Current total assets')} value={formatTZS(currentTotal)} />
         <Row
-          label="After edit · total assets"
+          label={t('After edit · total assets')}
           value={formatTZS(projectedTotal)}
           accent={delta > 0}
         />
         {request.reason && (
           <p className="text-xs text-slate-500 mt-2">
-            <span className="font-medium text-slate-700">Reason:</span> {request.reason}
+            <span className="font-medium text-slate-700">{t('Reason:')}</span> {request.reason}
           </p>
         )}
       </div>
@@ -135,7 +147,7 @@ function EditItem({ request, stats, onActioned }) {
           {approveLabel}
         </button>
         <button onClick={handleCancel} disabled={busy} className="btn-secondary">
-          Cancel request
+          {t('Cancel request')}
         </button>
       </div>
     </div>
@@ -143,12 +155,13 @@ function EditItem({ request, stats, onActioned }) {
 }
 
 export default function PoolEditQueue({ pendingPoolEdits, stats, onActioned }) {
+  const { t } = useLanguage()
   if (!pendingPoolEdits || pendingPoolEdits.length === 0) return null
 
   return (
     <section className="rounded-2xl border border-sky-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-sky-700 mb-3">
-        Pending total-assets edits ({pendingPoolEdits.length})
+        {t('Pending total-assets edits ({n})').replace('{n}', pendingPoolEdits.length)}
       </h2>
       <div className="space-y-3">
         {pendingPoolEdits.map((r) => (

@@ -4,6 +4,7 @@
 // pressed/hover state on the dashed area, error placed near the field (§8).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { validateProofFile } from '../../lib/storage'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function UploadIcon() {
   return (
@@ -16,6 +17,7 @@ function UploadIcon() {
 }
 
 export default function UploadZone({ file, onSelect }) {
+  const { t } = useLanguage()
   const inputRef = useRef(null)
   const [error, setError] = useState('')
 
@@ -57,14 +59,14 @@ export default function UploadZone({ file, onSelect }) {
             <span className="grid place-items-center w-10 h-10 rounded-full bg-white ring-1 ring-slate-200 group-hover:ring-emerald-200 transition-colors">
               <UploadIcon />
             </span>
-            <span className="font-medium">Tap to upload screenshot</span>
-            <span className="text-xs text-slate-400">JPG, PNG, or WebP — up to 5 MB</span>
+            <span className="font-medium">{t('Tap to upload screenshot')}</span>
+            <span className="text-xs text-slate-400">{t('JPG, PNG, or WebP — up to 5 MB')}</span>
           </span>
         )}
       </button>
       {file && (
         <p className="mt-2 text-xs text-slate-500 truncate">
-          <span className="text-slate-400">Selected:</span> {file.name}
+          <span className="text-slate-400">{t('Selected:')}</span> {file.name}
         </p>
       )}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

@@ -3,8 +3,10 @@
 // UI/UX Pro Max: motion-meaning (segment fill = progress), state clarity
 // (paid / overdue / cancelled / pending), tabular nums.
 import { formatDate, formatTZS } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 export default function LoanProgressBar({ loan, installments }) {
+  const { t } = useLanguage()
   if (!loan || loan.status !== 'active' || !installments?.length) return null
 
   const paidCount = installments.filter((i) => i.computed_status === 'paid').length
@@ -14,10 +16,12 @@ export default function LoanProgressBar({ loan, installments }) {
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-baseline justify-between mb-3">
         <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">
-          Loan progress
+          {t('Loan progress')}
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
-          {paidCount} / {installments.length} paid
+          {t('{paid} / {total} paid')
+            .replace('{paid}', paidCount)
+            .replace('{total}', installments.length)}
         </span>
       </div>
 
@@ -43,7 +47,9 @@ export default function LoanProgressBar({ loan, installments }) {
                       ? 'bg-slate-200/60'
                       : 'bg-slate-200'
               }`}
-              title={`Installment ${i.installment_number}: ${i.computed_status}`}
+              title={t('Installment {n}: {status}')
+                .replace('{n}', i.installment_number)
+                .replace('{status}', i.computed_status)}
             />
           )
         })}
@@ -51,12 +57,14 @@ export default function LoanProgressBar({ loan, installments }) {
 
       {nextUnpaid ? (
         <p className="text-xs text-slate-500 tabular-nums">
-          Next: installment {nextUnpaid.installment_number} ·{' '}
-          {formatTZS(nextUnpaid.total_with_penalty)} due {formatDate(nextUnpaid.due_date)}
+          {t('Next: installment {n} · {amount} due {date}')
+            .replace('{n}', nextUnpaid.installment_number)
+            .replace('{amount}', formatTZS(nextUnpaid.total_with_penalty))
+            .replace('{date}', formatDate(nextUnpaid.due_date))}
         </p>
       ) : (
         <p className="text-xs font-medium text-emerald-700">
-          All installments paid — loan will close shortly.
+          {t('All installments paid — loan will close shortly.')}
         </p>
       )}
     </section>

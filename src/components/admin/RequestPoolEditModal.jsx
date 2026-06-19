@@ -6,17 +6,19 @@ import Modal from '../ui/Modal'
 import { supabase } from '../../supabaseClient'
 import { formatTZS } from '../../lib/format'
 import { requestPoolEdit } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function DirectionToggle({ direction, onChange }) {
+  const { t } = useLanguage()
   const opts = [
     {
       key: 'increase',
-      label: 'Increase',
+      label: t('Increase'),
       active: 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-emerald-200',
     },
     {
       key: 'decrease',
-      label: 'Decrease',
+      label: t('Decrease'),
       active: 'border-red-500 bg-red-50 text-red-700 ring-red-200',
     },
   ]
@@ -41,6 +43,7 @@ function DirectionToggle({ direction, onChange }) {
 }
 
 function Form({ stats, onSubmitted, onClose }) {
+  const { t } = useLanguage()
   const [direction, setDirection] = useState('increase')
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
@@ -56,11 +59,12 @@ function Form({ stats, onSubmitted, onClose }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (!(amountNum > 0)) return setError('Enter an amount greater than zero.')
-    if (!reason.trim()) return setError('A reason is required for every pool edit.')
+    if (!(amountNum > 0)) return setError(t('Enter an amount greater than zero.'))
+    if (!reason.trim()) return setError(t('A reason is required for every pool edit.'))
     if (wouldGoNegative) {
       return setError(
-        `This would leave the pool negative (${formatTZS(previewPool)}). Choose a smaller decrease.`,
+        t('This would leave the pool negative ({amount}). Choose a smaller decrease.')
+          .replace('{amount}', formatTZS(previewPool)),
       )
     }
     setBusy(true)
@@ -69,7 +73,7 @@ function Form({ stats, onSubmitted, onClose }) {
       onSubmitted?.()
       onClose()
     } catch (err) {
-      setError(err?.message || 'Could not open the pool edit request.')
+      setError(err?.message || t('Could not open the pool edit request.'))
     } finally {
       setBusy(false)
     }
@@ -79,11 +83,11 @@ function Form({ stats, onSubmitted, onClose }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <div className="flex justify-between">
-          <span className="text-slate-500">Current pool</span>
+          <span className="text-slate-500">{t('Current pool')}</span>
           <span className="text-slate-900 tabular-nums">{formatTZS(stats?.pool ?? 0)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Current total assets</span>
+          <span className="text-slate-500">{t('Current total assets')}</span>
           <span className="text-slate-900 tabular-nums">
             {formatTZS(stats?.totalAssets ?? stats?.pool ?? 0)}
           </span>
@@ -93,7 +97,7 @@ function Form({ stats, onSubmitted, onClose }) {
       <DirectionToggle direction={direction} onChange={setDirection} />
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Amount (TSh)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Amount (TSh)')}</label>
         <input
           type="number"
           min="0"
@@ -109,18 +113,20 @@ function Form({ stats, onSubmitted, onClose }) {
               wouldGoNegative ? 'text-red-600' : 'text-slate-500'
             }`}
           >
-            After approval: pool {formatTZS(previewPool)} · total assets {formatTZS(previewTotal)}.
+            {t('After approval: pool {pool} · total assets {total}.')
+              .replace('{pool}', formatTZS(previewPool))
+              .replace('{total}', formatTZS(previewTotal))}
           </p>
         )}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Reason')}</label>
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
-          placeholder="e.g. recorded interest from external account, or correction of a deposit mis-entry"
+          placeholder={t('e.g. recorded interest from external account, or correction of a deposit mis-entry')}
           className="input-field"
         />
       </div>
@@ -128,8 +134,7 @@ function Form({ stats, onSubmitted, onClose }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 text-xs text-amber-800">
-        Two <strong>other</strong> admins must approve this edit before it applies. You can't
-        approve your own request.
+        {t("Two other admins must approve this edit before it applies. You can't approve your own request.")}
       </div>
 
       <div className="flex gap-2">
@@ -138,10 +143,10 @@ function Form({ stats, onSubmitted, onClose }) {
           disabled={busy}
           className="flex-1 inline-flex items-center justify-center min-h-11 rounded-xl bg-sky-600 text-white text-sm font-medium px-4 transition-all duration-150 hover:bg-sky-700 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_1px_2px_-1px_rgba(2,132,199,0.5)]"
         >
-          {busy ? 'Submitting…' : 'Submit edit'}
+          {busy ? t('Submitting…') : t('Submit edit')}
         </button>
         <button type="button" onClick={onClose} className="btn-secondary">
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </form>
@@ -149,8 +154,9 @@ function Form({ stats, onSubmitted, onClose }) {
 }
 
 export default function RequestPoolEditModal({ open, onClose, stats, onSubmitted }) {
+  const { t } = useLanguage()
   return (
-    <Modal open={open} onClose={onClose} title="Edit group total assets">
+    <Modal open={open} onClose={onClose} title={t('Edit group total assets')}>
       {open && <Form stats={stats} onSubmitted={onSubmitted} onClose={onClose} />}
     </Modal>
   )

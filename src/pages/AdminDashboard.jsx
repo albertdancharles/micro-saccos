@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../hooks/useLanguage'
 import { useAdminData } from '../hooks/useAdminData'
 import { signOut } from '../lib/auth'
 import { supabase } from '../supabaseClient'
@@ -13,6 +14,7 @@ import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
 import PoolChart from '../components/admin/PoolChart'
 import NotificationsBell from '../components/ui/NotificationsBell'
+import LangToggle from '../components/ui/LangToggle'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 import SavingsEditQueue from '../components/admin/SavingsEditQueue'
@@ -24,6 +26,7 @@ import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const admin = useAdminData()
   const { refresh } = admin
@@ -52,37 +55,38 @@ export default function AdminDashboard() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              Micro-SACCOS · Admin
+              {t('Micro-SACCOS · Admin')}
             </p>
             <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
               {profile?.full_name || user?.email}
             </h1>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <LangToggle />
             <NotificationsBell />
             <Link
               to="/dashboard"
               className="text-sm font-medium text-slate-500 hover:text-slate-800"
             >
-              My view
+              {t('My view')}
             </Link>
             <Link
               to="/admin/audit"
               className="text-sm font-medium text-slate-500 hover:text-slate-800"
             >
-              Audit
+              {t('Audit')}
             </Link>
             <Link
               to="/profile"
               className="text-sm font-medium text-slate-500 hover:text-slate-800"
             >
-              Profile
+              {t('Profile')}
             </Link>
             <button
               onClick={handleSignOut}
               className="text-sm font-medium text-slate-500 hover:text-slate-800"
             >
-              Sign out
+              {t('Sign out')}
             </button>
           </div>
         </div>
@@ -96,7 +100,7 @@ export default function AdminDashboard() {
         )}
 
         {admin.loading ? (
-          <p className="text-center text-slate-400 py-8">Loading…</p>
+          <p className="text-center text-slate-400 py-8">{t('Loading…')}</p>
         ) : (
           <>
             <AdminSummaryCards
@@ -131,7 +135,7 @@ export default function AdminDashboard() {
                 onClick={() => setAddOpen(true)}
                 className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-emerald-700 text-sm font-medium px-4 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50 hover:ring-emerald-300 active:scale-[0.99] transition-all duration-150"
               >
-                + Add member
+                {t('+ Add member')}
               </button>
             </div>
             <MemberGrid

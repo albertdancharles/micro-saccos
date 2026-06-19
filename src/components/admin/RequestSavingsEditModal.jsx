@@ -7,17 +7,19 @@ import Modal from '../ui/Modal'
 import { supabase } from '../../supabaseClient'
 import { formatTZS } from '../../lib/format'
 import { requestSavingsEdit } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function DirectionToggle({ direction, onChange }) {
+  const { t } = useLanguage()
   const opts = [
     {
       key: 'increase',
-      label: 'Increase',
+      label: t('Increase'),
       active: 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-emerald-200',
     },
     {
       key: 'decrease',
-      label: 'Decrease',
+      label: t('Decrease'),
       active: 'border-red-500 bg-red-50 text-red-700 ring-red-200',
     },
   ]
@@ -42,6 +44,7 @@ function DirectionToggle({ direction, onChange }) {
 }
 
 function Form({ target, onSubmitted, onClose }) {
+  const { t } = useLanguage()
   const [direction, setDirection] = useState('increase')
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
@@ -56,11 +59,13 @@ function Form({ target, onSubmitted, onClose }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (!(amountNum > 0)) return setError('Enter an amount greater than zero.')
-    if (!reason.trim()) return setError('A reason is required for every savings edit.')
+    if (!(amountNum > 0)) return setError(t('Enter an amount greater than zero.'))
+    if (!reason.trim()) return setError(t('A reason is required for every savings edit.'))
     if (wouldGoNegative) {
       return setError(
-        `This would leave ${target.name} with a negative balance (${formatTZS(previewSavings)}).`,
+        t('This would leave {name} with a negative balance ({amount}).')
+          .replace('{name}', target.name)
+          .replace('{amount}', formatTZS(previewSavings)),
       )
     }
     setBusy(true)
@@ -69,7 +74,7 @@ function Form({ target, onSubmitted, onClose }) {
       onSubmitted?.()
       onClose()
     } catch (err) {
-      setError(err?.message || 'Could not open the savings edit request.')
+      setError(err?.message || t('Could not open the savings edit request.'))
     } finally {
       setBusy(false)
     }
@@ -79,11 +84,11 @@ function Form({ target, onSubmitted, onClose }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <div className="flex justify-between">
-          <span className="text-slate-500">Member</span>
+          <span className="text-slate-500">{t('Member')}</span>
           <span className="text-slate-900">{target.name}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Current savings</span>
+          <span className="text-slate-500">{t('Current savings')}</span>
           <span className="text-slate-900 tabular-nums">{formatTZS(target.savings)}</span>
         </div>
       </div>
@@ -91,7 +96,7 @@ function Form({ target, onSubmitted, onClose }) {
       <DirectionToggle direction={direction} onChange={setDirection} />
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Amount (TSh)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Amount (TSh)')}</label>
         <input
           type="number"
           min="0"
@@ -107,18 +112,18 @@ function Form({ target, onSubmitted, onClose }) {
               wouldGoNegative ? 'text-red-600' : 'text-slate-500'
             }`}
           >
-            New savings would be {formatTZS(previewSavings)}.
+            {t('New savings would be {amount}.').replace('{amount}', formatTZS(previewSavings))}
           </p>
         )}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Reason')}</label>
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
-          placeholder="e.g. correction of a missed deposit on 2026-04-15"
+          placeholder={t('e.g. correction of a missed deposit on 2026-04-15')}
           className="input-field"
         />
       </div>
@@ -126,16 +131,15 @@ function Form({ target, onSubmitted, onClose }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 text-xs text-amber-800">
-        Two <strong>other</strong> admins must approve this edit before it applies. You can't
-        approve your own request.
+        {t("Two other admins must approve this edit before it applies. You can't approve your own request.")}
       </div>
 
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className="btn-primary flex-1">
-          {busy ? 'Submitting…' : 'Submit edit'}
+          {busy ? t('Submitting…') : t('Submit edit')}
         </button>
         <button type="button" onClick={onClose} className="btn-secondary">
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </form>
@@ -143,8 +147,9 @@ function Form({ target, onSubmitted, onClose }) {
 }
 
 export default function RequestSavingsEditModal({ open, onClose, target, onSubmitted }) {
+  const { t } = useLanguage()
   return (
-    <Modal open={open} onClose={onClose} title="Edit member savings">
+    <Modal open={open} onClose={onClose} title={t('Edit member savings')}>
       {open && target && <Form target={target} onSubmitted={onSubmitted} onClose={onClose} />}
     </Modal>
   )

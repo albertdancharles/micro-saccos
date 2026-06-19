@@ -13,11 +13,13 @@ import { supabase } from '../../supabaseClient'
 import { useAuth } from '../../hooks/useAuth'
 import { getSavingsHistory } from '../../lib/charts'
 import { formatTZS, formatMonth } from '../../lib/format'
+import { useLanguage } from '../../hooks/useLanguage'
 
 const fmtMonthShort = (s) => (s ? formatMonth(`${s}-01`) : '')
 
 export default function SavingsChart({ memberId: overrideMemberId = null }) {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const memberId = overrideMemberId ?? user?.id ?? null
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +54,7 @@ export default function SavingsChart({ memberId: overrideMemberId = null }) {
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900 mb-3">My savings over time</h2>
+      <h2 className="text-sm font-semibold text-gray-900 mb-3">{t('My savings over time')}</h2>
       <div className="h-48 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -70,7 +72,7 @@ export default function SavingsChart({ memberId: overrideMemberId = null }) {
             <Tooltip
               contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#e5e7eb' }}
               labelFormatter={fmtMonthShort}
-              formatter={(v) => [formatTZS(v), 'Savings']}
+              formatter={(v) => [formatTZS(v), t('Savings')]}
             />
             <Line
               type="monotone"

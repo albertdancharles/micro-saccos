@@ -2,6 +2,7 @@
 // "/" sends admins to /admin and members to /dashboard.
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
+import { LanguageProvider } from './hooks/useLanguage'
 import ProtectedRoute from './routes/ProtectedRoute'
 import RoleHome from './routes/RoleHome'
 import Login from './pages/Login'
@@ -14,6 +15,7 @@ import ViewMember from './pages/ViewMember'
 
 export default function App() {
   return (
+    <LanguageProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -36,5 +38,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </LanguageProvider>
   )
 }

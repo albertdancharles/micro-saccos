@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveMemberDeletion, cancelMemberDeletion } from '../../lib/admin'
+import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger }) {
   return (
@@ -20,6 +21,7 @@ function Row({ label, value, danger }) {
 }
 
 function DeletionItem({ request, onActioned }) {
+  const { t } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -33,7 +35,7 @@ function DeletionItem({ request, onActioned }) {
       await approveMemberDeletion(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not approve the deletion.')
+      setError(err?.message || t('Could not approve the deletion.'))
     } finally {
       setBusy(false)
     }
@@ -41,13 +43,13 @@ function DeletionItem({ request, onActioned }) {
 
   async function handleCancel() {
     setError('')
-    if (!window.confirm('Cancel this deletion request?')) return
+    if (!window.confirm(t('Cancel this deletion request?'))) return
     setBusy(true)
     try {
       await cancelMemberDeletion(supabase, request.id)
       onActioned?.()
     } catch (err) {
-      setError(err?.message || 'Could not cancel.')
+      setError(err?.message || t('Could not cancel.'))
     } finally {
       setBusy(false)
     }
@@ -55,33 +57,45 @@ function DeletionItem({ request, onActioned }) {
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy
-    ? 'Working…'
+    ? t('Working…')
     : willFinalize
-      ? `Approve & delete (${request.approvalsCount + 1}/${request.requiredApprovals})`
-      : `Submit approval (${request.approvalsCount + 1}/${request.requiredApprovals})`
+      ? t('Approve & delete ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
+      : t('Submit approval ({a}/{r})')
+          .replace('{a}', request.approvalsCount + 1)
+          .replace('{r}', request.requiredApprovals)
 
   let note = null
   if (request.isSelf) {
-    note = "You can't approve your own deletion."
+    note = t("You can't approve your own deletion.")
   } else if (request.iApproved) {
-    note = `You've already approved (${request.approvalsCount}/${request.requiredApprovals}). Awaiting another admin.`
+    note = t("You've already approved ({a}/{r}). Awaiting another admin.")
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   } else if (request.approvalsCount > 0) {
-    note = `Approved by ${request.approverNames.join(', ')} (${request.approvalsCount}/${request.requiredApprovals}).`
+    note = t('Approved by {names} ({a}/{r}).')
+      .replace('{names}', request.approverNames.join(', '))
+      .replace('{a}', request.approvalsCount)
+      .replace('{r}', request.requiredApprovals)
   }
 
   return (
     <div className="rounded-xl border border-red-200/80 bg-red-50/40 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-slate-900">Delete {name}</p>
+          <p className="font-medium text-slate-900">
+            {t('Delete {name}').replace('{name}', name)}
+          </p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Requested by {request.requesterName} ·{' '}
-            {formatDate(request.created_at?.slice(0, 10))}
+            {t('Requested by {name} · {date}')
+              .replace('{name}', request.requesterName)
+              .replace('{date}', formatDate(request.created_at?.slice(0, 10)))}
           </p>
         </div>
         {snap.role === 'admin' && (
           <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
-            admin
+            {t('admin')}
           </span>
         )}
       </div>
@@ -93,16 +107,16 @@ function DeletionItem({ request, onActioned }) {
       )}
 
       <div className="rounded-lg bg-white ring-1 ring-inset ring-slate-100 p-3 space-y-1">
-        <Row label="Email" value={snap.email || '—'} />
-        <Row label="Phone" value={snap.phone_number || '—'} />
+        <Row label={t('Email')} value={snap.email || '—'} />
+        <Row label={t('Phone')} value={snap.phone_number || '—'} />
         <Row
-          label="Total savings (will be lost)"
+          label={t('Total savings (will be lost)')}
           value={formatTZS(request.targetSavings)}
           danger
         />
         {request.reason && (
           <p className="text-xs text-slate-500 mt-2">
-            <span className="font-medium text-slate-700">Reason:</span> {request.reason}
+            <span className="font-medium text-slate-700">{t('Reason:')}</span> {request.reason}
           </p>
         )}
       </div>
@@ -118,7 +132,7 @@ function DeletionItem({ request, onActioned }) {
           {approveLabel}
         </button>
         <button onClick={handleCancel} disabled={busy} className="btn-secondary">
-          Cancel request
+          {t('Cancel request')}
         </button>
       </div>
     </div>
@@ -126,12 +140,13 @@ function DeletionItem({ request, onActioned }) {
 }
 
 export default function DeletionRequestsQueue({ pendingDeletions, onActioned }) {
+  const { t } = useLanguage()
   if (!pendingDeletions || pendingDeletions.length === 0) return null
 
   return (
     <section className="rounded-2xl border border-red-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-red-700 mb-3">
-        Pending member deletions ({pendingDeletions.length})
+        {t('Pending member deletions ({n})').replace('{n}', pendingDeletions.length)}
       </h2>
       <div className="space-y-3">
         {pendingDeletions.map((r) => (

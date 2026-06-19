@@ -3,6 +3,7 @@
 // focus-visible ring, soft-shadow popover with backdrop-blur, refined dot tokens.
 import { useEffect, useRef, useState } from 'react'
 import { useNotifications } from '../../hooks/useNotifications'
+import { useLanguage } from '../../hooks/useLanguage'
 
 const KIND_DOT = {
   submission_approved: 'bg-emerald-500',
@@ -20,13 +21,13 @@ const KIND_DOT = {
   role_changed: 'bg-emerald-500',
 }
 
-function relativeTime(iso) {
+function relativeTime(iso, t) {
   if (!iso) return ''
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-  if (seconds < 60) return 'just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  return `${Math.floor(seconds / 86400)}d ago`
+  if (seconds < 60) return t('just now')
+  if (seconds < 3600) return t('{n}m ago').replace('{n}', Math.floor(seconds / 60))
+  if (seconds < 86400) return t('{n}h ago').replace('{n}', Math.floor(seconds / 3600))
+  return t('{n}d ago').replace('{n}', Math.floor(seconds / 86400))
 }
 
 function BellIcon() {
@@ -50,6 +51,7 @@ function BellIcon() {
 
 export default function NotificationsBell() {
   const { items, unreadCount, markAllRead } = useNotifications()
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -74,7 +76,7 @@ export default function NotificationsBell() {
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100/70 transition-colors"
-        aria-label={`Notifications${unreadCount ? ` (${unreadCount} unread)` : ''}`}
+        aria-label={`${t('Notifications')}${unreadCount ? ` (${unreadCount} unread)` : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -90,23 +92,23 @@ export default function NotificationsBell() {
         <div
           data-sheet-enter
           role="dialog"
-          aria-label="Notifications"
+          aria-label={t('Notifications')}
           className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl bg-white/95 backdrop-blur shadow-[0_6px_14px_-8px_rgba(15,23,42,0.12),0_12px_32px_-16px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 z-30"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur">
-            <p className="text-sm font-semibold tracking-tight text-slate-900">Notifications</p>
+            <p className="text-sm font-semibold tracking-tight text-slate-900">{t('Notifications')}</p>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
                 className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2"
               >
-                Mark all read
+                {t('Mark all read')}
               </button>
             )}
           </div>
           {items.length === 0 ? (
             <p className="px-4 py-8 text-sm text-slate-400 text-center">
-              No notifications yet.
+              {t('No notifications yet.')}
             </p>
           ) : (
             <ul className="divide-y divide-slate-100">
@@ -127,7 +129,7 @@ export default function NotificationsBell() {
                       <p className="text-sm font-medium text-slate-900">{n.title}</p>
                       {n.body && <p className="text-xs text-slate-500 mt-0.5">{n.body}</p>}
                       <p className="text-xs text-slate-400 mt-1 tabular-nums">
-                        {relativeTime(n.created_at)}
+                        {relativeTime(n.created_at, t)}
                       </p>
                     </div>
                   </div>

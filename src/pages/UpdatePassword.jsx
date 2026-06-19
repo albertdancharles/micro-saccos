@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { updatePassword } from '../lib/auth'
 import { supabase } from '../supabaseClient'
+import { useLanguage } from '../hooks/useLanguage'
 
 export default function UpdatePassword() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
@@ -32,14 +34,14 @@ export default function UpdatePassword() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (password.length < 8) return setError('Use at least 8 characters.')
-    if (password !== confirm) return setError('Passwords do not match.')
+    if (password.length < 8) return setError(t('Use at least 8 characters.'))
+    if (password !== confirm) return setError(t('Passwords do not match.'))
     setBusy(true)
     try {
       await updatePassword(password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err?.message || 'Could not update your password.')
+      setError(err?.message || t('Could not update your password.'))
     } finally {
       setBusy(false)
     }
@@ -55,23 +57,23 @@ export default function UpdatePassword() {
         <div className="mx-auto w-full max-w-sm">
           <div className="text-center mb-8">
             <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">
-              Set a new password
+              {t('Set a new password')}
             </h1>
-            <p className="mt-1 text-sm text-slate-500">Choose something you'll remember.</p>
+            <p className="mt-1 text-sm text-slate-500">{t("Choose something you'll remember.")}</p>
           </div>
 
           {checking ? (
-            <p className="text-center text-sm text-slate-400">Checking your link…</p>
+            <p className="text-center text-sm text-slate-400">{t('Checking your link…')}</p>
           ) : !hasSession ? (
             <div className="rounded-2xl bg-white p-6 text-center shadow-[0_16px_48px_-24px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 space-y-3">
               <p className="text-sm text-slate-600">
-                This reset link is invalid or has expired.
+                {t('This reset link is invalid or has expired.')}
               </p>
               <button
                 onClick={() => navigate('/login', { replace: true })}
                 className="btn-primary w-full"
               >
-                Back to sign in
+                {t('Back to sign in')}
               </button>
             </div>
           ) : (
@@ -81,7 +83,7 @@ export default function UpdatePassword() {
             >
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  New password
+                  {t('New password')}
                 </label>
                 <input
                   id="password"
@@ -91,13 +93,13 @@ export default function UpdatePassword() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="input-field"
-                  placeholder="At least 8 characters"
+                  placeholder={t('At least 8 characters')}
                 />
               </div>
 
               <div>
                 <label htmlFor="confirm" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Confirm password
+                  {t('Confirm password')}
                 </label>
                 <input
                   id="confirm"
@@ -107,7 +109,7 @@ export default function UpdatePassword() {
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   className="input-field"
-                  placeholder="Re-enter password"
+                  placeholder={t('Re-enter password')}
                 />
               </div>
 
@@ -118,7 +120,7 @@ export default function UpdatePassword() {
               )}
 
               <button type="submit" disabled={busy} className="btn-primary w-full">
-                {busy ? 'Saving…' : 'Save password'}
+                {busy ? t('Saving…') : t('Save password')}
               </button>
             </form>
           )}
