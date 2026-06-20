@@ -1,7 +1,7 @@
 // Admin dashboard (build plan §9, item 31). Calls ensure_current_fees() on mount
 // (same safety net as the member dashboard) then renders the summary, member grid,
 // and approvals queue. Approving/rejecting refreshes the data.
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
@@ -12,7 +12,6 @@ import AdminSummaryCards from '../components/admin/AdminSummaryCards'
 import MemberGrid from '../components/admin/MemberGrid'
 import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
-import PoolChart from '../components/admin/PoolChart'
 import NotificationsBell from '../components/ui/NotificationsBell'
 import LangToggle from '../components/ui/LangToggle'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
@@ -23,6 +22,10 @@ import RoleChangeQueue from '../components/admin/RoleChangeQueue'
 import RequestRoleChangeModal from '../components/admin/RequestRoleChangeModal'
 import PoolEditQueue from '../components/admin/PoolEditQueue'
 import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
+
+// Lazy-loaded so recharts lands in its own async chunk, off the dashboard's first
+// paint. PoolChart renders its own "Loading…" state, so a null fallback is fine.
+const PoolChart = lazy(() => import('../components/admin/PoolChart'))
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -107,7 +110,9 @@ export default function AdminDashboard() {
               stats={admin.stats}
               onEditTotalAssets={() => setPoolEditOpen(true)}
             />
-            <PoolChart />
+            <Suspense fallback={null}>
+              <PoolChart />
+            </Suspense>
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
               pendingPayments={admin.pendingPayments}

@@ -1,7 +1,7 @@
 // Member dashboard (build plan §9, item 23). Calls ensure_current_fees() on mount
 // (self-healing fee generation, §8c-bis) then loads the summary and renders the
 // member flows. A "Log transaction" sheet feeds new proofs into the approvals queue.
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
@@ -14,10 +14,14 @@ import RepaymentSchedule from '../components/member/RepaymentSchedule'
 import LoanRequestForm from '../components/member/LoanRequestForm'
 import LogTransactionSheet from '../components/member/LogTransactionSheet'
 import History from '../components/member/History'
-import SavingsChart from '../components/member/SavingsChart'
 import LoanProgressBar from '../components/member/LoanProgressBar'
 import NotificationsBell from '../components/ui/NotificationsBell'
 import LangToggle from '../components/ui/LangToggle'
+
+// Lazy-loaded so recharts lands in its own async chunk and stays off the dashboard's
+// first paint. SavingsChart renders nothing until it has data, so a null fallback is
+// visually seamless.
+const SavingsChart = lazy(() => import('../components/member/SavingsChart'))
 
 export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const { profile, user } = useAuth()
@@ -147,7 +151,9 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
               installments={summary.installments}
               currentMonthKey={summary.currentMonthKey}
             />
-            <SavingsChart memberId={viewAs} />
+            <Suspense fallback={null}>
+              <SavingsChart memberId={viewAs} />
+            </Suspense>
             {!isView && (
               <LoanRequestForm
                 memberId={user?.id}
