@@ -14,6 +14,7 @@ import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
 import NotificationsBell from '../components/ui/NotificationsBell'
 import LangToggle from '../components/ui/LangToggle'
+import PendingMembersQueue from '../components/admin/PendingMembersQueue'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 import SavingsEditQueue from '../components/admin/SavingsEditQueue'
@@ -113,6 +114,7 @@ export default function AdminDashboard() {
             <Suspense fallback={null}>
               <PoolChart />
             </Suspense>
+            <PendingMembersQueue pendingMembers={admin.pendingMembers} onActioned={refresh} />
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
               pendingPayments={admin.pendingPayments}

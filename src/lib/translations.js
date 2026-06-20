@@ -61,6 +61,61 @@ const sw = {
   'Could not change password.': 'Haikuweza kubadilisha nywila.',
   'Could not update your password.': 'Haikuweza kusasisha nywila yako.',
 
+  // Sign up / Google / onboarding (v3)
+  'or': 'au',
+  'New here?': 'Mgeni hapa?',
+  'Create an account': 'Fungua akaunti',
+  'Create your account': 'Fungua akaunti yako',
+  'Create account': 'Fungua akaunti',
+  'Already have an account?': 'Una akaunti tayari?',
+  'Continue with Google': 'Endelea na Google',
+  'Sign up with Google': 'Jisajili na Google',
+  'Redirecting…': 'Inaelekeza…',
+  'Could not start Google sign-in.': 'Haikuweza kuanzisha kuingia kwa Google.',
+  'or with email': 'au kwa barua pepe',
+  'Enter your email.': 'Weka barua pepe yako.',
+  'Password must be at least 8 characters.': 'Nywila lazima iwe na angalau herufi 8.',
+  'Please fill in all required fields.': 'Tafadhali jaza sehemu zote zinazohitajika.',
+  'Could not create your account.': 'Haikuweza kufungua akaunti yako.',
+  'Almost there — check your email to confirm your address, then sign in. An admin will review your membership.':
+    'Karibu umemaliza — angalia barua pepe yako kuthibitisha anwani yako, kisha ingia. Msimamizi atakagua uanachama wako.',
+
+  // Profile fields
+  'Additional phone (optional)': 'Simu ya ziada (hiari)',
+  'Residence': 'Makazi',
+  'e.g. Mbezi Beach, Dar es Salaam': 'mf. Mbezi Beach, Dar es Salaam',
+  'National ID (NIDA)': 'Kitambulisho cha Taifa (NIDA)',
+  'Next of kin — name': 'Ndugu wa karibu — jina',
+  'Next of kin — phone': 'Ndugu wa karibu — simu',
+  'Next of kin': 'Ndugu wa karibu',
+  'Additional phone': 'Simu ya ziada',
+
+  // Complete profile
+  'Complete your profile': 'Kamilisha wasifu wako',
+  'A few details before an admin reviews your membership.':
+    'Maelezo machache kabla msimamizi hajakagua uanachama wako.',
+  'Signed in as': 'Umeingia kama',
+  'Save and continue': 'Hifadhi na uendelee',
+  'Could not save your details.': 'Haikuweza kuhifadhi maelezo yako.',
+
+  // Pending approval
+  'Awaiting approval': 'Inasubiri idhini',
+  'Thanks, {name}! Your details are in. An admin will review and activate your account soon.':
+    'Asante, {name}! Maelezo yako yamepokelewa. Msimamizi atakagua na kuwasha akaunti yako hivi karibuni.',
+  'there': 'wewe',
+  'Check status': 'Angalia hali',
+  'Checking…': 'Inakagua…',
+
+  // Pending registrations (admin)
+  'Pending registrations ({n})': 'Usajili unaosubiri ({n})',
+  'Applied {date}': 'Aliomba {date}',
+  'pending': 'inasubiri',
+  'Approve member': 'Idhinisha mwanachama',
+  'Reject and permanently remove this applicant?':
+    'Kataa na uondoe kabisa mwombaji huyu?',
+  'Could not approve the member.': 'Haikuweza kuidhinisha mwanachama.',
+  'Could not reject the applicant.': 'Haikuweza kukataa mwombaji.',
+
   // Dashboard
   '+ Add member': '+ Ongeza mwanachama',
   'Viewing as admin': 'Inaangalia kama msimamizi',

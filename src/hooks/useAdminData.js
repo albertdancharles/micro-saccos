@@ -24,6 +24,7 @@ const EMPTY = {
   pendingSavingsEdits: [],
   pendingPoolEdits: [],
   pendingRoleChanges: [],
+  pendingMembers: [],
   currentMonthKey: '',
 }
 

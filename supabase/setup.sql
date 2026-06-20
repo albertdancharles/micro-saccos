@@ -22,28 +22,49 @@ RETURNS date AS $$
   SELECT (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date;
 $$ LANGUAGE sql STABLE;
 
--- profiles: extends auth.users. All 15 are contributing members; `role` only
--- gates permissions (Decision #1). Created automatically on signup by a trigger.
+-- profiles: extends auth.users. `role` only gates permissions (Decision #1).
+-- Created automatically on signup by a trigger. Self-registered users start
+-- PENDING (is_active=false) until an admin approves (migration 018). The richer
+-- KYC fields are collected at registration / via /complete-profile.
 CREATE TABLE profiles (
-  id            uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name     text NOT NULL,
-  phone_number  text UNIQUE,
-  role          text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
-  is_active     boolean NOT NULL DEFAULT true,
-  created_at    timestamptz NOT NULL DEFAULT now()
+  id                uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name         text NOT NULL,
+  phone_number      text UNIQUE,
+  secondary_phone   text,
+  email             text,
+  residence         text,
+  national_id       text,
+  next_of_kin_name  text,
+  next_of_kin_phone text,
+  role              text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  is_active         boolean NOT NULL DEFAULT true,
+  created_at        timestamptz NOT NULL DEFAULT now()
 );
 
 -- SECURITY DEFINER + pinned search_path: this trigger fires under the
 -- supabase_auth_admin role (GoTrue), whose search_path excludes `public`, so the
 -- table must be schema-qualified and search_path pinned or every signup fails with
--- "Database error creating new user".
+-- "Database error creating new user". Self-registered users start is_active=false
+-- (pending approval); admin-create-member flips them active after creation.
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, full_name, phone_number)
-  VALUES (NEW.id,
-          NEW.raw_user_meta_data->>'full_name',
-          NEW.raw_user_meta_data->>'phone_number');
+  INSERT INTO public.profiles (
+    id, full_name, phone_number, secondary_phone, email,
+    residence, national_id, next_of_kin_name, next_of_kin_phone, is_active
+  )
+  VALUES (
+    NEW.id,
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), split_part(NEW.email, '@', 1)),
+    NULLIF(NEW.raw_user_meta_data->>'phone_number', ''),
+    NULLIF(NEW.raw_user_meta_data->>'secondary_phone', ''),
+    NEW.email,
+    NULLIF(NEW.raw_user_meta_data->>'residence', ''),
+    NULLIF(NEW.raw_user_meta_data->>'national_id', ''),
+    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_name', ''),
+    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_phone', ''),
+    false
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -2706,3 +2727,72 @@ BEGIN
           jsonb_build_object('request_id', p_request_id));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ----------------------------------------------------------------------------
+-- 018_self_registration.sql — self-service onboarding with admin approval.
+-- ----------------------------------------------------------------------------
+
+-- A member edits ONLY their own editable fields. Never touches id/role/is_active/
+-- email, so it can't be used to self-activate or self-promote.
+CREATE OR REPLACE FUNCTION update_own_profile(
+  p_full_name        text,
+  p_phone_number     text,
+  p_secondary_phone  text,
+  p_residence        text,
+  p_national_id      text,
+  p_next_of_kin_name text,
+  p_next_of_kin_phone text
+)
+RETURNS void AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF COALESCE(NULLIF(trim(p_full_name), ''), '') = '' THEN
+    RAISE EXCEPTION 'Full name is required';
+  END IF;
+  UPDATE profiles SET
+    full_name         = trim(p_full_name),
+    phone_number      = NULLIF(trim(p_phone_number), ''),
+    secondary_phone   = NULLIF(trim(p_secondary_phone), ''),
+    residence         = NULLIF(trim(p_residence), ''),
+    national_id       = NULLIF(trim(p_national_id), ''),
+    next_of_kin_name  = NULLIF(trim(p_next_of_kin_name), ''),
+    next_of_kin_phone = NULLIF(trim(p_next_of_kin_phone), '')
+  WHERE id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Admin activates a pending sign-up (single-admin, like admin-create-member).
+CREATE OR REPLACE FUNCTION approve_member(p_member_id uuid)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE profiles SET is_active = true
+   WHERE id = p_member_id AND is_active = false;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Member not found or already active'; END IF;
+  INSERT INTO audit_log (actor_id, action, target_type, target_id)
+  VALUES (auth.uid(), 'approve_member', 'profile', p_member_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Admin declines a pending sign-up, removing the auth user (cascades to profile).
+-- Only valid for inactive, non-admin members; active members use member-deletion.
+CREATE OR REPLACE FUNCTION reject_pending_member(p_member_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_role   text;
+  v_active boolean;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  SELECT role, is_active INTO v_role, v_active FROM profiles WHERE id = p_member_id;
+  IF NOT FOUND        THEN RAISE EXCEPTION 'Member not found'; END IF;
+  IF v_active         THEN RAISE EXCEPTION 'Member is already active; use member deletion instead'; END IF;
+  IF v_role = 'admin' THEN RAISE EXCEPTION 'Cannot reject an admin'; END IF;
+  INSERT INTO audit_log (actor_id, action, target_type, target_id)
+  VALUES (auth.uid(), 'reject_pending_member', 'profile', p_member_id);
+  DELETE FROM auth.users WHERE id = p_member_id;  -- cascades to profiles
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION update_own_profile(text, text, text, text, text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION approve_member(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION reject_pending_member(uuid) TO authenticated;

@@ -9,6 +9,7 @@ const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 export async function getAdminData(supabase, currentAdminId = null) {
   const [
     profilesRes,
+    pendingProfilesRes,
     feesRes,
     instRes,
     loansRes,
@@ -28,6 +29,14 @@ export async function getAdminData(supabase, currentAdminId = null) {
     roleChangeApprovalsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
+    // Pending self-registrations awaiting approval — full KYC for the admin to review.
+    supabase
+      .from('profiles')
+      .select(
+        'id, full_name, email, phone_number, secondary_phone, residence, national_id, next_of_kin_name, next_of_kin_phone, created_at',
+      )
+      .eq('is_active', false)
+      .order('created_at', { ascending: true }),
     supabase.from('v_fee_status_money').select('*'),
     supabase.from('v_installment_status_money').select('*'),
     supabase.from('loans').select('*'),
@@ -80,6 +89,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
   ])
   for (const r of [
     profilesRes,
+    pendingProfilesRes,
     feesRes,
     instRes,
     loansRes,
@@ -402,6 +412,10 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
+  // Pending self-registrations (migration 018): inactive profiles awaiting an
+  // admin's approve/reject. No approval-vote state — this is single-admin.
+  const pendingMembers = pendingProfilesRes.data.map((p) => ({ ...p }))
+
   return {
     stats,
     gridRows,
@@ -411,8 +425,21 @@ export async function getAdminData(supabase, currentAdminId = null) {
     pendingSavingsEdits,
     pendingPoolEdits,
     pendingRoleChanges,
+    pendingMembers,
     currentMonthKey,
   }
+}
+
+// Admin: approve a pending self-registration (single-admin). Activates the member.
+export async function approveMember(supabase, memberId) {
+  const { error } = await supabase.rpc('approve_member', { p_member_id: memberId })
+  if (error) throw error
+}
+
+// Admin: reject a pending self-registration, removing the auth user + profile.
+export async function rejectPendingMember(supabase, memberId) {
+  const { error } = await supabase.rpc('reject_pending_member', { p_member_id: memberId })
+  if (error) throw error
 }
 
 // Admin: open a request to adjust the group pool by a positive or negative

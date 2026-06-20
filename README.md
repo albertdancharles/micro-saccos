@@ -62,6 +62,59 @@ Edge Function, passed via shell env at run time.
 See [`supabase/README.md`](supabase/README.md) for migration details and the local-CLI
 alternative.
 
+## Self-service registration & member approval (v3)
+
+Members register themselves at **`/signup`** (email + password, or **Continue with
+Google**) and supply their details — full name, primary & secondary phone, residence,
+National ID (NIDA), and next of kin. New sign-ups are created **pending**
+(`is_active = false`): they see an *Awaiting approval* screen and **cannot enter the
+savings pool until an admin approves them** from the **Pending registrations** panel on
+the admin dashboard. Google sign-ups (who arrive with only a name + email) are routed to
+**`/complete-profile`** to fill the rest before approval.
+
+Members can only ever edit their *own* details (via the `update_own_profile` RPC); a
+member can never change their own `role` or `is_active`.
+
+### Enable Google sign-in (one-time, dashboard)
+
+1. **Auth → Providers → Google**: enable it and paste a Google OAuth **client ID** and
+   **secret** (create them in the Google Cloud console; no per-use cost).
+2. **Auth → URL Configuration**: set the **Site URL** to your deployed origin and add
+   `…/` and `…/complete-profile` (plus `…/update-password`) to **Redirect URLs**.
+3. **Auth → Providers → Email**: keep **Confirm email** ON so email/password sign-ups
+   verify their address (membership still also needs admin approval).
+
+### Cutover runbook — fresh start (DESTRUCTIVE)
+
+> Deleting users **cascades** to all savings, loans, fees, installments, submissions,
+> and history. There is no undo. **Back up first.** Order matters because deleting users
+> removes the only admin.
+
+1. **Back up** the database (Dashboard → Database → Backups, or `pg_dump`).
+2. Apply migration **018** (`supabase/migrations/018_self_registration.sql`), or re-paste
+   the updated [`supabase/setup.sql`](supabase/setup.sql) on a fresh project.
+3. Redeploy the `admin-create-member` Edge Function and set the `ALLOWED_ORIGINS` secret.
+4. **Delete all users** in the SQL editor (cascades to `profiles` and all financial data):
+
+   ```sql
+   -- Sanity check first:
+   select count(*) as users_before from auth.users;
+   delete from auth.users;
+   select count(*) as users_after from auth.users;  -- expect 0
+   ```
+
+5. Deploy the new frontend, open **`/signup`**, and register
+   `albertdancharles@gmail.com` with a password (and the profile fields).
+6. **Promote + activate** that account (one statement):
+
+   ```sql
+   update profiles set role = 'admin', is_active = true
+    where email = 'albertdancharles@gmail.com';
+   ```
+
+7. Sign in as that admin. Every later self-registration now appears under **Pending
+   registrations** for you to approve or reject.
+
 ## Monthly fees
 
 Fees are generated for all active members on the 1st of each month. `ensure_current_fees()`

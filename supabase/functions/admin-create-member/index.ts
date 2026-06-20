@@ -71,7 +71,16 @@ Deno.serve(async (req) => {
   const { data: me } = await userClient.from('profiles').select('role').eq('id', user.id).single()
   if (me?.role !== 'admin') return json({ error: 'Not authorized' }, 403, cors)
 
-  let body: { full_name?: string; email?: string; phone_number?: string }
+  let body: {
+    full_name?: string
+    email?: string
+    phone_number?: string
+    secondary_phone?: string
+    residence?: string
+    national_id?: string
+    next_of_kin_name?: string
+    next_of_kin_phone?: string
+  }
   try {
     body = await req.json()
   } catch {
@@ -83,6 +92,14 @@ Deno.serve(async (req) => {
   if (!full_name || !email || !phone_number) {
     return json({ error: 'full_name, email, and phone_number are all required.' }, 400, cors)
   }
+  // Optional KYC fields, passed through to the profile via the handle_new_user trigger.
+  const extra = {
+    secondary_phone: body.secondary_phone?.trim() || null,
+    residence: body.residence?.trim() || null,
+    national_id: body.national_id?.trim() || null,
+    next_of_kin_name: body.next_of_kin_name?.trim() || null,
+    next_of_kin_phone: body.next_of_kin_phone?.trim() || null,
+  }
 
   const password = genPassword()
   const admin = createClient(SUPABASE_URL, SERVICE, {
@@ -92,9 +109,16 @@ Deno.serve(async (req) => {
     email,
     password,
     email_confirm: true,
-    user_metadata: { full_name, phone_number },
+    user_metadata: { full_name, phone_number, ...extra },
   })
   if (error) return json({ error: error.message }, 400, cors)
+
+  // Admin-added members skip the pending queue: the trigger creates them as
+  // is_active=false (self-signup default), so flip them active here. Service role
+  // bypasses RLS.
+  if (created?.user?.id) {
+    await admin.from('profiles').update({ is_active: true }).eq('id', created.user.id)
+  }
 
   // Audit the creation. Service role bypasses RLS, and auth.uid() isn't available
   // in this context, so we pass the caller's id explicitly.

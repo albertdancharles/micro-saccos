@@ -20,7 +20,9 @@ export function AuthProvider({ children }) {
     setLoadingProfile(true)
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, role, is_active, phone_number')
+      .select(
+        'id, full_name, role, is_active, phone_number, secondary_phone, email, residence, national_id, next_of_kin_name, next_of_kin_phone',
+      )
       .eq('id', id)
       .single()
     if (error) {

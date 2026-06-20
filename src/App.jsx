@@ -15,6 +15,9 @@ import RoleHome from './routes/RoleHome'
 import Login from './pages/Login'
 
 const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
+const SignUp = lazy(() => import('./pages/SignUp'))
+const CompleteProfile = lazy(() => import('./pages/CompleteProfile'))
+const PendingApproval = lazy(() => import('./pages/PendingApproval'))
 const MemberDashboard = lazy(() => import('./pages/MemberDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const Profile = lazy(() => import('./pages/Profile'))
@@ -40,7 +43,15 @@ export default function App() {
         <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
           <Route path="/update-password" element={<UpdatePassword />} />
+
+          {/* Onboarding: needs only a session (no completeness/active gate), so a
+              signed-in-but-not-yet-member user can finish these without bouncing. */}
+          <Route element={<ProtectedRoute requireComplete={false} requireActive={false} />}>
+            <Route path="/complete-profile" element={<CompleteProfile />} />
+            <Route path="/pending" element={<PendingApproval />} />
+          </Route>
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<RoleHome />} />
