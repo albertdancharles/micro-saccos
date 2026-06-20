@@ -1,10 +1,10 @@
 // Pending member-deletion requests. Same 2-of-N approval pattern as
 // PaymentQueueItem/LoanQueueItem. The target (if they were an admin) cannot
 // vote on their own deletion. Any admin can cancel a pending request.
-import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveMemberDeletion, cancelMemberDeletion } from '../../lib/admin'
+import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger }) {
@@ -22,38 +22,22 @@ function Row({ label, value, danger }) {
 
 function DeletionItem({ request, onActioned }) {
   const { t } = useLanguage()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, handleApprove, handleCancel } = useTwoStepAction({
+    onApprove: async () => {
+      await approveMemberDeletion(supabase, request.id)
+      onActioned?.()
+    },
+    onCancel: async () => {
+      await cancelMemberDeletion(supabase, request.id)
+      onActioned?.()
+    },
+    confirmCancel: t('Cancel this deletion request?'),
+    approveError: t('Could not approve the deletion.'),
+    cancelError: t('Could not cancel.'),
+  })
 
   const snap = request.target_snapshot || {}
   const name = snap.full_name || 'Unknown member'
-
-  async function handleApprove() {
-    setError('')
-    setBusy(true)
-    try {
-      await approveMemberDeletion(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not approve the deletion.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancel() {
-    setError('')
-    if (!window.confirm(t('Cancel this deletion request?'))) return
-    setBusy(true)
-    try {
-      await cancelMemberDeletion(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not cancel.'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy

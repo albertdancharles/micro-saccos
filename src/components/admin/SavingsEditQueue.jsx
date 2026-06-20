@@ -1,10 +1,10 @@
 // Pending savings-edit requests. 2-of-N approval pattern, but stricter than
 // the rest of the system: the requester does NOT auto-vote, and neither the
 // requester nor the target can approve. Any admin can cancel a pending request.
-import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveSavingsEdit, cancelSavingsEdit } from '../../lib/admin'
+import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger, accent }) {
@@ -28,38 +28,22 @@ function Row({ label, value, danger, accent }) {
 
 function EditItem({ request, onActioned }) {
   const { t } = useLanguage()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, handleApprove, handleCancel } = useTwoStepAction({
+    onApprove: async () => {
+      await approveSavingsEdit(supabase, request.id)
+      onActioned?.()
+    },
+    onCancel: async () => {
+      await cancelSavingsEdit(supabase, request.id)
+      onActioned?.()
+    },
+    confirmCancel: t('Cancel this savings edit request?'),
+    approveError: t('Could not approve the edit.'),
+    cancelError: t('Could not cancel.'),
+  })
 
   const delta = Number(request.delta)
   const projected = Number(request.currentSavings) + delta
-
-  async function handleApprove() {
-    setError('')
-    setBusy(true)
-    try {
-      await approveSavingsEdit(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not approve the edit.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancel() {
-    setError('')
-    if (!window.confirm(t('Cancel this savings edit request?'))) return
-    setBusy(true)
-    try {
-      await cancelSavingsEdit(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not cancel.'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy

@@ -7,7 +7,8 @@ import UploadZone from '../ui/UploadZone'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveLoan, rejectLoan } from '../../lib/loans'
-import { buildDisbursementPath, uploadPaymentProof, getSignedUrl } from '../../lib/storage'
+import { buildDisbursementPath, uploadPaymentProof } from '../../lib/storage'
+import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger }) {
@@ -31,23 +32,10 @@ export default function LoanQueueItem({ loan, onActioned }) {
   const [error, setError] = useState('')
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-  const [proofUrl, setProofUrl] = useState(null)
-  const [loadingProof, setLoadingProof] = useState(false)
+  const { proofUrl, loadingProof, viewProof, error: proofError } = useSignedProof()
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
   const contribBinds = Number(loan.contributionCeiling) <= Number(loan.poolCeiling)
-
-  async function viewProof() {
-    setError('')
-    setLoadingProof(true)
-    try {
-      setProofUrl(await getSignedUrl(supabase, loan.firstProofUrl))
-    } catch (err) {
-      setError(err?.message || 'Could not load the proof.')
-    } finally {
-      setLoadingProof(false)
-    }
-  }
 
   async function handleApprove() {
     setError('')
@@ -201,13 +189,16 @@ export default function LoanQueueItem({ loan, onActioned }) {
                   />
                 </a>
               ) : (
-                <button
-                  onClick={viewProof}
-                  disabled={loadingProof}
-                  className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
-                >
-                  {loadingProof ? t('Loading…') : t('View proof')}
-                </button>
+                <>
+                  <button
+                    onClick={() => viewProof(loan.firstProofUrl)}
+                    disabled={loadingProof}
+                    className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
+                  >
+                    {loadingProof ? t('Loading…') : t('View proof')}
+                  </button>
+                  {proofError && <p className="mt-1 text-sm text-red-600">{proofError}</p>}
+                </>
               )}
             </div>
           ) : (

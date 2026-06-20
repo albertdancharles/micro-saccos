@@ -120,9 +120,12 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
 
       {type === 'monthly_fee' && (
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">{t('Which fee?')}</label>
+          <label htmlFor="txn-fee" className="block text-sm font-medium text-slate-700 mb-1">
+            {t('Which fee?')}
+          </label>
           {unpaidFees.length ? (
             <select
+              id="txn-fee"
               value={feeId}
               onChange={(e) => chooseFee(e.target.value)}
               className="input-field"
@@ -143,11 +146,12 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
 
       {type === 'loan_installment' && (
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor="txn-installment" className="block text-sm font-medium text-slate-700 mb-1">
             {t('Which installment?')}
           </label>
           {payableInstallments.length ? (
             <select
+              id="txn-installment"
               value={instId}
               onChange={(e) => chooseInst(e.target.value)}
               className="input-field"
@@ -168,10 +172,11 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
       )}
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">
+        <label htmlFor="txn-amount" className="block text-sm font-medium text-slate-700 mb-1">
           {t('Amount paid (TSh)')}
         </label>
         <input
+          id="txn-amount"
           type="number"
           min="0"
           inputMode="numeric"

@@ -1,9 +1,9 @@
 // Pending pool-edit requests. 2-of-N approval. Requester does NOT auto-vote
 // and cannot approve their own request.
-import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approvePoolEdit, cancelPoolEdit } from '../../lib/admin'
+import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
 
 function Row({ label, value, danger, accent }) {
@@ -27,41 +27,25 @@ function Row({ label, value, danger, accent }) {
 
 function EditItem({ request, stats, onActioned }) {
   const { t } = useLanguage()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, handleApprove, handleCancel } = useTwoStepAction({
+    onApprove: async () => {
+      await approvePoolEdit(supabase, request.id)
+      onActioned?.()
+    },
+    onCancel: async () => {
+      await cancelPoolEdit(supabase, request.id)
+      onActioned?.()
+    },
+    confirmCancel: t('Cancel this pool edit request?'),
+    approveError: t('Could not approve the edit.'),
+    cancelError: t('Could not cancel.'),
+  })
 
   const delta = Number(request.delta)
   const currentPool = Number(stats?.pool ?? 0)
   const currentTotal = Number(stats?.totalAssets ?? currentPool)
   const projectedPool = currentPool + delta
   const projectedTotal = currentTotal + delta
-
-  async function handleApprove() {
-    setError('')
-    setBusy(true)
-    try {
-      await approvePoolEdit(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not approve the edit.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancel() {
-    setError('')
-    if (!window.confirm(t('Cancel this pool edit request?'))) return
-    setBusy(true)
-    try {
-      await cancelPoolEdit(supabase, request.id)
-      onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not cancel.'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy
@@ -142,7 +126,7 @@ function EditItem({ request, stats, onActioned }) {
         <button
           onClick={handleApprove}
           disabled={busy || !request.canApprove}
-          className="flex-1 inline-flex items-center justify-center min-h-11 rounded-xl bg-sky-600 text-white text-sm font-medium px-4 transition-all duration-150 hover:bg-sky-700 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_1px_2px_-1px_rgba(2,132,199,0.5)]"
+          className="btn-info flex-1"
         >
           {approveLabel}
         </button>

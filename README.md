@@ -7,6 +7,13 @@ admin verifies. Overdue fees and installments accrue a recurring 5% monthly pena
 
 The admin is also a contributing member; their role only grants approval permissions.
 
+> **Security note — single-admin bootstrap.** Monetary actions (loan/payment approvals,
+> savings/pool/role/deletion edits) require two of N admins. While only **one** admin
+> exists, `required_approvals()` falls back to a single signature so the system stays
+> usable. That first admin therefore holds elevated, un-countersigned power until a
+> second admin is promoted — promote a second admin early, and note that every such
+> action is still recorded in the `audit_log` regardless of admin count.
+
 ## Stack
 
 - **React 19 + Vite** · **Tailwind CSS v4** · **React Router v7**

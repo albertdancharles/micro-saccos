@@ -47,8 +47,10 @@ export async function uploadPaymentProof(supabase, file, path) {
   return data.path
 }
 
-// Signed URLs expire (default 1h) — fetch fresh each time, never cache (build plan §7).
-export async function getSignedUrl(supabase, path, expiresInSeconds = 3600) {
+// Signed URLs expire — fetch fresh each time, never cache (build plan §7). Default is
+// a short 10 min: proofs are viewed immediately on click, so a brief window is enough
+// and narrows exposure if a link leaks. Callers may pass a longer TTL if ever needed.
+export async function getSignedUrl(supabase, path, expiresInSeconds = 600) {
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, expiresInSeconds)
   if (error) throw error
   return data.signedUrl

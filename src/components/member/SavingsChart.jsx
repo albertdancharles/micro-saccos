@@ -53,24 +53,24 @@ export default function SavingsChart({ memberId: overrideMemberId = null }) {
   }
 
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900 mb-3">{t('My savings over time')}</h2>
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-card">
+      <h2 className="text-sm font-semibold text-slate-900 mb-3">{t('My savings over time')}</h2>
       <div className="h-48 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis
               dataKey="month"
               tickFormatter={fmtMonthShort}
-              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#94a3b8' }}
             />
             <YAxis
               tickFormatter={(v) => `${Math.round(v / 1000)}k`}
-              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#94a3b8' }}
               width={36}
             />
             <Tooltip
-              contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#e5e7eb' }}
+              contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: '#e2e8f0' }}
               labelFormatter={fmtMonthShort}
               formatter={(v) => [formatTZS(v), t('Savings')]}
             />

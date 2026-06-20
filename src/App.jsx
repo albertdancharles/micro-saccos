@@ -3,6 +3,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
 import { LanguageProvider } from './hooks/useLanguage'
+import ErrorBoundary from './components/ErrorBoundary'
 import ProtectedRoute from './routes/ProtectedRoute'
 import RoleHome from './routes/RoleHome'
 import Login from './pages/Login'
@@ -15,6 +16,7 @@ import ViewMember from './pages/ViewMember'
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <LanguageProvider>
     <AuthProvider>
       <BrowserRouter>
@@ -39,5 +41,6 @@ export default function App() {
       </BrowserRouter>
     </AuthProvider>
     </LanguageProvider>
+    </ErrorBoundary>
   )
 }

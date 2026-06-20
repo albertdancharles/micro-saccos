@@ -1,45 +1,29 @@
 // Pending admin role-change requests. Same 2-of-N pattern as savings/pool
 // edits: requester does NOT auto-vote, target can't approve, any admin can
 // cancel a pending request.
-import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatDate } from '../../lib/format'
 import { approveRoleChange, cancelRoleChange } from '../../lib/admin'
+import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
 
 function ChangeItem({ request, onActioned }) {
   const { t } = useLanguage()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  const isPromote = request.change_type === 'promote'
-
-  async function handleApprove() {
-    setError('')
-    setBusy(true)
-    try {
+  const { busy, error, handleApprove, handleCancel } = useTwoStepAction({
+    onApprove: async () => {
       await approveRoleChange(supabase, request.id)
       onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not approve the role change.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancel() {
-    setError('')
-    if (!window.confirm(t('Cancel this role-change request?'))) return
-    setBusy(true)
-    try {
+    },
+    onCancel: async () => {
       await cancelRoleChange(supabase, request.id)
       onActioned?.()
-    } catch (err) {
-      setError(err?.message || t('Could not cancel.'))
-    } finally {
-      setBusy(false)
-    }
-  }
+    },
+    confirmCancel: t('Cancel this role-change request?'),
+    approveError: t('Could not approve the role change.'),
+    cancelError: t('Could not cancel.'),
+  })
+
+  const isPromote = request.change_type === 'promote'
 
   const willFinalize = request.approvalsCount + 1 >= request.requiredApprovals
   const approveLabel = busy

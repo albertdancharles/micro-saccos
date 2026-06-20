@@ -91,6 +91,7 @@ export default function LoanRequestForm({ memberId, contribution, pool, loan, on
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder={t('Amount (TSh)')}
+            aria-label={t('Amount (TSh)')}
             className="input-field tabular-nums"
           />
           {amount !== '' && overLimit && (

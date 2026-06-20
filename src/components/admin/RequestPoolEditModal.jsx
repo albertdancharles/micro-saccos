@@ -3,44 +3,11 @@
 // auto-count; two OTHER admins must approve.
 import { useState } from 'react'
 import Modal from '../ui/Modal'
+import DirectionToggle from '../ui/DirectionToggle'
 import { supabase } from '../../supabaseClient'
 import { formatTZS } from '../../lib/format'
 import { requestPoolEdit } from '../../lib/admin'
 import { useLanguage } from '../../hooks/useLanguage'
-
-function DirectionToggle({ direction, onChange }) {
-  const { t } = useLanguage()
-  const opts = [
-    {
-      key: 'increase',
-      label: t('Increase'),
-      active: 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-emerald-200',
-    },
-    {
-      key: 'decrease',
-      label: t('Decrease'),
-      active: 'border-red-500 bg-red-50 text-red-700 ring-red-200',
-    },
-  ]
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {opts.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          onClick={() => onChange(o.key)}
-          className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
-            direction === o.key
-              ? `${o.active} ring-1`
-              : 'border-slate-200 text-slate-600 hover:border-slate-300'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 function Form({ stats, onSubmitted, onClose }) {
   const { t } = useLanguage()
@@ -97,8 +64,11 @@ function Form({ stats, onSubmitted, onClose }) {
       <DirectionToggle direction={direction} onChange={setDirection} />
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Amount (TSh)')}</label>
+        <label htmlFor="pool-edit-amount" className="block text-sm font-medium text-slate-700 mb-1">
+          {t('Amount (TSh)')}
+        </label>
         <input
+          id="pool-edit-amount"
           type="number"
           min="0"
           inputMode="numeric"
@@ -121,8 +91,11 @@ function Form({ stats, onSubmitted, onClose }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Reason')}</label>
+        <label htmlFor="pool-edit-reason" className="block text-sm font-medium text-slate-700 mb-1">
+          {t('Reason')}
+        </label>
         <textarea
+          id="pool-edit-reason"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
@@ -138,11 +111,7 @@ function Form({ stats, onSubmitted, onClose }) {
       </div>
 
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="flex-1 inline-flex items-center justify-center min-h-11 rounded-xl bg-sky-600 text-white text-sm font-medium px-4 transition-all duration-150 hover:bg-sky-700 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_1px_2px_-1px_rgba(2,132,199,0.5)]"
-        >
+        <button type="submit" disabled={busy} className="btn-info flex-1">
           {busy ? t('Submitting…') : t('Submit edit')}
         </button>
         <button type="button" onClick={onClose} className="btn-secondary">

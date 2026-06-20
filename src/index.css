@@ -138,7 +138,8 @@ body {
 .btn-primary,
 .btn-secondary,
 .btn-ghost,
-.btn-danger {
+.btn-danger,
+.btn-info {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -157,7 +158,8 @@ body {
 .btn-primary:disabled,
 .btn-secondary:disabled,
 .btn-ghost:disabled,
-.btn-danger:disabled {
+.btn-danger:disabled,
+.btn-info:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -209,6 +211,21 @@ body {
 }
 .btn-danger:active:not(:disabled) {
   background-color: #991b1b;
+  transform: scale(0.99);
+}
+
+/* Informational CTA (sky) — used for pool / total-assets edits, which are
+   neither the primary emerald action nor destructive. */
+.btn-info {
+  background-color: #0284c7;
+  color: #fff;
+  box-shadow: 0 1px 2px -1px rgba(2, 132, 199, 0.5);
+}
+.btn-info:hover:not(:disabled) {
+  background-color: #0369a1;
+}
+.btn-info:active:not(:disabled) {
+  background-color: #075985;
   transform: scale(0.99);
 }
 

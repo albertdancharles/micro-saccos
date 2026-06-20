@@ -20,6 +20,10 @@ export function LanguageProvider({ children }) {
   )
 }
 
+// Provider + hook live together (same pattern as useAuth). The hook export trips
+// react-refresh's components-only rule, which is harmless here — Fast Refresh still
+// updates the provider correctly.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLanguage() {
   return useContext(LanguageContext)
 }

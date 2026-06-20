@@ -5,8 +5,8 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatMonth, formatDate } from '../../lib/format'
-import { getSignedUrl } from '../../lib/storage'
 import { approveSubmission, rejectSubmission } from '../../lib/payments'
+import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
 
 const TYPE_LABEL = {
@@ -26,22 +26,9 @@ export default function PaymentQueueItem({ submission, onActioned }) {
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [proofUrl, setProofUrl] = useState(null)
-  const [loadingProof, setLoadingProof] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-
-  async function viewProof() {
-    setError('')
-    setLoadingProof(true)
-    try {
-      setProofUrl(await getSignedUrl(supabase, submission.proof_url))
-    } catch (err) {
-      setError(err?.message || 'Could not load the screenshot.')
-    } finally {
-      setLoadingProof(false)
-    }
-  }
+  const { proofUrl, loadingProof, viewProof, error: proofError } = useSignedProof()
 
   async function handleApprove() {
     setError('')
@@ -145,13 +132,16 @@ export default function PaymentQueueItem({ submission, onActioned }) {
           />
         </a>
       ) : (
-        <button
-          onClick={viewProof}
-          disabled={loadingProof}
-          className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
-        >
-          {loadingProof ? t('Loading…') : t('View screenshot')}
-        </button>
+        <div>
+          <button
+            onClick={() => viewProof(submission.proof_url)}
+            disabled={loadingProof}
+            className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
+          >
+            {loadingProof ? t('Loading…') : t('View screenshot')}
+          </button>
+          {proofError && <p className="mt-1 text-sm text-red-600">{proofError}</p>}
+        </div>
       )}
 
       {rejecting ? (
@@ -181,7 +171,10 @@ export default function PaymentQueueItem({ submission, onActioned }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-700">
+          <label
+            htmlFor={`pay-amount-${submission.id}`}
+            className="block text-sm font-medium text-slate-700"
+          >
             {t('Amount received (TSh)')}
           </label>
           {hasPriorApproval ? (
@@ -191,6 +184,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
             </p>
           ) : (
             <input
+              id={`pay-amount-${submission.id}`}
               type="number"
               min="0"
               inputMode="numeric"
