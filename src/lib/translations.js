@@ -85,8 +85,11 @@ const sw = {
   'Residence': 'Makazi',
   'e.g. Mbezi Beach, Dar es Salaam': 'mf. Mbezi Beach, Dar es Salaam',
   'National ID (NIDA)': 'Kitambulisho cha Taifa (NIDA)',
+  'National ID (NIDA) (optional)': 'Kitambulisho cha Taifa (NIDA) (hiari)',
   'Next of kin — name': 'Ndugu wa karibu — jina',
+  'Next of kin — name (optional)': 'Ndugu wa karibu — jina (hiari)',
   'Next of kin — phone': 'Ndugu wa karibu — simu',
+  'Next of kin — phone (optional)': 'Ndugu wa karibu — simu (hiari)',
   'Next of kin': 'Ndugu wa karibu',
   'Additional phone': 'Simu ya ziada',
 

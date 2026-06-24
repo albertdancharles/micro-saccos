@@ -1,7 +1,7 @@
 // The member KYC inputs shared by SignUp and CompleteProfile. Controlled via a
-// flat `values` object + `onChange(name, value)`. `secondary_phone` is the only
-// optional field; the rest are required before a member can use the app
-// (see REQUIRED_PROFILE_FIELDS in lib/auth).
+// flat `values` object + `onChange(name, value)`. `secondary_phone`, `national_id`
+// and the next-of-kin fields are optional; the rest are required before a member
+// can use the app (see REQUIRED_PROFILE_FIELDS in lib/auth).
 import { useLanguage } from '../../hooks/useLanguage'
 
 // Module-level so the input identity is stable across renders (a component defined
@@ -35,9 +35,9 @@ export default function ProfileFields({ values, onChange, idPrefix = 'pf' }) {
       {f('phone_number', t('Phone number'), { inputMode: 'tel', placeholder: '+255…' })}
       {f('secondary_phone', t('Additional phone (optional)'), { inputMode: 'tel', placeholder: '+255…' })}
       {f('residence', t('Residence'), { placeholder: t('e.g. Mbezi Beach, Dar es Salaam') })}
-      {f('national_id', t('National ID (NIDA)'))}
-      {f('next_of_kin_name', t('Next of kin — name'))}
-      {f('next_of_kin_phone', t('Next of kin — phone'), { inputMode: 'tel', placeholder: '+255…' })}
+      {f('national_id', t('National ID (NIDA) (optional)'))}
+      {f('next_of_kin_name', t('Next of kin — name (optional)'))}
+      {f('next_of_kin_phone', t('Next of kin — phone (optional)'), { inputMode: 'tel', placeholder: '+255…' })}
     </>
   )
 }

@@ -58,14 +58,11 @@ export async function updateOwnProfile(fields) {
 
 // The fields a member must supply before they can use the app. Google sign-ups
 // arrive with only name + email, so they're routed to /complete-profile until
-// these are filled. (secondary_phone is optional.)
+// these are filled. (secondary_phone, national_id and next_of_kin are optional.)
 export const REQUIRED_PROFILE_FIELDS = [
   'full_name',
   'phone_number',
   'residence',
-  'national_id',
-  'next_of_kin_name',
-  'next_of_kin_phone',
 ]
 
 export function isProfileComplete(profile) {
