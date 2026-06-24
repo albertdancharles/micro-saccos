@@ -178,6 +178,7 @@ export default function AdminDashboard() {
       <RequestRoleChangeModal
         open={!!roleChangeTarget}
         target={roleChangeTarget}
+        adminCount={admin.stats.adminCount}
         onClose={() => setRoleChangeTarget(null)}
         onSubmitted={refresh}
       />

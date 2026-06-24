@@ -7,7 +7,7 @@ import { supabase } from '../../supabaseClient'
 import { requestRoleChange } from '../../lib/admin'
 import { useLanguage } from '../../hooks/useLanguage'
 
-function Form({ target, onSubmitted, onClose }) {
+function Form({ target, adminCount, onSubmitted, onClose }) {
   const { t } = useLanguage()
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -16,6 +16,13 @@ function Form({ target, onSubmitted, onClose }) {
   const isPromote = target.role !== 'admin'
   const changeType = isPromote ? 'promote' : 'demote'
   const danger = !isPromote
+
+  // The requester never votes on their own request, so the threshold is based on
+  // the OTHER active admins — mirroring request_role_change in migration 016.
+  // 0 others → applies immediately; 1 → one approval; 2+ → two approvals.
+  const otherAdmins = Math.max(0, (adminCount || 0) - 1)
+  const required = Math.min(2, otherAdmins)
+  const appliesImmediately = required === 0
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -73,7 +80,17 @@ function Form({ target, onSubmitted, onClose }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 text-xs text-amber-800">
-        {t("Two other admins must approve before the role flips. You can't approve your own request.")}
+        {appliesImmediately
+          ? t(
+              'There are no other admins yet, so this change applies immediately. Once the group has more admins, role changes will need two approvals.',
+            )
+          : required === 1
+            ? t(
+                "One other admin must approve before the role flips. You can't approve your own request.",
+              )
+            : t(
+                "Two other admins must approve before the role flips. You can't approve your own request.",
+              )}
       </div>
 
       <div className="flex gap-2">
@@ -82,7 +99,15 @@ function Form({ target, onSubmitted, onClose }) {
           disabled={busy}
           className={`${danger ? 'btn-danger' : 'btn-primary'} flex-1`}
         >
-          {busy ? t('Submitting…') : isPromote ? t('Request promotion') : t('Request revocation')}
+          {busy
+            ? t('Submitting…')
+            : appliesImmediately
+              ? isPromote
+                ? t('Promote now')
+                : t('Revoke now')
+              : isPromote
+                ? t('Request promotion')
+                : t('Request revocation')}
         </button>
         <button type="button" onClick={onClose} className="btn-secondary">
           {t('Cancel')}
@@ -92,12 +117,14 @@ function Form({ target, onSubmitted, onClose }) {
   )
 }
 
-export default function RequestRoleChangeModal({ open, onClose, target, onSubmitted }) {
+export default function RequestRoleChangeModal({ open, onClose, target, adminCount, onSubmitted }) {
   const { t } = useLanguage()
   const title = target?.role === 'admin' ? t('Revoke admin role') : t('Promote to admin')
   return (
     <Modal open={open} onClose={onClose} title={title}>
-      {open && target && <Form target={target} onSubmitted={onSubmitted} onClose={onClose} />}
+      {open && target && (
+        <Form target={target} adminCount={adminCount} onSubmitted={onSubmitted} onClose={onClose} />
+      )}
     </Modal>
   )
 }
