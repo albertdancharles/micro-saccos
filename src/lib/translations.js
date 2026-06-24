@@ -43,6 +43,7 @@ const sw = {
   'If that email exists, a reset link is on its way.': 'Kama barua pepe hiyo ipo, kiungo cha kuweka upya kinaendelea.',
   'Could not send the reset email.': 'Haikuweza kutuma barua pepe ya kuweka upya.',
   'A small group, big trust. Your savings are visible only to you and the admin team.': 'Kikundi kidogo, imani kubwa. Akiba yako inaonekana kwako tu na timu ya wasimamizi.',
+  'A small group, big trust. Every member can see the group’s savings and loans.': 'Kikundi kidogo, imani kubwa. Kila mwanachama anaweza kuona akiba na mikopo ya kikundi.',
 
   // Update password
   'Set a new password': 'Weka nywila mpya',
@@ -351,8 +352,14 @@ const sw = {
   'e.g. stepping down, no longer active in committee': 'mf. anashuka, hayupo tena katika kamati',
   "Two other admins must approve before the role flips. You can't approve your own request.":
     'Wasimamizi wengine wawili lazima waidhinishe kabla ya jukumu kubadilika. Huwezi kuidhinisha ombi lako mwenyewe.',
+  "One other admin must approve before the role flips. You can't approve your own request.":
+    'Msimamizi mwingine mmoja lazima aidhinishe kabla ya jukumu kubadilika. Huwezi kuidhinisha ombi lako mwenyewe.',
+  'There are no other admins yet, so this change applies immediately. Once the group has more admins, role changes will need two approvals.':
+    'Hakuna wasimamizi wengine bado, kwa hiyo mabadiliko haya yanatekelezwa mara moja. Kikundi kitakapokuwa na wasimamizi zaidi, mabadiliko ya jukumu yatahitaji idhini mbili.',
   'Request promotion': 'Omba upandishaji',
   'Request revocation': 'Omba uondoaji',
+  'Promote now': 'Pandisha sasa',
+  'Revoke now': 'Ondoa sasa',
   'Could not open the role-change request.': 'Haikuweza kufungua ombi la mabadiliko ya jukumu.',
   'A reason is required for every role change.': 'Sababu inahitajika kwa kila mabadiliko ya jukumu.',
 
@@ -490,6 +497,14 @@ const sw = {
   '{n}m ago': 'dakika {n} zilizopita',
   '{n}h ago': 'saa {n} zilizopita',
   '{n}d ago': 'siku {n} zilizopita',
+
+  // Group members directory (transparency)
+  'Group members': 'Wanachama wa kikundi',
+  'Every member can see every member’s savings and loans. Full transparency keeps the group accountable.':
+    'Kila mwanachama anaweza kuona akiba na mikopo ya kila mwanachama. Uwazi kamili huweka kikundi kuwajibika.',
+  'Loan balance': 'Salio la mkopo',
+  'You': 'Wewe',
+  'Could not load members.': 'Haikuweza kupakia wanachama.',
 
   // Modal
   'Close': 'Funga',

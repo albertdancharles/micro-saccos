@@ -21,6 +21,7 @@ const PendingApproval = lazy(() => import('./pages/PendingApproval'))
 const MemberDashboard = lazy(() => import('./pages/MemberDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const Profile = lazy(() => import('./pages/Profile'))
+const GroupMembers = lazy(() => import('./pages/GroupMembers'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const ViewMember = lazy(() => import('./pages/ViewMember'))
 
@@ -56,6 +57,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<RoleHome />} />
             <Route path="/dashboard" element={<MemberDashboard />} />
+            <Route path="/members" element={<GroupMembers />} />
             <Route path="/profile" element={<Profile />} />
           </Route>
 

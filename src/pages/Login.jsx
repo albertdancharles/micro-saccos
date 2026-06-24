@@ -160,7 +160,7 @@ export default function Login() {
           </p>
 
           <p className="mt-3 text-center text-xs text-slate-400">
-            {t('A small group, big trust. Your savings are visible only to you and the admin team.')}
+            {t('A small group, big trust. Every member can see the group’s savings and loans.')}
           </p>
         </div>
       </div>

@@ -92,6 +92,12 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
                 <LangToggle />
                 <NotificationsBell />
                 <Link
+                  to="/members"
+                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
+                >
+                  {t('Members')}
+                </Link>
+                <Link
                   to="/profile"
                   className="text-sm font-medium text-slate-500 hover:text-slate-800"
                 >
