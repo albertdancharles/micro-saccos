@@ -4,7 +4,7 @@ import { createTranslator } from '../lib/translations'
 const LanguageContext = createContext(null)
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'en')
+  const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'sw')
 
   function toggle() {
     const next = lang === 'en' ? 'sw' : 'en'
