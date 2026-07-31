@@ -1,0 +1,24 @@
+// The one list of status wording, shared by every presentation of a status:
+// the Badge pill, the member grid's dot + label, and anything added later.
+// Callers pass the result through t() themselves so this file stays free of
+// React and the translation context.
+const LABELS = {
+  paid: 'Paid',
+  approved: 'Approved',
+  pending: 'Pending',
+  overdue: 'Overdue',
+  rejected: 'Rejected',
+  upcoming: 'Not due',
+  cancelled: 'Cancelled',
+  na: 'N/A',
+}
+
+export function statusKey(status) {
+  return String(status || 'na').toLowerCase()
+}
+
+// The English label for a status, or null if it isn't one we know — in which
+// case callers show the raw value rather than inventing wording for it.
+export function statusLabel(status) {
+  return LABELS[statusKey(status)] || null
+}
