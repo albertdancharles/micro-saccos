@@ -7,13 +7,20 @@ import { useLanguage } from '../../hooks/useLanguage'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
-function ObligationRow({ title, subtitle, penalty, total, status }) {
+function ObligationRow({ title, subtitle, penalty, total, status, paid = 0 }) {
   const { t } = useLanguage()
   return (
     <li className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
       <div className="min-w-0">
         <p className="text-sm font-medium text-slate-900">{title}</p>
         {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+        {/* With partial payments the headline figure is what is STILL owed, so a
+            member who has part-paid needs to see their payment acknowledged. */}
+        {paid > 0 && (
+          <p className="text-xs text-sky-700 mt-1 tabular-nums">
+            {t('{amount} already paid').replace('{amount}', formatTZS(paid))}
+          </p>
+        )}
         {penalty > 0 && (
           <p className="text-xs text-red-600 mt-1 tabular-nums">
             {t('+ {penalty} penalty').replace('{penalty}', formatTZS(penalty))}
@@ -52,6 +59,7 @@ export default function ObligationsCard({ fees, installments, currentMonthKey })
             title={t('Membership fee')}
             penalty={Number(fee.penalty_due)}
             total={Number(fee.total_with_penalty)}
+            paid={Number(fee.amount_paid ?? 0)}
             status={fee.computed_status}
           />
         )}
@@ -61,6 +69,7 @@ export default function ObligationsCard({ fees, installments, currentMonthKey })
             subtitle={`${Number(inst.principal_due) > 0 ? t('Principal + interest') : t('Interest')} · ${t('due')} ${formatDate(inst.due_date)}`}
             penalty={Number(inst.penalty_due)}
             total={Number(inst.total_with_penalty)}
+            paid={Number(inst.interest_paid ?? 0) + Number(inst.principal_paid ?? 0)}
             status={inst.computed_status}
           />
         )}

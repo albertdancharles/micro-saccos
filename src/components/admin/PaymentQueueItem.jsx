@@ -2,10 +2,16 @@
 //   * 0 approvals → this admin is the first; editable amount input.
 //   * 1+ approvals → the first amount wins; second admin confirms without editing.
 //   * Self-submissions can never be approved by the same person.
+//
+// Since partial payments (migration 021) the amount no longer has to cover the
+// whole obligation, so the admin gets a live preview of where it will land before
+// they commit — and a hard stop when it exceeds everything that could be settled,
+// which is what the RPC would reject anyway.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatMonth, formatDate } from '../../lib/format'
 import { approveSubmission, rejectSubmission } from '../../lib/payments'
+import { allocateFeePayment, allocateInstallmentPayment } from '../../lib/allocation'
 import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
 
@@ -13,6 +19,18 @@ const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
   monthly_fee: 'Monthly fee',
   loan_installment: 'Loan repayment',
+}
+
+// One line of the allocation preview: "to penalty · 1,000".
+function AllocRow({ label, value, tone }) {
+  const color =
+    tone === 'red' ? 'text-red-600' : tone === 'emerald' ? 'text-emerald-700' : 'text-slate-600'
+  return (
+    <div className="flex justify-between">
+      <span className={color}>{label}</span>
+      <span className={`tabular-nums ${color}`}>{formatTZS(value)}</span>
+    </div>
+  )
 }
 
 export default function PaymentQueueItem({ submission, onActioned }) {
@@ -30,10 +48,26 @@ export default function PaymentQueueItem({ submission, onActioned }) {
   const [reason, setReason] = useState('')
   const { proofUrl, loadingProof, viewProof, error: proofError } = useSignedProof()
 
+  // Preview the waterfall for the amount currently in the box. Null for savings
+  // deposits, which have no obligation to allocate against.
+  const previewAmount = hasPriorApproval ? lockedAmount : Number(amount)
+  let allocation = null
+  if (submission.obligation && previewAmount > 0) {
+    allocation =
+      submission.submission_type === 'monthly_fee'
+        ? allocateFeePayment(previewAmount, submission.obligation)
+        : allocateInstallmentPayment(
+            previewAmount,
+            submission.obligation,
+            submission.outstanding,
+          )
+  }
+  const overCeiling = !!allocation && allocation.excess > 0
+
   async function handleApprove() {
     setError('')
     const amt = hasPriorApproval ? lockedAmount : Number(amount)
-    if (!(amt >= 0)) return setError(t('Enter the amount received.'))
+    if (!(amt > 0)) return setError(t('Enter the amount received.'))
     setBusy(true)
     try {
       await approveSubmission(supabase, submission.id, amt)
@@ -194,11 +228,46 @@ export default function PaymentQueueItem({ submission, onActioned }) {
               className="input-field tabular-nums"
             />
           )}
+          {allocation && !overCeiling && (
+            <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-2.5 text-xs space-y-0.5">
+              {allocation.penalty > 0 && (
+                <AllocRow label={t('to penalty')} value={allocation.penalty} tone="red" />
+              )}
+              {allocation.interest > 0 && (
+                <AllocRow label={t('to interest')} value={allocation.interest} />
+              )}
+              {allocation.base > 0 && <AllocRow label={t('to the fee')} value={allocation.base} />}
+              {allocation.principal > 0 && (
+                <AllocRow label={t('to principal')} value={allocation.principal} />
+              )}
+              {allocation.extraPrincipal > 0 && (
+                <AllocRow
+                  label={t('to principal (early)')}
+                  value={allocation.extraPrincipal}
+                  tone="emerald"
+                />
+              )}
+              <p className={`pt-1 ${allocation.remaining > 0 ? 'text-sky-700' : 'text-emerald-700'}`}>
+                {allocation.remaining > 0
+                  ? t('{amount} will still be owed — marked part paid.').replace(
+                      '{amount}',
+                      formatTZS(allocation.remaining),
+                    )
+                  : t('Settles this in full.')}
+              </p>
+            </div>
+          )}
+          {overCeiling && (
+            <p className="text-xs text-red-600">
+              {t('{amount} more than anything outstanding. Approve the exact amount and log the surplus as a savings deposit.')
+                .replace('{amount}', formatTZS(allocation.excess))}
+            </p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleApprove}
-              disabled={busy || !submission.canApprove}
+              disabled={busy || !submission.canApprove || overCeiling}
               className="btn-primary flex-1"
             >
               {approveLabel}

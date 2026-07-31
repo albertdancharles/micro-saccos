@@ -124,7 +124,15 @@ function InterestCell({ installment, t }) {
 // The same action set feeds both presentations, so the two can't drift apart.
 // Plain function, not a hook — it holds no state and is called per row.
 // `tone` is semantic ('danger'), not a class: the menu owns how that looks.
-function buildActions({ row, isSelf, onRequestEditSavings, onRequestRoleChange, onRequestDelete, t }) {
+function buildActions({
+  row,
+  isSelf,
+  onRequestEditSavings,
+  onRequestRoleChange,
+  onRequestDelete,
+  onRequestExit,
+  t,
+}) {
   const actions = []
   if (row.role !== 'admin' || isSelf) {
     actions.push({ key: 'view', to: `/admin/member/${row.id}`, label: t('View') })
@@ -135,6 +143,14 @@ function buildActions({ row, isSelf, onRequestEditSavings, onRequestRoleChange, 
       key: 'role',
       onClick: () => onRequestRoleChange?.(row),
       label: row.role === 'admin' ? t('Revoke admin') : t('Make admin'),
+    })
+    // Exit settles the member and deactivates them, KEEPING their history — it sits
+    // above Delete because it is almost always the right choice for someone who is
+    // simply leaving. Delete still erases everything, and stays last.
+    actions.push({
+      key: 'exit',
+      onClick: () => onRequestExit?.(row),
+      label: t('Settle & exit'),
     })
     actions.push({
       key: 'delete',
@@ -217,6 +233,7 @@ export default function MemberGrid({
   onRequestDelete,
   onRequestEditSavings,
   onRequestRoleChange,
+  onRequestExit,
 }) {
   const { t } = useLanguage()
 
@@ -228,6 +245,7 @@ export default function MemberGrid({
       onRequestEditSavings,
       onRequestRoleChange,
       onRequestDelete,
+      onRequestExit,
       t,
     })
     return {

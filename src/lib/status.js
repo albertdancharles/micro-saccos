@@ -6,6 +6,10 @@ const LABELS = {
   paid: 'Paid',
   approved: 'Approved',
   pending: 'Pending',
+  // Something has been paid but a balance remains and it is not yet past due.
+  // Once it IS past due the views report 'overdue' instead — being late is the
+  // signal that matters, and amount_paid still tells the UI it was part-settled.
+  partial: 'Part paid',
   overdue: 'Overdue',
   rejected: 'Rejected',
   upcoming: 'Not due',

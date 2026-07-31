@@ -9,6 +9,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
 import { LanguageProvider } from './hooks/useLanguage'
+import { GroupSettingsProvider } from './hooks/useGroupSettings'
 import ErrorBoundary from './components/ErrorBoundary'
 import ProtectedRoute from './routes/ProtectedRoute'
 import RoleHome from './routes/RoleHome'
@@ -24,6 +25,9 @@ const Profile = lazy(() => import('./pages/Profile'))
 const GroupMembers = lazy(() => import('./pages/GroupMembers'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const ViewMember = lazy(() => import('./pages/ViewMember'))
+const Cycles = lazy(() => import('./pages/Cycles'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Meetings = lazy(() => import('./pages/Meetings'))
 
 // Shown briefly while a route's chunk loads. Dependency-free so it stays in the
 // entry chunk and paints instantly.
@@ -39,6 +43,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <LanguageProvider>
+    <GroupSettingsProvider>
     <AuthProvider>
       <BrowserRouter>
         <Suspense fallback={<RouteFallback />}>
@@ -64,6 +69,9 @@ export default function App() {
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/audit" element={<AuditLog />} />
+            <Route path="/admin/cycles" element={<Cycles />} />
+            <Route path="/admin/reports" element={<Reports />} />
+            <Route path="/admin/meetings" element={<Meetings />} />
             <Route path="/admin/member/:memberId" element={<ViewMember />} />
           </Route>
 
@@ -72,6 +80,7 @@ export default function App() {
         </Suspense>
       </BrowserRouter>
     </AuthProvider>
+    </GroupSettingsProvider>
     </LanguageProvider>
     </ErrorBoundary>
   )

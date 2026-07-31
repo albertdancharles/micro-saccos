@@ -140,8 +140,8 @@ const sw = {
   'Change password': 'Badilisha nywila',
   'My contributions': 'Michango yangu',
   'Total savings': 'Jumla ya akiba',
-  "Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is 5× this amount (capped at 25% of the group pool).":
-    'Inajumuisha amana za akiba, ada za kila mwezi zilizolipwa, na marekebisho yoyote ya msimamizi. Kiwango chako cha mkopo ni mara 5 ya kiasi hiki (kiwango cha 25% ya hazina ya kikundi).',
+  'Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of the group pool).':
+    'Inajumuisha amana za akiba, ada za kila mwezi zilizolipwa, na marekebisho yoyote ya msimamizi. Kiwango chako cha mkopo ni mara {n} ya kiasi hiki (kiwango cha {p}% ya hazina ya kikundi).',
   'Statement': 'Taarifa',
   'Download a CSV with your savings, fees, loans, and full submission history.': 'Pakua CSV yenye akiba yako, ada, mikopo, na historia kamili ya uwasilishaji.',
   'Download statement (CSV)': 'Pakua taarifa (CSV)',
@@ -384,6 +384,371 @@ const sw = {
     'Hii itaacha hazina hasi ({amount}). Chagua kupunguza kidogo zaidi.',
   'Could not open the pool edit request.': 'Haikuweza kufungua ombi la kuhariri hazina.',
 
+  // Meetings, attendance & social fund (migration 030)
+  'Meetings & social fund': 'Mikutano na mfuko wa jamii',
+  '+ Record a meeting': '+ Andika mkutano',
+  'Record it': 'Iandike',
+  'Date held': 'Tarehe ilipofanyika',
+  'Title': 'Kichwa',
+  'Minutes (optional)': 'Kumbukumbu (si lazima)',
+  'e.g. Monthly meeting — March': 'mfano: Mkutano wa mwezi — Machi',
+  'Give the meeting a title.': 'Ipe mkutano kichwa.',
+  'Could not record the meeting.': 'Haikuweza kuandika mkutano.',
+  'No meetings recorded yet.': 'Bado hakuna mikutano iliyoandikwa.',
+  'Register open': 'Daftari liko wazi',
+  'Fines applied': 'Faini zimetozwa',
+  'present': 'yupo',
+  'late': 'amechelewa',
+  'excused': 'ameruhusiwa',
+  'absent': 'hayupo',
+  'Attendance for {name}': 'Mahudhurio ya {name}',
+  'Could not save attendance.': 'Haikuweza kuhifadhi mahudhurio.',
+  'Apply the fines': 'Toza faini',
+  'Could not apply the fines.': 'Haikuweza kutoza faini.',
+  '{amount} in fines will be deducted straight from savings. Nobody is invoiced.':
+    'Faini za {amount} zitakatwa moja kwa moja kutoka akiba. Hakuna anayetumiwa ankara.',
+  'Nobody is being fined for this meeting.': 'Hakuna anayetozwa faini kwa mkutano huu.',
+  '{amount} in fines was deducted on {date}.': 'Faini za {amount} zilikatwa tarehe {date}.',
+  'Deduct {amount} from members’ savings? This cannot be undone.':
+    'Kata {amount} kutoka akiba za wanachama? Hili haliwezi kutenguliwa.',
+  'Attendance fine': 'Faini ya mahudhurio',
+  'Fine for arriving late': 'Faini ya kuchelewa',
+  'Fine for missing a meeting': 'Faini ya kutohudhuria',
+  'Social fund': 'Mfuko wa jamii',
+  'Welfare money for emergencies. Kept separate from the loan pool — it is never lent out.':
+    'Fedha za msaada kwa dharura. Zimetenganishwa na hazina ya mikopo — hazikopeshwi kamwe.',
+  'Record a contribution': 'Andika mchango',
+  'Propose a grant': 'Pendekeza msaada',
+  'Choose a member…': 'Chagua mwanachama…',
+  'e.g. monthly welfare contribution': 'mfano: mchango wa kila mwezi wa msaada',
+  'e.g. funeral costs': 'mfano: gharama za msiba',
+  'A reason is required.': 'Sababu inahitajika.',
+  'Could not save that.': 'Haikuweza kuhifadhi hilo.',
+  'You proposed this': 'Wewe ulipendekeza hili',
+  'Save': 'Hifadhi',
+  'Social fund grant proposed': 'Msaada wa mfuko wa jamii umependekezwa',
+  'Social fund grant approved': 'Msaada wa mfuko wa jamii umeidhinishwa',
+  'Could not load meetings. Has migration 030 been applied?':
+    'Haikuweza kupakia mikutano. Je, uhamishaji 030 umetekelezwa?',
+
+  // Group report / AGM pack (migration 029)
+  'Group report': 'Ripoti ya kikundi',
+  'What the group earned': 'Kikundi kilipata nini',
+  'Interest on loans': 'Riba ya mikopo',
+  'Net earnings': 'Faida halisi',
+  'Loans issued': 'Mikopo iliyotolewa',
+  'Fee payments received': 'Malipo ya ada yaliyopokelewa',
+  'Fee payments are members’ own capital, not profit — they are listed here for activity only.':
+    'Malipo ya ada ni mtaji wa wanachama wenyewe, si faida — yameorodheshwa hapa kwa shughuli tu.',
+  'What the group holds': 'Kikundi kinamiliki nini',
+  'as at {date}': 'hadi {date}',
+  'Assets': 'Mali',
+  'Cash in the pool': 'Fedha kwenye hazina',
+  'Total assets': 'Jumla ya mali',
+  'Whose it is': 'Ni ya nani',
+  'Less: paid out': 'Toa: iliyolipwa',
+  'Total claims': 'Jumla ya madai',
+  'Assets and claims agree — the books balance.': 'Mali na madai vinalingana — hesabu ziko sawa.',
+  'Off by {amount}. Resolve this before presenting these accounts.':
+    'Tofauti ya {amount}. Tatua hili kabla ya kuwasilisha hesabu hizi.',
+  'Members ({n})': 'Wanachama ({n})',
+  // 'Capital' is already defined in the cycles section below and reused here.
+  'Owes': 'Anadaiwa',
+  'Fines': 'Faini',
+  'Last payout': 'Malipo ya mwisho',
+  'Download the report (CSV)': 'Pakua ripoti (CSV)',
+  'Could not load the reports. Has migration 029 been applied?':
+    'Haikuweza kupakia ripoti. Je, uhamishaji 029 umetekelezwa?',
+
+  // Loan guarantors (migration 028)
+  'Guarantors': 'Wadhamini',
+  'Loans you are backing': 'Mikopo unayodhamini',
+  'A member': 'Mwanachama',
+  'asked you to guarantee their {total} loan': 'amekuomba udhamini mkopo wake wa {total}',
+  'If you accept, {amount} of your savings is locked until the loan is repaid — and the group can take it if the loan is never repaid.':
+    'Ukikubali, {amount} ya akiba yako itafungwa hadi mkopo ulipwe — na kikundi kinaweza kuichukua ikiwa mkopo hautalipwa.',
+  'Accept': 'Kubali',
+  'Decline': 'Kataa',
+  'Currently guaranteeing': 'Unadhamini sasa',
+  'This much of your savings is locked while these loans are open.':
+    'Kiasi hiki cha akiba yako kimefungwa wakati mikopo hii iko wazi.',
+  'Could not save your answer.': 'Haikuweza kuhifadhi jibu lako.',
+  'Optional. Members who back your loan pledge part of their own savings against it.':
+    'Si lazima. Wanachama wanaodhamini mkopo wako huweka rehani sehemu ya akiba yao.',
+  'Your loan cannot be approved until all {n} nominated member(s) have answered.':
+    'Mkopo wako hauwezi kuidhinishwa hadi wanachama {n} walioteuliwa wajibu.',
+  'Ask a member to guarantee…': 'Mwombe mwanachama adhamini…',
+  'Choose a member': 'Chagua mwanachama',
+  'Choose a member.': 'Chagua mwanachama.',
+  'Ask them': 'Waombe',
+  'Could not ask them.': 'Haikuweza kuwaomba.',
+  'Could not withdraw the request.': 'Haikuweza kuondoa ombi.',
+  'Withdraw': 'Ondoa',
+  'Awaiting their answer': 'Inasubiri jibu lao',
+  'Accepted': 'Amekubali',
+  'Declined': 'Amekataa',
+  'Released': 'Imeachiliwa',
+  'Called': 'Imedaiwa',
+  'awaiting answer': 'inasubiri jibu',
+  'accepted': 'amekubali',
+  'declined': 'amekataa',
+  'released': 'imeachiliwa',
+  'called': 'imedaiwa',
+  '{n} guarantor(s) have not answered — approval is blocked until they do.':
+    'Wadhamini {n} hawajajibu — idhini imezuiwa hadi wajibu.',
+  'You have been asked to guarantee a loan': 'Umeombwa kudhamini mkopo',
+  'Guarantee accepted': 'Udhamini umekubaliwa',
+  'Guarantee declined': 'Udhamini umekataliwa',
+  'Your guarantee has been called': 'Udhamini wako umedaiwa',
+  'Guarantees that can be called ({n})': 'Dhamana zinazoweza kudaiwa ({n})',
+  'These written-off loans were backed by other members.':
+    'Mikopo hii iliyofutwa ilidhaminiwa na wanachama wengine.',
+  'written off · {n} guarantor(s) pledged {amount}':
+    'imefutwa · wadhamini {n} waliweka rehani {amount}',
+  'Call': 'Dai',
+  'Call the guarantees': 'Dai dhamana',
+  'Recovered': 'Imerejeshwa',
+  'The group still absorbs {amount}. No cash moves — savings become loan recovery.':
+    'Kikundi bado kinabeba {amount}. Hakuna fedha inayohama — akiba inakuwa marejesho ya mkopo.',
+  'Why are the guarantees being called?': 'Kwa nini dhamana zinadaiwa?',
+  'A reason is required to call a guarantee.': 'Sababu inahitajika kudai dhamana.',
+  'Could not call the guarantees.': 'Haikuweza kudai dhamana.',
+  '{n}× savings': 'Mara {n} ya akiba',
+  '{n}% of pool': '{n}% ya hazina',
+
+  // Reconciliation (migration 027)
+  'The group’s books do not balance': 'Hesabu za kikundi hazilingani',
+  'What the group holds and what members are owed differ by {amount}. Do not close a cycle or pay anything out until this is resolved.':
+    'Kile kikundi kinachomiliki na kile wanachama wanachodai vinatofautiana kwa {amount}. Usifunge mzunguko wala kulipa chochote hadi hili litatuliwe.',
+  // 'Pool' is already defined in the pool-chart section above and reused here.
+  'Out on loans': 'Iko kwenye mikopo',
+  'Total held': 'Jumla inayomilikiwa',
+  'Member capital': 'Mtaji wa wanachama',
+  'Retained earnings': 'Faida iliyobaki',
+  'Admin adjustments': 'Marekebisho ya msimamizi',
+  'Total owed': 'Jumla inayodaiwa',
+  'Difference': 'Tofauti',
+
+  // Notification channels (migration 026)
+  'Reminders': 'Vikumbusho',
+  'Text message reminders': 'Vikumbusho kwa ujumbe mfupi',
+  'Sent to {phone}': 'Zinatumwa kwa {phone}',
+  'Add your phone number above so the group can text you.':
+    'Ongeza namba yako ya simu hapo juu ili kikundi kiweze kukutumia ujumbe.',
+  'Notifications on this device': 'Arifa kwenye kifaa hiki',
+  'Free. Works best once you install the app to your home screen.':
+    'Bure. Inafanya kazi vizuri ukiweka programu kwenye skrini yako ya nyumbani.',
+  'This browser does not support notifications.': 'Kivinjari hiki hakiungi mkono arifa.',
+  'Your browser did not allow notifications on this device.':
+    'Kivinjari chako hakikuruhusu arifa kwenye kifaa hiki.',
+  'Could not save your notification settings.': 'Haikuweza kuhifadhi mipangilio yako ya arifa.',
+  'You are always reminded in the app. These are for reaching you outside it.':
+    'Daima unakumbushwa ndani ya programu. Hizi ni za kukufikia nje yake.',
+  'Monthly fee due soon': 'Ada ya mwezi inakaribia kuisha muda',
+  'Monthly fee overdue': 'Ada ya mwezi imechelewa',
+  'Loan repayment due soon': 'Marejesho ya mkopo yanakaribia',
+  'Loan repayment overdue': 'Marejesho ya mkopo yamechelewa',
+  'Your share-out is waiting': 'Mgao wako unakusubiri',
+
+  // Cycles & share-out (migrations 023–024)
+  'Cycles & share-out': 'Mizunguko na mgao',
+  'Open': 'Wazi',
+  'Closed': 'Imefungwa',
+  'Interest earned': 'Riba iliyopatikana',
+  'Penalties collected': 'Faini zilizokusanywa',
+  'Written off': 'Zilizofutwa',
+  'Net earnings to share': 'Faida halisi ya kugawana',
+  'Close this cycle': 'Funga mzunguko huu',
+  'Earnings only': 'Faida pekee',
+  'Full share-out': 'Mgao kamili',
+  'Profit is paid out; everyone’s savings roll into the next cycle.':
+    'Faida inalipwa; akiba ya kila mmoja inaendelea kwenye mzunguko ujao.',
+  'Profit AND savings go back to members. Every loan must be settled first.':
+    'Faida NA akiba zinarudi kwa wanachama. Kila mkopo lazima ulipwe kwanza.',
+  'Preview the split': 'Angalia mgawanyo',
+  'Could not build the preview.': 'Haikuweza kuandaa muhtasari.',
+  // 'Member' and 'Requested {date}' are already defined in the member-grid and
+  // deletion-queue sections above and are reused verbatim here.
+  'Share': 'Sehemu',
+  'Earnings': 'Faida',
+  'Capital': 'Mtaji',
+  'Payout': 'Malipo',
+  'Total payout': 'Jumla ya malipo',
+  'Shares are weighted by how long each member’s money was in the group, not just their closing balance.':
+    'Sehemu zinapimwa kwa muda ambao fedha za kila mwanachama zilikuwa kwenye kikundi, si salio la mwisho tu.',
+  'e.g. agreed at the annual general meeting on 12 December':
+    'mfano: ilikubaliwa kwenye mkutano mkuu wa mwaka tarehe 12 Desemba',
+  'A reason is required to close a cycle.': 'Sababu inahitajika kufunga mzunguko.',
+  'Could not open the closure request.': 'Haikuweza kufungua ombi la kufunga.',
+  'Two other admins must approve. Closing freezes every figure above — later corrections cannot change an agreed share-out.':
+    'Wasimamizi wengine wawili lazima waidhinishe. Kufunga kunaganda takwimu zote hapo juu — marekebisho ya baadaye hayawezi kubadilisha mgao uliokubaliwa.',
+  'Propose closing this cycle': 'Pendekeza kufunga mzunguko huu',
+  'Cycle close awaiting approval': 'Kufunga mzunguko kunasubiri idhini',
+  'Approve & close': 'Idhinisha na funga',
+  'Cycle close proposed': 'Kufunga mzunguko kumependekezwa',
+  'Your share-out is ready': 'Mgao wako uko tayari',
+  'Share-out paid': 'Mgao umelipwa',
+  '{n} payout(s) still to make': 'Malipo {n} bado hayajafanyika',
+  'All payouts recorded': 'Malipo yote yameandikwa',
+  '{earnings} earnings': 'faida {earnings}',
+  '{capital} capital': 'mtaji {capital}',
+  'Pay': 'Lipa',
+  'Record payout': 'Andika malipo',
+  'Upload the payout screenshot.': 'Pakia picha ya malipo.',
+  'Could not record the payout.': 'Haikuweza kuandika malipo.',
+  'Another admin must record your own payout.': 'Msimamizi mwingine lazima aandike malipo yako.',
+  'No cycles yet.': 'Bado hakuna mizunguko.',
+  'Could not load cycles. Has migration 023 been applied?':
+    'Haikuweza kupakia mizunguko. Je, uhamishaji 023 umetekelezwa?',
+
+  // Withdrawals & member exit (migration 025)
+  'Withdraw savings': 'Toa akiba',
+  'Held against your loan': 'Imeshikiliwa dhidi ya mkopo wako',
+  'Available now': 'Inapatikana sasa',
+  'Your savings are held as security while your loan is open.':
+    'Akiba yako imeshikiliwa kama dhamana wakati mkopo wako uko wazi.',
+  'There is nothing available to withdraw right now.': 'Hakuna kinachopatikana kutoa kwa sasa.',
+  'Why do you need to withdraw?': 'Kwa nini unahitaji kutoa?',
+  'Request withdrawal': 'Omba kutoa',
+  'You can withdraw at most {amount} right now.':
+    'Unaweza kutoa kiwango cha juu cha {amount} kwa sasa.',
+  'A reason is required for every withdrawal.': 'Sababu inahitajika kwa kila utoaji.',
+  'Could not submit your withdrawal request.': 'Haikuweza kutuma ombi lako la kutoa.',
+  'Approved — the admins will pay this out and attach the proof.':
+    'Imeidhinishwa — wasimamizi watalipa na kuambatanisha uthibitisho.',
+  'Two admins must approve before this can be paid out.':
+    'Wasimamizi wawili lazima waidhinishe kabla ya kulipwa.',
+  'Withdrawals ({n})': 'Utoaji ({n})',
+  'exit settlement': 'malipo ya kuondoka',
+  'Withdrawal requested': 'Utoaji umeombwa',
+  'Withdrawal approved': 'Utoaji umeidhinishwa',
+  'Withdrawal rejected': 'Utoaji umekataliwa',
+  'Withdrawal paid': 'Utoaji umelipwa',
+  'This is your own withdrawal — another admin must handle it.':
+    'Huu ni utoaji wako mwenyewe — msimamizi mwingine lazima aushughulikie.',
+  'Paying this out settles the member in full and deactivates them. Their history is kept.':
+    'Kulipa hii kunamaliza mwanachama kikamilifu na kumzima. Historia yake inabaki.',
+  'Could not complete that.': 'Haikuweza kukamilisha hilo.',
+  'Settle & exit': 'Maliza na ondoka',
+  'Settle & exit member': 'Maliza na mwondoe mwanachama',
+  'Settlement': 'Malipo ya mwisho',
+  'Still owes': 'Bado anadaiwa',
+  'They cannot leave with an open loan. Settle it, recover it from their savings, or write it off first.':
+    'Hawezi kuondoka na mkopo wazi. Ulipe, urejeshe kutoka akiba yake, au uufute kwanza.',
+  'This opens a withdrawal for their full balance. Once two admins approve and the payout is recorded, they leave the group — their history is kept.':
+    'Hii inafungua utoaji wa salio lake lote. Wasimamizi wawili wakiidhinisha na malipo yakiandikwa, anaondoka kwenye kikundi — historia yake inabaki.',
+  'e.g. moving to Mwanza; leaving the group at the end of the cycle':
+    'mfano: anahamia Mwanza; anaondoka kikundini mwisho wa mzunguko',
+  'A reason is required to exit a member.': 'Sababu inahitajika kumwondoa mwanachama.',
+  'Could not work out their settlement.': 'Haikuweza kukokotoa malipo yake ya mwisho.',
+  'Could not open the exit request.': 'Haikuweza kufungua ombi la kuondoka.',
+  'Open exit settlement': 'Fungua malipo ya kuondoka',
+  'Member exit proposed': 'Kuondoka kwa mwanachama kumependekezwa',
+
+  // Partial payments (migration 021)
+  'Part paid': 'Imelipwa kwa sehemu',
+  '{amount} already paid': '{amount} tayari imelipwa',
+  '{amount} is owed. You can pay less — whatever you pay is applied to the penalty first, then the balance.':
+    'Unadaiwa {amount}. Unaweza kulipa kidogo — unachokilipa kinaenda kwenye faini kwanza, kisha salio.',
+  'Only {amount} is owed. Log anything extra as a savings deposit instead.':
+    'Unadaiwa {amount} tu. Ziada yoyote iingize kama amana ya akiba.',
+  'to penalty': 'kwa faini',
+  'to interest': 'kwa riba',
+  'to the fee': 'kwa ada',
+  'to principal': 'kwa mtaji',
+  'to principal (early)': 'kwa mtaji (mapema)',
+  '{amount} will still be owed — marked part paid.':
+    '{amount} bado itadaiwa — itawekwa kama imelipwa kwa sehemu.',
+  'Settles this in full.': 'Inamaliza hii kikamilifu.',
+  '{amount} more than anything outstanding. Approve the exact amount and log the surplus as a savings deposit.':
+    '{amount} zaidi ya deni lolote lililopo. Idhinisha kiasi halisi na ziada iingize kama amana ya akiba.',
+
+  // Loan distress actions (migration 022)
+  'Active loans ({n})': 'Mikopo inayoendelea ({n})',
+  '{n} at risk': '{n} iko hatarini',
+  'On schedule': 'Inaenda sawa',
+  '{n} overdue · {d} days': '{n} zimechelewa · siku {d}',
+  '+ {amount} penalty': '+ faini ya {amount}',
+  'Action': 'Hatua',
+  'Action pending': 'Hatua inasubiri',
+  'Loan action': 'Hatua ya mkopo',
+  'Borrower': 'Mkopaji',
+  'Outstanding': 'Deni lililobaki',
+  'Their savings': 'Akiba yao',
+  'Overdue installments': 'Awamu zilizochelewa',
+  'Reschedule the loan': 'Panga upya mkopo',
+  'Recover from their savings': 'Rejesha kutoka akiba yao',
+  'Write off the balance': 'Futa salio',
+  'New term (months)': 'Muda mpya (miezi)',
+  'Term must be between 1 and 24 months.': 'Muda lazima uwe kati ya miezi 1 na 24.',
+  'A reason is required for every loan action.': 'Sababu inahitajika kwa kila hatua ya mkopo.',
+  'This member has no savings to recover from.': 'Mwanachama huyu hana akiba ya kurejesha.',
+  'At most {amount} can be recovered (the lower of the balance owed and their savings).':
+    'Kiasi cha juu kinachoweza kurejeshwa ni {amount} (kidogo kati ya deni na akiba yao).',
+  'Could not open the loan action request.': 'Haikuweza kufungua ombi la hatua ya mkopo.',
+  'Submit action': 'Tuma hatua',
+  'A new schedule is cut over {n} month(s) on the {amount} still outstanding. Unpaid installments are cancelled, which also cancels the penalty they had accrued.':
+    'Ratiba mpya inaandaliwa kwa miezi {n} kwa {amount} inayodaiwa. Awamu ambazo hazijalipwa zinafutwa, pamoja na faini zilizokusanyika.',
+  'Up to {amount}. Their savings drop by this amount and the loan balance falls with it — no cash moves.':
+    'Hadi {amount}. Akiba yao inapungua kwa kiasi hiki na deni la mkopo linapungua nalo — hakuna fedha inayohama.',
+  'The group permanently absorbs the {amount} still owed. The pool falls by that amount and the debt is closed.':
+    'Kikundi kinabeba hasara ya {amount} inayodaiwa. Hazina inapungua kwa kiasi hicho na deni linafungwa.',
+  'e.g. lost their job in March; agreed a longer repayment at the April meeting':
+    'mfano: alipoteza kazi Machi; ilikubaliwa marejesho ya muda mrefu kwenye mkutano wa Aprili',
+  'Pending loan actions ({n})': 'Hatua za mikopo zinazosubiri ({n})',
+  'Cancel this loan action request?': 'Ghairi ombi hili la hatua ya mkopo?',
+  'Could not approve the action.': 'Imeshindwa kuidhinisha hatua.',
+  'This is your own loan — you cannot vote on it.': 'Huu ni mkopo wako — huwezi kupiga kura juu yake.',
+  'Reschedule {name}’s loan': 'Panga upya mkopo wa {name}',
+  'Write off {name}’s loan': 'Futa mkopo wa {name}',
+  'Recover from {name}’s savings': 'Rejesha kutoka akiba ya {name}',
+  'New schedule over {n} month(s) on {amount} outstanding. Unpaid installments and their accrued penalty are cancelled.':
+    'Ratiba mpya ya miezi {n} kwa {amount} inayodaiwa. Awamu ambazo hazijalipwa na faini zake zinafutwa.',
+  'The pool permanently absorbs {amount}.': 'Hazina inabeba hasara ya {amount} kudumu.',
+  '{amount} moves from their savings to the loan balance. No cash moves.':
+    '{amount} inahama kutoka akiba yao kwenda deni la mkopo. Hakuna fedha inayohama.',
+  'Loan rescheduled': 'Mkopo umepangwa upya',
+  'Loan written off': 'Mkopo umefutwa',
+  'Loan settled from your savings': 'Mkopo umelipwa kutoka akiba yako',
+  'Loan action proposed': 'Hatua ya mkopo imependekezwa',
+
+  // Group rules / settings (migration 020). The rule labels come from the
+  // group_settings.label column, so they are translated by value here.
+  'Group rules': 'Kanuni za kikundi',
+  'Propose change': 'Pendekeza mabadiliko',
+  'Change a group rule': 'Badilisha kanuni ya kikundi',
+  'Rule': 'Kanuni',
+  'Current value': 'Thamani ya sasa',
+  'Allowed range': 'Kiwango kinachoruhusiwa',
+  'New value': 'Thamani mpya',
+  'New value (%)': 'Thamani mpya (%)',
+  'Enter a new value.': 'Weka thamani mpya.',
+  'That is already the current value.': 'Hiyo tayari ndiyo thamani ya sasa.',
+  'Must be between {min} and {max}.': 'Lazima iwe kati ya {min} na {max}.',
+  'A reason is required for every rule change.': 'Sababu inahitajika kwa kila mabadiliko ya kanuni.',
+  'Could not open the rule change request.': 'Haikuweza kufungua ombi la mabadiliko ya kanuni.',
+  '{label}: {from} → {to}': '{label}: {from} → {to}',
+  'e.g. agreed at the January meeting to raise the monthly fee':
+    'mfano: ilikubaliwa kwenye mkutano wa Januari kupandisha ada ya kila mwezi',
+  "Two other admins must approve this change before it applies. You can't approve your own request.":
+    'Wasimamizi wengine wawili lazima waidhinishe mabadiliko haya kabla hayajaanza kutumika. Huwezi kuidhinisha ombi lako mwenyewe.',
+  'New rules apply to future fees and loans only — penalties and interest already charged never change.':
+    'Kanuni mpya zinahusu ada na mikopo ya baadaye pekee — faini na riba zilizokwisha tozwa hazibadiliki kamwe.',
+  'Changing a rule needs two admin approvals and applies to future fees and loans only.':
+    'Kubadilisha kanuni kunahitaji idhini ya wasimamizi wawili na kunahusu ada na mikopo ya baadaye pekee.',
+  'Pending rule changes ({n})': 'Mabadiliko ya kanuni yanayosubiri ({n})',
+  'Cancel this rule change request?': 'Ghairi ombi hili la mabadiliko ya kanuni?',
+  'Could not approve the change.': 'Imeshindwa kuidhinisha mabadiliko.',
+  'Applies to future fees and loans only.': 'Inahusu ada na mikopo ya baadaye pekee.',
+  'Monthly fee (TZS)': 'Ada ya kila mwezi (TZS)',
+  'Monthly loan interest': 'Riba ya mkopo kwa mwezi',
+  'Monthly overdue penalty': 'Faini ya kuchelewa kwa mwezi',
+  'Max share of pool per loan': 'Kiwango cha juu cha hazina kwa mkopo mmoja',
+  'Loan cap as multiple of contribution': 'Ukomo wa mkopo kwa mara ya mchango',
+  'Loan term (months)': 'Muda wa mkopo (miezi)',
+  'Group rule changed': 'Kanuni ya kikundi imebadilika',
+  'Rule change proposed': 'Mabadiliko ya kanuni yamependekezwa',
+
   // Pool chart
   'Group pool over time': 'Hazina ya kikundi kwa wakati',
   'Could not load the chart.': 'Haikuweza kupakia chati.',
@@ -402,9 +767,11 @@ const sw = {
   'Make a savings deposit or pay your monthly fee to become eligible.':
     'Weka amana ya akiba au lipa ada yako ya kila mwezi ili kustahili.',
   'Group pool is currently too low to issue a loan.': 'Hazina ya kikundi iko chini sana kutoa mkopo kwa sasa.',
-  'Limited by 3× your savings.': 'Imezuiwa na mara 3 ya akiba yako.',
+  // {n} is the live contribution multiplier / pool percentage from group_settings,
+  // so these read correctly after the group votes to change either rule.
+  'Limited by {n}× your savings.': 'Imezuiwa na mara {n} ya akiba yako.',
   'Both rules cap at the same amount.': 'Sheria zote mbili zinafikia kiasi sawa.',
-  'Limited by 25% of the group pool.': 'Imezuiwa na 25% ya hazina ya kikundi.',
+  'Limited by {n}% of the group pool.': 'Imezuiwa na {n}% ya hazina ya kikundi.',
   'Available once your current loan is closed.': 'Itapatikana mkopo wako wa sasa ukifungwa.',
 
   // Obligations card
@@ -422,9 +789,8 @@ const sw = {
   'You have an active loan of {amount}. Repay it before requesting another.':
     'Una mkopo unaoendelea wa {amount}. Ulipe kabla ya kuomba mwingine.',
   'Request a loan': 'Omba mkopo',
-  '5× your savings': 'Mara 5 ya akiba yako',
-  '25% of group pool': '25% ya hazina ya kikundi',
-  '25% of the group pool': '25% ya hazina ya kikundi',
+  '{n}× your savings': 'Mara {n} ya akiba yako',
+  '{n}% of group pool': '{n}% ya hazina ya kikundi',
   'Maximum you can request': 'Kiwango cha juu unachoweza kuomba',
   'Make a savings deposit or pay your monthly fee to become eligible for a loan.':
     'Weka amana ya akiba au lipa ada yako ya kila mwezi ili kustahili mkopo.',

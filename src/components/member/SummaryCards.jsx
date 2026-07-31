@@ -6,6 +6,7 @@ import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
 import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
 import { useLanguage } from '../../hooks/useLanguage'
+import { useGroupSettings } from '../../hooks/useGroupSettings'
 
 function HeroCard({ label, value, sub, tone = 'sky' }) {
   const palette =
@@ -49,6 +50,10 @@ export default function SummaryCards({
   penaltyDue,
 }) {
   const { t } = useLanguage()
+  const { settings } = useGroupSettings()
+  const multiplier = settings.contribution_multiplier
+  const fraction = settings.pool_loan_fraction
+
   const loanBalance =
     loan?.status === 'active'
       ? Number(loan.outstanding_principal ?? loan.principal)
@@ -56,9 +61,9 @@ export default function SummaryCards({
   const originalPrincipal = loan?.status === 'active' ? Number(loan.principal) : 0
   const principalRepaid = Math.max(0, originalPrincipal - loanBalance)
 
-  const contribCap = contributionCeiling(contribution)
-  const poolCap = poolCeiling(pool)
-  const maxLoanAmount = maxLoan(contribution, pool)
+  const contribCap = contributionCeiling(contribution, multiplier)
+  const poolCap = poolCeiling(pool, fraction)
+  const maxLoanAmount = maxLoan(contribution, pool, { fraction, multiplier })
   const hasOpenLoan = loan?.status === 'pending' || loan?.status === 'active'
 
   const bindingNote =
@@ -67,10 +72,13 @@ export default function SummaryCards({
         ? t('Make a savings deposit or pay your monthly fee to become eligible.')
         : t('Group pool is currently too low to issue a loan.')
       : contribCap < poolCap
-        ? t('Limited by 3× your savings.')
+        ? t('Limited by {n}× your savings.').replace('{n}', multiplier)
         : contribCap === poolCap
           ? t('Both rules cap at the same amount.')
-          : t('Limited by 25% of the group pool.')
+          : t('Limited by {n}% of the group pool.').replace(
+              '{n}',
+              Number((fraction * 100).toFixed(2)),
+            )
 
   const loanSub =
     loan?.status === 'pending'

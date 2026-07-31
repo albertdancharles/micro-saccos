@@ -15,6 +15,48 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+// Web Push (migration 026). The payload is the JSON the dispatcher sends; a push
+// with no body still shows something useful rather than the browser's generic
+// "This site has been updated in the background".
+self.addEventListener('push', (event) => {
+  let payload
+  try {
+    payload = event.data ? event.data.json() : {}
+  } catch {
+    // Not JSON — fall back to the raw text so a plain-text push still says something.
+    payload = { title: 'Micro-SACCOS', body: event.data ? event.data.text() : '' }
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title || 'Micro-SACCOS', {
+      body: payload.body || '',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      data: { url: payload.url || '/' },
+      // Same tag = a new reminder replaces the old one instead of stacking five
+      // copies of "your fee is overdue" in the tray.
+      tag: payload.tag || 'micro-saccos',
+      renotify: true,
+    }),
+  )
+})
+
+// Focus an already-open tab rather than opening a second one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      return self.clients.openWindow(url)
+    }),
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)

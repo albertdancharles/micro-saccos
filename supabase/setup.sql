@@ -1,15 +1,24 @@
--- ============================================================================
--- setup.sql  —  Micro-SACCOS full hosted setup (migrations 001-005 concatenated)
--- ============================================================================
--- HOW TO USE (hosted, no Docker):
---   1. Create a project at https://supabase.com
---   2. Dashboard -> SQL Editor -> New query
---   3. Paste this ENTIRE file and click Run. Safe on a fresh project.
--- Then follow README.md "Hosted path" for env vars, seeding, and optional cron.
--- ============================================================================
--- ----------------------------------------------------------------------------
+-- ===========================================================================
+-- setup.sql — GENERATED FILE. DO NOT EDIT BY HAND.
+--
+-- Every migration in supabase/migrations, concatenated in order, for the hosted
+-- one-shot paste: Supabase Dashboard -> SQL Editor -> New query -> Run.
+--
+-- Regenerate with:  npm run build:setup
+-- CI fails if this file does not match the migrations it is built from.
+--
+-- Two migrations need a note when running this on a fresh project:
+--   * 004 requires the storage schema (present on every Supabase project)
+--   * 017 enables pg_cron; if the extension is not available the statement fails
+--     and can be skipped — it only schedules monthly fee generation, and
+--     ensure_current_fees() already self-heals on every dashboard load.
+--
+-- 30 migrations: 001_create_tables.sql .. 030_meetings_and_social_fund.sql
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
 -- 001_create_tables.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 -- 001_create_tables.sql — Micro-SACCOS schema (build plan §4).
 -- Apply order: 001 tables → 002 views → 003 RLS → 004 storage → 005 RPCs.
@@ -22,49 +31,28 @@ RETURNS date AS $$
   SELECT (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date;
 $$ LANGUAGE sql STABLE;
 
--- profiles: extends auth.users. `role` only gates permissions (Decision #1).
--- Created automatically on signup by a trigger. Self-registered users start
--- PENDING (is_active=false) until an admin approves (migration 018). The richer
--- KYC fields are collected at registration / via /complete-profile.
+-- profiles: extends auth.users. All 15 are contributing members; `role` only
+-- gates permissions (Decision #1). Created automatically on signup by a trigger.
 CREATE TABLE profiles (
-  id                uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name         text NOT NULL,
-  phone_number      text UNIQUE,
-  secondary_phone   text,
-  email             text,
-  residence         text,
-  national_id       text,
-  next_of_kin_name  text,
-  next_of_kin_phone text,
-  role              text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
-  is_active         boolean NOT NULL DEFAULT true,
-  created_at        timestamptz NOT NULL DEFAULT now()
+  id            uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name     text NOT NULL,
+  phone_number  text UNIQUE,
+  role          text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  is_active     boolean NOT NULL DEFAULT true,
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
 -- SECURITY DEFINER + pinned search_path: this trigger fires under the
 -- supabase_auth_admin role (GoTrue), whose search_path excludes `public`, so the
 -- table must be schema-qualified and search_path pinned or every signup fails with
--- "Database error creating new user". Self-registered users start is_active=false
--- (pending approval); admin-create-member flips them active after creation.
+-- "Database error creating new user".
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (
-    id, full_name, phone_number, secondary_phone, email,
-    residence, national_id, next_of_kin_name, next_of_kin_phone, is_active
-  )
-  VALUES (
-    NEW.id,
-    COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), split_part(NEW.email, '@', 1)),
-    NULLIF(NEW.raw_user_meta_data->>'phone_number', ''),
-    NULLIF(NEW.raw_user_meta_data->>'secondary_phone', ''),
-    NEW.email,
-    NULLIF(NEW.raw_user_meta_data->>'residence', ''),
-    NULLIF(NEW.raw_user_meta_data->>'national_id', ''),
-    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_name', ''),
-    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_phone', ''),
-    false
-  );
+  INSERT INTO public.profiles (id, full_name, phone_number)
+  VALUES (NEW.id,
+          NEW.raw_user_meta_data->>'full_name',
+          NEW.raw_user_meta_data->>'phone_number');
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -139,10 +127,9 @@ CREATE TABLE payment_submissions (
   rejection_reason text
 );
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 002_create_views.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 -- 002_create_views.sql — overdue + penalty computed at query time (build plan §5).
 -- Penalty rule (Decision #6): once past due, 5% × base applies and again each
@@ -215,10 +202,9 @@ SELECT
        FROM loans             WHERE status IN ('active', 'closed'))
   AS pool_balance_tzs;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 003_rls_policies.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 -- 003_rls_policies.sql — Row-Level Security (build plan §6).
 -- Privileged writes (fee generation, loan/payment approval) go through the service
@@ -274,10 +260,9 @@ GRANT SELECT ON v_group_pool TO authenticated;
 GRANT SELECT ON v_fee_status, v_fee_status_money,
                 v_installment_status, v_installment_status_money TO authenticated;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 004_storage_bucket.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 -- 004_storage_bucket.sql — private proof bucket + storage RLS (build plan §7).
 
@@ -313,10 +298,9 @@ CREATE POLICY "admin upload disbursements"
   ON storage.objects FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'payment-proofs' AND is_admin());
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 005_rpc_functions.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 -- 005_rpc_functions.sql — SECURITY DEFINER RPCs (build plan §8b, §8c, §8c-bis).
 -- These hold the atomic multi-write logic; never replicate it client-side.
@@ -468,13 +452,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 006_member_self_update.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
--- Let members update their own phone number from the Profile page without granting
--- blanket UPDATE on profiles. SECURITY DEFINER scopes the write to auth.uid()'s row.
+-- 006_member_self_update.sql — let members update their own phone number from the
+-- Profile page without granting blanket UPDATE on profiles. SECURITY DEFINER scopes
+-- the write to auth.uid()'s row only, so the policy surface stays minimal.
+
 CREATE OR REPLACE FUNCTION update_own_phone(p_phone text)
 RETURNS void AS $$
 BEGIN
@@ -485,14 +470,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
-
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 007_audit_log.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
--- 007_audit_log.sql - every consequential admin/member action gets a row in
+-- 007_audit_log.sql — every consequential admin/member action gets a row in
 -- audit_log. Admins read it via /admin/audit. Inserts come from SECURITY DEFINER
 -- RPCs (no INSERT policy needed). Builds the foundation for multi-admin governance
 -- in Phase 3 (where pending approvals query this table too).
@@ -518,6 +500,7 @@ GRANT SELECT ON audit_log TO authenticated;
 -- fee-generation / self-update RPCs. Body is otherwise unchanged from migration
 -- 005 (plus the pool + contribution caps already in approve_loan).
 -- ---------------------------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION approve_submission(p_submission_id uuid, p_amount_received numeric)
 RETURNS void AS $$
 DECLARE
@@ -727,10 +710,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 008_two_step_approvals.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 008_two_step_approvals.sql — multi-admin governance (Phase 3).
 --   * Every monetary approval requires 2 admins (or all admins, whichever is smaller).
 --   * An admin cannot approve their own submission or loan.
@@ -980,10 +963,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 009_notifications.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 009_notifications.sql — in-app notifications (Phase 4).
 -- Triggers insert a row per recipient when something they care about happens:
 --   * Member's submission / loan changes status (approved, rejected, loan active/closed)
@@ -1150,10 +1133,10 @@ CREATE TRIGGER on_new_loan
   AFTER INSERT ON loans
   FOR EACH ROW EXECUTE FUNCTION notify_admins_on_new_loan();
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 010_member_deletion.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 010_member_deletion.sql — 2-of-N member deletion governance.
 -- Mirrors the approval pattern from migration 008:
 --   * An admin opens a deletion request for another member (cannot target self).
@@ -1427,11 +1410,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 011_flexible_repayment.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 011_flexible_repayment.sql — flexible loan repayment + duplicate submission guard.
 --
 -- Loan model change:
@@ -1823,10 +1805,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 012_group_assets.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 012_group_assets.sql — total group assets view.
 --
 -- v_group_pool is liquid cash (loanable balance) — it already subtracts every
@@ -1854,10 +1836,10 @@ SELECT
 
 GRANT SELECT ON v_group_assets TO authenticated;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 013_savings_edits.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 013_savings_edits.sql — 2-of-N savings adjustments.
 --
 -- An admin can open a request to adjust any member's savings by a positive or
@@ -2143,10 +2125,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 014_fee_overdue_and_savings.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 014_fee_overdue_and_savings.sql — overdue starts on the 1st of the next month.
 --
 -- Previously v_fee_status set due_date = period + 1 month (e.g. period 2026-05-01
@@ -2190,10 +2172,10 @@ SELECT
   END AS computed_status
 FROM b;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 015_pool_edits.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 015_pool_edits.sql — 2-of-N pool/total-assets adjustments.
 --
 -- Total group assets = liquid pool + outstanding loans. Outstanding loans is
@@ -2431,10 +2413,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- 016_role_changes.sql
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+
 -- 016_role_changes.sql — 2-of-N admin role changes.
 --
 -- An admin can open a request to promote a member to admin or revoke another
@@ -2728,12 +2710,98 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- ----------------------------------------------------------------------------
--- 018_self_registration.sql — self-service onboarding with admin approval.
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- 017_schedule_monthly_fees.sql
+-- ---------------------------------------------------------------------------
 
--- A member edits ONLY their own editable fields. Never touches id/role/is_active/
--- email, so it can't be used to self-activate or self-promote.
+-- 017: Schedule monthly fee generation via pg_cron.
+--
+-- ensure_current_fees() (migration 005) is a SECURITY DEFINER, idempotent upsert that
+-- does the same thing as the generate-monthly-fees Edge Function but in pure SQL with
+-- no auth.uid() dependency. Scheduling it directly is simpler than deploying the Edge
+-- Function + a pg_net HTTP call, and needs no service-role key. Run this once in the
+-- Supabase SQL editor.
+
+-- 1. Enable pg_cron (also available via Dashboard → Database → Extensions).
+create extension if not exists pg_cron;
+
+-- 2. Schedule for the 1st of each month at 03:00 UTC (= 06:00 EAT, safely inside the
+--    1st in East Africa Time). Re-running with the same job name replaces the job.
+--    The function uses today_eat() internally, so the exact run time only needs to
+--    land on the 1st in EAT.
+select cron.schedule(
+  'generate-monthly-fees',
+  '0 3 1 * *',
+  $$ select ensure_current_fees(); $$
+);
+
+-- Verify:
+--   select jobid, jobname, schedule, command, active from cron.job;
+--   select * from cron.job_run_details order by start_time desc limit 5;
+--
+-- To remove:  select cron.unschedule('generate-monthly-fees');
+
+-- ---------------------------------------------------------------------------
+-- 018_self_registration.sql
+-- ---------------------------------------------------------------------------
+
+-- 018_self_registration.sql — self-service onboarding (v3).
+-- Flips membership from admin-invite-only to self-registration WITH admin approval:
+--   * New sign-ups (email/password or Google) land as PENDING (is_active = false)
+--     and only become members once an admin approves them.
+--   * The profile now carries the richer KYC fields collected at registration.
+--   * Members may edit their OWN details via update_own_profile(), which can never
+--     touch role/is_active (those stay admin-controlled). No broad self-UPDATE policy
+--     is added, so a member still cannot self-activate or self-promote.
+-- Apply after 017.
+
+-- ---------------------------------------------------------------------------
+-- 1. Richer profile fields. All nullable so Google users (who arrive with only a
+--    name + email) can complete them afterwards via /complete-profile.
+-- ---------------------------------------------------------------------------
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS email             text,
+  ADD COLUMN IF NOT EXISTS secondary_phone   text,
+  ADD COLUMN IF NOT EXISTS residence         text,
+  ADD COLUMN IF NOT EXISTS national_id       text,
+  ADD COLUMN IF NOT EXISTS next_of_kin_name  text,
+  ADD COLUMN IF NOT EXISTS next_of_kin_phone text;
+
+-- ---------------------------------------------------------------------------
+-- 2. Pending-by-default trigger. Self-registered users start inactive; the
+--    admin-create-member Edge Function flips is_active=true for admin-added members.
+--    full_name is NOT NULL, so fall back to the email local-part for OAuth users
+--    whose provider somehow omits a name. NULLIF('') keeps blank metadata as NULL
+--    (so the UNIQUE phone constraint allows many blank pending sign-ups).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (
+    id, full_name, phone_number, secondary_phone, email,
+    residence, national_id, next_of_kin_name, next_of_kin_phone, is_active
+  )
+  VALUES (
+    NEW.id,
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), split_part(NEW.email, '@', 1)),
+    NULLIF(NEW.raw_user_meta_data->>'phone_number', ''),
+    NULLIF(NEW.raw_user_meta_data->>'secondary_phone', ''),
+    NEW.email,
+    NULLIF(NEW.raw_user_meta_data->>'residence', ''),
+    NULLIF(NEW.raw_user_meta_data->>'national_id', ''),
+    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_name', ''),
+    NULLIF(NEW.raw_user_meta_data->>'next_of_kin_phone', ''),
+    false
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 3. update_own_profile — a member edits ONLY their own editable fields. Never
+--    touches id / role / is_active / email, so it can't be used to self-activate
+--    or self-promote. Used by /complete-profile and the Profile page.
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION update_own_profile(
   p_full_name        text,
   p_phone_number     text,
@@ -2761,7 +2829,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- Admin activates a pending sign-up (single-admin, like admin-create-member).
+-- ---------------------------------------------------------------------------
+-- 4. approve_member — admin activates a pending sign-up. Single-admin (like
+--    admin-create-member) so it works right after a reset when only one admin
+--    exists. Audited.
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION approve_member(p_member_id uuid)
 RETURNS void AS $$
 BEGIN
@@ -2774,8 +2846,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- Admin declines a pending sign-up, removing the auth user (cascades to profile).
--- Only valid for inactive, non-admin members; active members use member-deletion.
+-- ---------------------------------------------------------------------------
+-- 5. reject_pending_member — admin declines a pending sign-up, removing the auth
+--    user (cascades to the profile). Only valid for inactive, non-admin members;
+--    active members must go through the 2-of-N member-deletion flow instead.
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION reject_pending_member(p_member_id uuid)
 RETURNS void AS $$
 DECLARE
@@ -2784,8 +2859,8 @@ DECLARE
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
   SELECT role, is_active INTO v_role, v_active FROM profiles WHERE id = p_member_id;
-  IF NOT FOUND        THEN RAISE EXCEPTION 'Member not found'; END IF;
-  IF v_active         THEN RAISE EXCEPTION 'Member is already active; use member deletion instead'; END IF;
+  IF NOT FOUND      THEN RAISE EXCEPTION 'Member not found'; END IF;
+  IF v_active       THEN RAISE EXCEPTION 'Member is already active; use member deletion instead'; END IF;
   IF v_role = 'admin' THEN RAISE EXCEPTION 'Cannot reject an admin'; END IF;
   INSERT INTO audit_log (actor_id, action, target_type, target_id)
   VALUES (auth.uid(), 'reject_pending_member', 'profile', p_member_id);
@@ -2796,3 +2871,4277 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 GRANT EXECUTE ON FUNCTION update_own_profile(text, text, text, text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION approve_member(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION reject_pending_member(uuid) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 019_member_transparency.sql
+-- ---------------------------------------------------------------------------
+
+-- 019_member_transparency.sql — group transparency directory (member-facing).
+--
+-- The group now operates on full mutual transparency: every active member can see
+-- every other member's savings balance and outstanding loan. Base-table RLS keeps
+-- each member scoped to their own rows (003_rls_policies.sql), so this SECURITY
+-- DEFINER function does the per-member aggregation server-side and returns ONLY
+-- non-sensitive financial summaries. It deliberately omits phone numbers, NIDA,
+-- next-of-kin, emails, and payment-proof screenshots — those stay private.
+--
+-- Savings mirrors lib/savings.js getApprovedSavings(): approved savings deposits
+-- + paid monthly-fee base amounts + admin-approved corrective adjustments.
+-- Active loan mirrors v_group_assets: outstanding_principal of the active loan
+-- (falling back to principal for loans that pre-date migration 011).
+
+CREATE OR REPLACE FUNCTION group_member_directory()
+RETURNS TABLE (
+  member_id       uuid,
+  full_name       text,
+  role            text,
+  savings_tzs     numeric,
+  active_loan_tzs numeric,
+  has_active_loan boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.id,
+    p.full_name,
+    p.role,
+    COALESCE(dep.total, 0) + COALESCE(fee.total, 0) + COALESCE(adj.total, 0) AS savings_tzs,
+    COALESCE(ln.outstanding, 0)                                              AS active_loan_tzs,
+    ln.outstanding IS NOT NULL                                              AS has_active_loan
+  FROM profiles p
+  LEFT JOIN LATERAL (
+    SELECT SUM(amount_claimed) AS total
+    FROM payment_submissions
+    WHERE member_id = p.id
+      AND submission_type = 'savings_deposit'
+      AND status = 'approved'
+  ) dep ON true
+  LEFT JOIN LATERAL (
+    SELECT SUM(amount) AS total
+    FROM monthly_fees
+    WHERE member_id = p.id AND status = 'paid'
+  ) fee ON true
+  LEFT JOIN LATERAL (
+    SELECT SUM(delta) AS total
+    FROM savings_adjustments
+    WHERE target_member_id = p.id AND status = 'approved'
+  ) adj ON true
+  LEFT JOIN LATERAL (
+    SELECT SUM(COALESCE(outstanding_principal, principal)) AS outstanding
+    FROM loans
+    WHERE member_id = p.id AND status = 'active'
+  ) ln ON true
+  WHERE p.is_active = true
+  ORDER BY p.full_name;
+$$;
+
+-- Any signed-in member may call it; anonymous users may not. The function body
+-- reveals no PII, so member-level access is the intended transparency.
+REVOKE ALL ON FUNCTION group_member_directory() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION group_member_directory() TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 020_group_settings.sql
+-- ---------------------------------------------------------------------------
+
+-- 020_group_settings.sql — the group's financial rules become data, not code.
+--
+-- Until now the monthly fee (10000), loan interest (5%), penalty rate (5%), pool
+-- fraction (25%) and contribution multiplier (3x) were literals scattered across
+-- 005/007/011 and lib/loanMath.js. Changing the fee meant shipping a migration.
+-- This migration moves them into `group_settings`, readable by every member (the
+-- rules are public to the group) and changeable only by 2-of-N admin approval —
+-- the same governance the pool/savings/role edits already use (015).
+--
+-- HISTORY IS NOT REWRITTEN. The `_money` views recompute penalties on every read,
+-- so if they read setting('penalty_rate') live, dropping the penalty from 5% to 3%
+-- would retroactively restate every unpaid fee ever raised. Instead each
+-- money-bearing row SNAPSHOTS the rate that applied when it was created:
+--
+--     monthly_fees.penalty_rate      loan_installments.penalty_rate
+--     loans.interest_rate
+--
+-- The views use the row's own rate. setting() therefore governs only NEW
+-- obligations — an agreed penalty never changes retroactively.
+--
+-- Existing rows are backfilled with the literal 0.05 they were actually charged at.
+--
+-- NOTE: approve_submission still hardcodes 0.05 for the interest recalculation; it
+-- is rewritten wholesale in 021 (partial payments) and picks up the loan's
+-- snapshot rate there. Apply 020 and 021 together.
+
+-- --------------------------------------------------------------------------
+-- 1. group_settings
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS group_settings (
+  key         text PRIMARY KEY,
+  value       numeric(14,4) NOT NULL,
+  min_value   numeric(14,4) NOT NULL,
+  max_value   numeric(14,4) NOT NULL,
+  label       text NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  CHECK (value >= min_value AND value <= max_value),
+  CHECK (min_value <= max_value)
+);
+
+-- Seeded with exactly today's behaviour, so applying this migration changes
+-- nothing until an admin votes to change it. min/max are guard rails: they stop a
+-- fat-fingered 500% interest rate from ever reaching the table.
+INSERT INTO group_settings (key, value, min_value, max_value, label) VALUES
+  ('monthly_fee_amount',      10000, 0,    1000000, 'Monthly fee (TZS)'),
+  ('loan_interest_rate',       0.05, 0,    0.50,    'Monthly loan interest'),
+  ('penalty_rate',             0.05, 0,    0.50,    'Monthly overdue penalty'),
+  ('pool_loan_fraction',       0.25, 0.01, 1.00,    'Max share of pool per loan'),
+  ('contribution_multiplier',  3,    1,    20,      'Loan cap as multiple of contribution'),
+  ('default_loan_months',      3,    1,    12,      'Loan term (months)')
+ON CONFLICT (key) DO NOTHING;
+
+ALTER TABLE group_settings ENABLE ROW LEVEL SECURITY;
+
+-- Every member may read the rules they are governed by (consistent with the
+-- transparency directory in 019). Writes go through the RPCs below only.
+DROP POLICY IF EXISTS "Everyone reads group settings" ON group_settings;
+CREATE POLICY "Everyone reads group settings" ON group_settings
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON group_settings TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. setting() — the accessor every RPC and view default uses.
+--
+-- STABLE so it can appear in column DEFAULTs and be inlined in queries. The
+-- COALESCE fallback means a missing key can never take a live RPC down: the
+-- system silently keeps the behaviour it had before this migration.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION setting(p_key text)
+RETURNS numeric
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    (SELECT value FROM group_settings WHERE key = p_key),
+    CASE p_key
+      WHEN 'monthly_fee_amount'     THEN 10000
+      WHEN 'loan_interest_rate'     THEN 0.05
+      WHEN 'penalty_rate'           THEN 0.05
+      WHEN 'pool_loan_fraction'     THEN 0.25
+      WHEN 'contribution_multiplier' THEN 3
+      WHEN 'default_loan_months'    THEN 3
+      ELSE 0
+    END
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION setting(text) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Rate snapshots on money-bearing rows.
+--
+-- Added with a LITERAL 0.05 default first so existing rows are backfilled with
+-- the rate they were actually charged at, THEN repointed at setting() so new
+-- rows pick up the current rule. Doing it in one step would work today (both
+-- evaluate to 0.05) but would silently mis-backfill if this migration were ever
+-- replayed after a rate change.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE monthly_fees
+  ADD COLUMN IF NOT EXISTS penalty_rate numeric(6,4) NOT NULL DEFAULT 0.05;
+ALTER TABLE monthly_fees
+  ALTER COLUMN penalty_rate SET DEFAULT setting('penalty_rate');
+
+ALTER TABLE loan_installments
+  ADD COLUMN IF NOT EXISTS penalty_rate numeric(6,4) NOT NULL DEFAULT 0.05;
+ALTER TABLE loan_installments
+  ALTER COLUMN penalty_rate SET DEFAULT setting('penalty_rate');
+
+ALTER TABLE loans
+  ADD COLUMN IF NOT EXISTS interest_rate numeric(6,4) NOT NULL DEFAULT 0.05;
+ALTER TABLE loans
+  ALTER COLUMN interest_rate SET DEFAULT setting('loan_interest_rate');
+
+-- The 3-installment schedule was hardcoded as CHECK (installment_number IN (1,2,3)).
+-- Now that the term is a setting (1–12 months), the constraint has to widen with it
+-- or approve_loan would fail the moment an admin votes for a 4-month term.
+ALTER TABLE loan_installments DROP CONSTRAINT IF EXISTS loan_installments_installment_number_check;
+ALTER TABLE loan_installments
+  ADD CONSTRAINT loan_installments_installment_number_check
+  CHECK (installment_number BETWEEN 1 AND 12);
+
+-- --------------------------------------------------------------------------
+-- 4. Views — use each row's snapshot rate instead of the literal 0.05.
+--
+-- All four are DROPped and recreated rather than CREATE OR REPLACEd: the new
+-- penalty_rate column lands inside `b.*` / `li.*` and shifts the output column
+-- ordering, which CREATE OR REPLACE VIEW forbids (same trap as 011:44-51).
+-- The `_money` views are dropped by CASCADE and rebuilt below; grants are
+-- dropped with them, so they are re-issued.
+-- --------------------------------------------------------------------------
+
+DROP VIEW IF EXISTS v_fee_status_money;
+DROP VIEW IF EXISTS v_fee_status CASCADE;
+
+-- Semantics unchanged from 014: a fee is due by the LAST day of its own month, so
+-- it turns overdue on the 1st of the next month.
+CREATE VIEW v_fee_status AS
+WITH b AS (
+  SELECT mf.*,
+         (mf.period + INTERVAL '1 month' - INTERVAL '1 day')::date AS due_date
+  FROM monthly_fees mf
+)
+SELECT
+  b.*,
+  CASE
+    WHEN b.status = 'paid' OR today_eat() <= b.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), b.due_date)) * 12
+        + date_part('month', age(today_eat(), b.due_date)))::int + 1
+  END AS penalty_months,
+  CASE
+    WHEN b.status = 'paid'        THEN 'paid'
+    WHEN today_eat() > b.due_date THEN 'overdue'
+    ELSE 'pending'
+  END AS computed_status
+FROM b;
+
+CREATE VIEW v_fee_status_money AS
+SELECT
+  f.*,
+  round(f.penalty_rate * f.amount * f.penalty_months)            AS penalty_due,
+  f.amount + round(f.penalty_rate * f.amount * f.penalty_months) AS total_with_penalty
+FROM v_fee_status f;
+
+DROP VIEW IF EXISTS v_installment_status_money;
+DROP VIEW IF EXISTS v_installment_status CASCADE;
+
+-- Semantics unchanged from 011: 'cancelled' installments (superseded by early
+-- repayment) never accrue a penalty.
+CREATE VIEW v_installment_status AS
+SELECT
+  li.*,
+  CASE
+    WHEN li.status IN ('paid', 'cancelled') OR today_eat() <= li.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), li.due_date)) * 12
+        + date_part('month', age(today_eat(), li.due_date)))::int + 1
+  END AS penalty_months,
+  CASE
+    WHEN li.status = 'paid'        THEN 'paid'
+    WHEN li.status = 'cancelled'   THEN 'cancelled'
+    WHEN today_eat() > li.due_date THEN 'overdue'
+    ELSE 'pending'
+  END AS computed_status
+FROM loan_installments li;
+
+CREATE VIEW v_installment_status_money AS
+SELECT
+  i.*,
+  round(i.penalty_rate * i.total_due * i.penalty_months)               AS penalty_due,
+  i.total_due + round(i.penalty_rate * i.total_due * i.penalty_months) AS total_with_penalty
+FROM v_installment_status i;
+
+GRANT SELECT ON v_fee_status, v_fee_status_money            TO authenticated;
+GRANT SELECT ON v_installment_status, v_installment_status_money TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 5. ensure_current_fees — raise the CURRENT fee amount, not a literal 10000.
+--    (Replaces the 007 version; keeps its "only audit when rows were created"
+--    behaviour so dashboard loads don't flood the log.)
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION ensure_current_fees()
+RETURNS void AS $$
+DECLARE
+  v_period   date := date_trunc('month', today_eat())::date;
+  v_amount   numeric(12,2) := setting('monthly_fee_amount');
+  v_inserted int;
+BEGIN
+  WITH inserted AS (
+    INSERT INTO monthly_fees (member_id, period, amount, status)
+    SELECT p.id, v_period, v_amount, 'pending'
+    FROM profiles p
+    WHERE p.is_active = true
+    ON CONFLICT (member_id, period) DO NOTHING
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_inserted FROM inserted;
+
+  IF v_inserted > 0 THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'generate_monthly_fees', 'system', NULL,
+            jsonb_build_object('period', v_period, 'count', v_inserted,
+                               'amount', v_amount));
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- --------------------------------------------------------------------------
+-- 6. approve_loan — both hard caps and the interest rate come from settings.
+--    Otherwise identical to the 011 version (2-of-N, admin-loan restriction,
+--    outstanding_principal init). The loan's interest_rate is snapshotted here,
+--    at approval, because that is when the schedule is contracted.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_loan              loans%ROWTYPE;
+  v_int               numeric(12,2);
+  v_pool              numeric(14,2);
+  v_contribution      numeric(14,2);
+  v_required          int;
+  v_approvals         int;
+  v_final_proof       text;
+  v_other_admin_loans int;
+  v_total_admins      int;
+  v_fraction          numeric := setting('pool_loan_fraction');
+  v_multiplier        numeric := setting('contribution_multiplier');
+  v_rate              numeric := setting('loan_interest_rate');
+  v_months            int     := setting('default_loan_months')::int;
+  v_n                 int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL             THEN RAISE EXCEPTION 'Loan not found';      END IF;
+  IF v_loan.status <> 'pending'    THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+  IF v_loan.member_id = auth.uid() THEN RAISE EXCEPTION 'Cannot approve your own loan'; END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_loan.principal > floor(v_fraction * COALESCE(v_pool, 0)) THEN
+    RAISE EXCEPTION 'Loan exceeds % of the group pool (max %).',
+      round(v_fraction * 100) || '%', floor(v_fraction * COALESCE(v_pool, 0));
+  END IF;
+
+  SELECT
+      COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                WHERE member_id = v_loan.member_id
+                  AND submission_type = 'savings_deposit'
+                  AND status = 'approved'), 0)
+    + COALESCE((SELECT SUM(amount) FROM monthly_fees
+                WHERE member_id = v_loan.member_id AND status = 'paid'), 0)
+  INTO v_contribution;
+  IF v_loan.principal > floor(v_multiplier * v_contribution) THEN
+    RAISE EXCEPTION 'Loan exceeds %x member contribution (max %).',
+      v_multiplier, floor(v_multiplier * v_contribution);
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_approvals (loan_id, admin_id, proof_url)
+    VALUES (p_loan_id, auth.uid(), p_proof_url);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this loan';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM loan_approvals WHERE loan_id = p_loan_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan', 'loan', p_loan_id,
+            jsonb_build_object(
+              'member_id', v_loan.member_id,
+              'principal', v_loan.principal,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  -- Admin-loan restriction: one admin must always remain loan-free.
+  IF (SELECT role FROM profiles WHERE id = v_loan.member_id) = 'admin' THEN
+    SELECT count(*) INTO v_total_admins
+      FROM profiles WHERE role = 'admin' AND is_active = true;
+    SELECT count(*) INTO v_other_admin_loans
+      FROM loans
+      WHERE status = 'active'
+        AND member_id IN (SELECT id FROM profiles WHERE role = 'admin' AND is_active = true)
+        AND member_id <> v_loan.member_id;
+    IF v_other_admin_loans >= v_total_admins - 1 THEN
+      RAISE EXCEPTION 'Not all admins may hold loans simultaneously; one admin must remain loan-free.';
+    END IF;
+  END IF;
+
+  SELECT proof_url INTO v_final_proof
+  FROM loan_approvals WHERE loan_id = p_loan_id
+  ORDER BY approved_at ASC LIMIT 1;
+
+  v_int := round(v_loan.principal * v_rate);
+
+  UPDATE loans
+    SET status = 'active',
+        approved_at = now(),
+        approved_by = auth.uid(),
+        disbursed_at = now(),
+        disbursement_proof_url = v_final_proof,
+        outstanding_principal = v_loan.principal,
+        interest_rate = v_rate
+    WHERE id = p_loan_id;
+
+  -- Bullet schedule over `default_loan_months`: interest-only until the final
+  -- month, which also clears the principal.
+  FOR v_n IN 1..v_months LOOP
+    INSERT INTO loan_installments
+      (loan_id, installment_number, due_date, principal_due, interest_due, penalty_rate)
+    VALUES (
+      p_loan_id,
+      v_n,
+      (today_eat() + (v_n || ' month')::interval)::date,
+      CASE WHEN v_n = v_months THEN v_loan.principal ELSE 0 END,
+      v_int,
+      setting('penalty_rate')
+    );
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_loan', 'loan', p_loan_id,
+          jsonb_build_object(
+            'member_id',     v_loan.member_id,
+            'principal',     v_loan.principal,
+            'approvals',     v_approvals,
+            'interest_rate', v_rate,
+            'months',        v_months
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- --------------------------------------------------------------------------
+-- 7. 2-of-N setting changes — same shape as pool edits (015).
+--    * Any admin opens a request; their own vote does NOT auto-count.
+--    * Two OTHER admins approve before it applies.
+--    * With a single admin it auto-applies so the feature stays usable.
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS setting_changes (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  key           text NOT NULL REFERENCES group_settings(key) ON DELETE CASCADE,
+  old_value     numeric(14,4) NOT NULL,
+  new_value     numeric(14,4) NOT NULL,
+  reason        text NOT NULL,
+  requested_by  uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  status        text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'approved', 'cancelled')),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  applied_at    timestamptz,
+  CHECK (new_value <> old_value)
+);
+CREATE INDEX IF NOT EXISTS setting_changes_status_idx
+  ON setting_changes (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS setting_change_approvals (
+  change_id   uuid NOT NULL REFERENCES setting_changes(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (change_id, admin_id)
+);
+
+ALTER TABLE setting_changes          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE setting_change_approvals ENABLE ROW LEVEL SECURITY;
+
+-- Members may watch a proposed rule change (it governs them); only admins vote.
+DROP POLICY IF EXISTS "Everyone reads setting changes" ON setting_changes;
+CREATE POLICY "Everyone reads setting changes" ON setting_changes
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins read setting approvals" ON setting_change_approvals;
+CREATE POLICY "Admins read setting approvals" ON setting_change_approvals
+  FOR SELECT USING (is_admin());
+
+GRANT SELECT ON setting_changes, setting_change_approvals TO authenticated;
+
+CREATE OR REPLACE FUNCTION execute_setting_change(p_change_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_change setting_changes%ROWTYPE;
+BEGIN
+  SELECT * INTO v_change FROM setting_changes WHERE id = p_change_id FOR UPDATE;
+  IF v_change.id IS NULL          THEN RAISE EXCEPTION 'Setting change not found'; END IF;
+  IF v_change.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';        END IF;
+
+  UPDATE group_settings
+     SET value = v_change.new_value, updated_at = now(), updated_by = auth.uid()
+   WHERE key = v_change.key;
+
+  UPDATE setting_changes
+     SET status = 'approved', applied_at = now()
+   WHERE id = p_change_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'execute_setting_change', 'setting', NULL,
+          jsonb_build_object(
+            'change_id', p_change_id,
+            'key',       v_change.key,
+            'old_value', v_change.old_value,
+            'new_value', v_change.new_value,
+            'reason',    v_change.reason
+          ));
+
+  -- Everyone is governed by the rules, so everyone is told when they change.
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'setting_changed',
+         'Group rule changed',
+         (SELECT label FROM group_settings WHERE key = v_change.key) ||
+           ' changed from ' || v_change.old_value || ' to ' || v_change.new_value,
+         jsonb_build_object('key', v_change.key, 'new_value', v_change.new_value)
+    FROM profiles p
+   WHERE p.is_active = true;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION request_setting_change(
+  p_key text, p_new_value numeric, p_reason text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_change_id    uuid;
+  v_current      group_settings%ROWTYPE;
+  v_requester    text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every rule change';
+  END IF;
+
+  SELECT * INTO v_current FROM group_settings WHERE key = p_key;
+  IF v_current.key IS NULL THEN RAISE EXCEPTION 'Unknown setting: %', p_key; END IF;
+
+  IF p_new_value = v_current.value THEN
+    RAISE EXCEPTION 'That is already the current value';
+  END IF;
+  IF p_new_value < v_current.min_value OR p_new_value > v_current.max_value THEN
+    RAISE EXCEPTION '% must be between % and %',
+      v_current.label, v_current.min_value, v_current.max_value;
+  END IF;
+
+  -- One pending change per key, so two admins can't approve conflicting values.
+  IF EXISTS (SELECT 1 FROM setting_changes WHERE key = p_key AND status = 'pending') THEN
+    RAISE EXCEPTION 'A pending change for this setting already exists; cancel or approve it first';
+  END IF;
+
+  INSERT INTO setting_changes (key, old_value, new_value, reason, requested_by)
+  VALUES (p_key, v_current.value, p_new_value, trim(p_reason), auth.uid())
+  RETURNING id INTO v_change_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_setting_change', 'setting', NULL,
+          jsonb_build_object(
+            'change_id', v_change_id,
+            'key',       p_key,
+            'old_value', v_current.value,
+            'new_value', p_new_value,
+            'reason',    p_reason
+          ));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'setting_change_requested',
+         'Rule change proposed',
+         COALESCE(v_requester, 'An admin') || ' wants to change ' || v_current.label ||
+           ' from ' || v_current.value || ' to ' || p_new_value,
+         jsonb_build_object('change_id', v_change_id, 'key', p_key)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := least(2, v_other_admins);
+
+  IF v_required = 0 THEN
+    PERFORM execute_setting_change(v_change_id);
+  END IF;
+
+  RETURN v_change_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION approve_setting_change(p_change_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_change       setting_changes%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_change FROM setting_changes WHERE id = p_change_id FOR UPDATE;
+  IF v_change.id IS NULL          THEN RAISE EXCEPTION 'Setting change not found'; END IF;
+  IF v_change.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_change.requested_by = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO setting_change_approvals (change_id, admin_id)
+    VALUES (p_change_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this change';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_change.requested_by;
+  v_required := least(2, v_other_admins);
+
+  SELECT count(*) INTO v_approvals FROM setting_change_approvals WHERE change_id = p_change_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_setting_change', 'setting', NULL,
+            jsonb_build_object(
+              'change_id', p_change_id,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_setting_change(p_change_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION cancel_setting_change(p_change_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_change setting_changes%ROWTYPE;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_change FROM setting_changes WHERE id = p_change_id;
+  IF v_change.id IS NULL OR v_change.status <> 'pending' THEN RETURN; END IF;
+
+  UPDATE setting_changes SET status = 'cancelled' WHERE id = p_change_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'cancel_setting_change', 'setting', NULL,
+          jsonb_build_object('change_id', p_change_id, 'key', v_change.key));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 021_partial_payments.sql
+-- ---------------------------------------------------------------------------
+
+-- 021_partial_payments.sql — accept the money members actually have.
+--
+-- Until now approve_submission refused anything below the full contracted amount:
+--
+--     IF v_final_amount < v_inst.total_due + v_penalty THEN
+--       RAISE EXCEPTION 'Payment of % is below the required minimum %…'
+--
+-- So a member holding 60% of an installment could pay NOTHING, and a month later
+-- was charged another 5% penalty on the whole amount. This migration replaces the
+-- all-or-nothing rule with an allocation waterfall and a 'partial' status.
+--
+-- ALLOCATION WATERFALL (penalty first, principal last — the borrower's cheapest
+-- debt is retired last, which is the standard order and stops a member from
+-- servicing principal while a penalty compounds):
+--
+--   monthly fee        penalty → base
+--   loan installment   penalty → interest → contracted principal → extra principal
+--
+-- A row becomes 'paid' only when nothing is left; otherwise 'partial'. Penalties
+-- accrue on the REMAINING balance, so a member who has paid 80% is fined on the
+-- 20% still owed, not on the original total.
+--
+-- Overpayment is never silently absorbed: on a loan it reduces principal early
+-- (as before), and once there is genuinely nothing left to allocate to, the RPC
+-- raises rather than booking the excess as a mystery "penalty". The admin logs the
+-- surplus as a savings deposit instead.
+--
+-- v_group_pool CORRECTION (load-bearing). It summed `amount` / `total_due` for rows
+-- WHERE status = 'paid'. With partial payments that would undercount cash on hand.
+-- It now sums the actual paid columns across every row. This also fixes a
+-- pre-existing bug: extra principal paid early (principal_paid above principal_due)
+-- was never credited to the pool, because only total_due was counted.
+--
+-- Requires 020 (penalty_rate snapshots).
+
+-- --------------------------------------------------------------------------
+-- 1. Schema — how much of each obligation has actually been settled.
+--    `penalty_collected` already exists on both tables and keeps its meaning
+--    (cumulative penalty banked), so no separate penalty_paid column is added.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE monthly_fees
+  ADD COLUMN IF NOT EXISTS amount_paid numeric(12,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE loan_installments
+  ADD COLUMN IF NOT EXISTS interest_paid numeric(12,2) NOT NULL DEFAULT 0;
+
+-- Backfill: every row already marked 'paid' was, by the old all-or-nothing rule,
+-- settled in full.
+UPDATE monthly_fees      SET amount_paid   = amount       WHERE status = 'paid' AND amount_paid = 0;
+UPDATE loan_installments SET interest_paid = interest_due WHERE status = 'paid' AND interest_paid = 0;
+-- principal_paid was only populated from 011 onward; older paid rows settled their
+-- contracted principal_due in full.
+UPDATE loan_installments SET principal_paid = principal_due
+ WHERE status = 'paid' AND principal_paid = 0 AND principal_due > 0;
+
+ALTER TABLE monthly_fees DROP CONSTRAINT IF EXISTS monthly_fees_status_check;
+ALTER TABLE monthly_fees
+  ADD CONSTRAINT monthly_fees_status_check
+  CHECK (status IN ('pending', 'partial', 'paid'));
+
+ALTER TABLE loan_installments DROP CONSTRAINT IF EXISTS loan_installments_status_check;
+ALTER TABLE loan_installments
+  ADD CONSTRAINT loan_installments_status_check
+  CHECK (status IN ('pending', 'partial', 'paid', 'cancelled'));
+
+-- --------------------------------------------------------------------------
+-- 2. Views — penalties accrue on what is STILL OWED, and every view exposes the
+--    remaining balance so the UI can render "paid X of Y".
+--
+--    DROP + recreate (not CREATE OR REPLACE): the new columns land inside `mf.*` /
+--    `li.*` and shift the output ordering, which CREATE OR REPLACE VIEW forbids.
+-- --------------------------------------------------------------------------
+
+DROP VIEW IF EXISTS v_fee_status_money;
+DROP VIEW IF EXISTS v_fee_status CASCADE;
+
+CREATE VIEW v_fee_status AS
+WITH b AS (
+  SELECT mf.*,
+         (mf.period + INTERVAL '1 month' - INTERVAL '1 day')::date AS due_date,
+         greatest(mf.amount - mf.amount_paid, 0)                   AS remaining
+  FROM monthly_fees mf
+)
+SELECT
+  b.*,
+  CASE
+    WHEN b.status = 'paid' OR b.remaining <= 0 OR today_eat() <= b.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), b.due_date)) * 12
+        + date_part('month', age(today_eat(), b.due_date)))::int + 1
+  END AS penalty_months,
+  -- 'overdue' outranks 'partial': being past due is the signal that matters, and
+  -- amount_paid > 0 tells the UI to render it as partly settled.
+  CASE
+    WHEN b.status = 'paid' OR b.remaining <= 0 THEN 'paid'
+    WHEN today_eat() > b.due_date              THEN 'overdue'
+    WHEN b.amount_paid > 0                     THEN 'partial'
+    ELSE 'pending'
+  END AS computed_status
+FROM b;
+
+-- total_with_penalty is now "what is still owed", not "the original amount plus a
+-- penalty" — for an untouched fee the two are identical, so nothing changes for
+-- rows nobody has paid into.
+CREATE VIEW v_fee_status_money AS
+SELECT
+  f.*,
+  round(f.penalty_rate * f.remaining * f.penalty_months)              AS penalty_due,
+  f.remaining + round(f.penalty_rate * f.remaining * f.penalty_months) AS total_with_penalty
+FROM v_fee_status f;
+
+DROP VIEW IF EXISTS v_installment_status_money;
+DROP VIEW IF EXISTS v_installment_status CASCADE;
+
+CREATE VIEW v_installment_status AS
+WITH b AS (
+  SELECT li.*,
+         greatest(li.interest_due  - li.interest_paid,  0) AS interest_remaining,
+         -- principal_paid can exceed principal_due when a borrower repays early,
+         -- so this is clamped at zero rather than going negative.
+         greatest(li.principal_due - li.principal_paid, 0) AS principal_remaining
+  FROM loan_installments li
+)
+SELECT
+  b.*,
+  (b.interest_remaining + b.principal_remaining) AS remaining,
+  CASE
+    WHEN b.status IN ('paid', 'cancelled')
+      OR (b.interest_remaining + b.principal_remaining) <= 0
+      OR today_eat() <= b.due_date THEN 0
+    ELSE (date_part('year',  age(today_eat(), b.due_date)) * 12
+        + date_part('month', age(today_eat(), b.due_date)))::int + 1
+  END AS penalty_months,
+  CASE
+    WHEN b.status = 'cancelled' THEN 'cancelled'
+    WHEN b.status = 'paid' OR (b.interest_remaining + b.principal_remaining) <= 0 THEN 'paid'
+    WHEN today_eat() > b.due_date THEN 'overdue'
+    WHEN (b.interest_paid + b.principal_paid) > 0 THEN 'partial'
+    ELSE 'pending'
+  END AS computed_status
+FROM b;
+
+CREATE VIEW v_installment_status_money AS
+SELECT
+  i.*,
+  round(i.penalty_rate * i.remaining * i.penalty_months)               AS penalty_due,
+  i.remaining + round(i.penalty_rate * i.remaining * i.penalty_months) AS total_with_penalty
+FROM v_installment_status i;
+
+GRANT SELECT ON v_fee_status, v_fee_status_money                 TO authenticated;
+GRANT SELECT ON v_installment_status, v_installment_status_money TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. v_group_pool — count cash actually received, not contracted amounts.
+--    Column structure is unchanged, so CREATE OR REPLACE is safe and
+--    v_group_assets keeps working.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_group_pool AS
+SELECT
+    (SELECT COALESCE(SUM(amount_claimed), 0)
+       FROM payment_submissions
+       WHERE submission_type = 'savings_deposit' AND status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM savings_adjustments WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM pool_adjustments    WHERE status = 'approved')
+  -- Every shilling banked against a fee, whether the fee is fully settled or not.
+  + (SELECT COALESCE(SUM(amount_paid), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM monthly_fees)
+  -- interest_paid + principal_paid captures early principal repayment, which the
+  -- old SUM(total_due) silently dropped.
+  + (SELECT COALESCE(SUM(interest_paid), 0)
+           + COALESCE(SUM(principal_paid), 0)
+           + COALESCE(SUM(penalty_collected), 0)
+       FROM loan_installments)
+  - (SELECT COALESCE(SUM(principal), 0)
+       FROM loans             WHERE status IN ('active', 'closed'))
+  AS pool_balance_tzs;
+
+-- --------------------------------------------------------------------------
+-- 4. group_member_directory — a member's savings must count partially-paid fees
+--    too, or the transparency page under-reports everyone who is mid-payment.
+--    (Mirrors lib/savings.js getApprovedSavings.)
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION group_member_directory()
+RETURNS TABLE (
+  member_id       uuid,
+  full_name       text,
+  role            text,
+  savings_tzs     numeric,
+  active_loan_tzs numeric,
+  has_active_loan boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.id,
+    p.full_name,
+    p.role,
+    COALESCE(dep.total, 0) + COALESCE(fee.total, 0) + COALESCE(adj.total, 0) AS savings_tzs,
+    COALESCE(ln.outstanding, 0)                                              AS active_loan_tzs,
+    ln.outstanding IS NOT NULL                                               AS has_active_loan
+  FROM profiles p
+  LEFT JOIN LATERAL (
+    SELECT SUM(amount_claimed) AS total
+    FROM payment_submissions
+    WHERE member_id = p.id
+      AND submission_type = 'savings_deposit'
+      AND status = 'approved'
+  ) dep ON true
+  LEFT JOIN LATERAL (
+    SELECT SUM(amount_paid) AS total
+    FROM monthly_fees
+    WHERE member_id = p.id
+  ) fee ON true
+  LEFT JOIN LATERAL (
+    SELECT SUM(delta) AS total
+    FROM savings_adjustments
+    WHERE target_member_id = p.id AND status = 'approved'
+  ) adj ON true
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(outstanding_principal, principal) AS outstanding
+    FROM loans
+    WHERE member_id = p.id AND status = 'active'
+    ORDER BY approved_at DESC NULLS LAST
+    LIMIT 1
+  ) ln ON true
+  WHERE p.is_active = true
+  ORDER BY p.full_name;
+$$;
+
+GRANT EXECUTE ON FUNCTION group_member_directory() TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 5. earnings_ledger — group income, recorded with a DATE as it is collected.
+--
+--    The pool tells you what the group holds; it cannot tell you what the group
+--    EARNED, or when. Interest and penalties are the group's profit — the money a
+--    share-out distributes — and they are indistinguishable from returned capital
+--    once they land in the pool. Recording each one at the moment of collection is
+--    what makes an end-of-cycle share-out possible (migration 024) without
+--    reconstructing history from balances that have no timestamps.
+--
+--    Positive = income, negative = loss (a write-off, migration 022).
+--    `submission_id` lets the capital calculation subtract the penalty portion of
+--    a fee payment, leaving the part that is genuinely the member's savings.
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS earnings_ledger (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  kind          text NOT NULL CHECK (kind IN ('interest', 'penalty', 'write_off')),
+  amount        numeric(14,2) NOT NULL,
+  submission_id uuid REFERENCES payment_submissions(id) ON DELETE SET NULL,
+  source_type   text,
+  source_id     uuid,
+  occurred_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS earnings_ledger_occurred_idx ON earnings_ledger (occurred_at);
+CREATE INDEX IF NOT EXISTS earnings_ledger_submission_idx ON earnings_ledger (submission_id);
+
+ALTER TABLE earnings_ledger ENABLE ROW LEVEL SECURITY;
+
+-- Group income is group business: every member can see what the group earned.
+-- (Consistent with the transparency directory in 019.)
+DROP POLICY IF EXISTS "Everyone reads earnings" ON earnings_ledger;
+CREATE POLICY "Everyone reads earnings" ON earnings_ledger
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON earnings_ledger TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 6. approve_submission — the allocation waterfall.
+--
+--    2-of-N is unchanged: the FIRST approver's amount_received is the one that
+--    gets allocated when the threshold is reached.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_submission(p_submission_id uuid, p_amount_received numeric)
+RETURNS void AS $$
+DECLARE
+  s                 payment_submissions%ROWTYPE;
+  v_required        int;
+  v_approvals       int;
+  v_final_amount    numeric(12,2);
+  v_left            numeric(12,2);
+  v_penalty         numeric(12,2);
+  v_pay             numeric(12,2);
+  -- fee
+  v_fee             monthly_fees%ROWTYPE;
+  v_fee_remaining   numeric(12,2);
+  -- installment
+  v_inst            loan_installments%ROWTYPE;
+  v_loan_id         uuid;
+  v_int_remaining   numeric(12,2);
+  v_prin_remaining  numeric(12,2);
+  v_interest_pay    numeric(12,2);
+  v_principal_pay   numeric(12,2);
+  v_extra_principal numeric(12,2);
+  v_outstanding     numeric(12,2);
+  v_rate            numeric;
+  v_new_int         numeric(12,2);
+  v_last            int;
+  v_interest_open   int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount_received IS NULL OR p_amount_received <= 0 THEN
+    RAISE EXCEPTION 'Invalid amount received';
+  END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL             THEN RAISE EXCEPTION 'Submission not found'; END IF;
+  IF s.status <> 'pending'    THEN RAISE EXCEPTION 'Already reviewed';    END IF;
+  IF s.member_id = auth.uid() THEN RAISE EXCEPTION 'Cannot approve your own submission'; END IF;
+
+  BEGIN
+    INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+    VALUES (p_submission_id, auth.uid(), p_amount_received);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this submission';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM submission_approvals WHERE submission_id = p_submission_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_submission', 'submission', p_submission_id,
+            jsonb_build_object(
+              'submission_type', s.submission_type,
+              'member_id',       s.member_id,
+              'amount_received', p_amount_received,
+              'approvals',       v_approvals,
+              'required',        v_required
+            ));
+    RETURN;
+  END IF;
+
+  SELECT amount_received INTO v_final_amount
+  FROM submission_approvals
+  WHERE submission_id = p_submission_id
+  ORDER BY approved_at ASC
+  LIMIT 1;
+
+  UPDATE payment_submissions
+    SET status = 'approved', reviewed_at = now(), reviewed_by = auth.uid()
+    WHERE id = p_submission_id;
+
+  v_left := v_final_amount;
+
+  -- ---------------------------------------------------------------- monthly fee
+  IF s.submission_type = 'monthly_fee' THEN
+    SELECT * INTO v_fee FROM monthly_fees WHERE id = s.related_id FOR UPDATE;
+    IF v_fee.id IS NULL THEN RAISE EXCEPTION 'Monthly fee not found'; END IF;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_fee_status_money WHERE id = v_fee.id;
+    v_fee_remaining := greatest(v_fee.amount - v_fee.amount_paid, 0);
+
+    IF v_left > v_penalty + v_fee_remaining THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds the % still owed on this fee (% base + % penalty). Approve the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_fee_remaining, v_fee_remaining, v_penalty;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);          -- penalty first
+    v_left := v_left - v_pay;
+    UPDATE monthly_fees
+       SET penalty_collected = penalty_collected + v_pay,
+           amount_paid       = amount_paid + least(v_left, v_fee_remaining),
+           reviewed_by       = auth.uid()
+     WHERE id = v_fee.id;
+
+    UPDATE monthly_fees
+       SET status  = CASE WHEN amount_paid >= amount THEN 'paid' ELSE 'partial' END,
+           paid_at = CASE WHEN amount_paid >= amount THEN now() ELSE paid_at END
+     WHERE id = v_fee.id;
+
+    -- The penalty is group income; the base is the member's own capital.
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'monthly_fee', v_fee.id);
+    END IF;
+
+  -- ----------------------------------------------------------- loan installment
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT * INTO v_inst FROM loan_installments WHERE id = s.related_id FOR UPDATE;
+    IF v_inst.id IS NULL THEN RAISE EXCEPTION 'Installment not found'; END IF;
+    v_loan_id := v_inst.loan_id;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_installment_status_money WHERE id = v_inst.id;
+
+    v_int_remaining  := greatest(v_inst.interest_due  - v_inst.interest_paid,  0);
+    v_prin_remaining := greatest(v_inst.principal_due - v_inst.principal_paid, 0);
+
+    SELECT outstanding_principal, interest_rate INTO v_outstanding, v_rate
+      FROM loans WHERE id = v_loan_id FOR UPDATE;
+
+    -- Ceiling on what this payment can possibly settle: the penalty, the interest
+    -- still owed on this installment, and every shilling of principal still out.
+    IF v_left > v_penalty + v_int_remaining + v_outstanding THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds everything outstanding on this loan (%). Approve the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_int_remaining + v_outstanding;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);               -- 1. penalty
+    v_left := v_left - v_pay;
+
+    v_interest_pay := least(v_left, v_int_remaining); -- 2. interest
+    v_left := v_left - v_interest_pay;
+
+    v_principal_pay := least(v_left, v_prin_remaining); -- 3. contracted principal
+    v_left := v_left - v_principal_pay;
+
+    -- 4. anything still left retires principal early
+    v_extra_principal := least(v_left, greatest(v_outstanding - v_principal_pay, 0));
+
+    UPDATE loan_installments
+       SET penalty_collected = penalty_collected + v_pay,
+           interest_paid     = interest_paid + v_interest_pay,
+           principal_paid    = principal_paid + v_principal_pay + v_extra_principal,
+           reviewed_by       = auth.uid()
+     WHERE id = v_inst.id;
+
+    UPDATE loan_installments
+       SET status  = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN 'paid' ELSE 'partial'
+                     END,
+           paid_at = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN now() ELSE paid_at
+                     END
+     WHERE id = v_inst.id;
+
+    v_outstanding := v_outstanding - v_principal_pay - v_extra_principal;
+    UPDATE loans SET outstanding_principal = v_outstanding WHERE id = v_loan_id;
+
+    -- Interest and penalty are the group's earnings on this loan; principal is the
+    -- group's own money coming back and is NOT income.
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+    IF v_interest_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'interest', v_interest_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+
+    -- Is any interest still owed anywhere on this loan? The waterfall pays interest
+    -- before principal, so this is normally 0 by the time principal clears — the
+    -- check is here so an underpaid loan can never close with interest outstanding.
+    SELECT count(*) INTO v_interest_open
+      FROM loan_installments
+     WHERE loan_id = v_loan_id
+       AND status <> 'cancelled'
+       AND interest_paid < interest_due;
+
+    IF v_outstanding <= 0 AND v_interest_open = 0 THEN
+      UPDATE loans SET status = 'closed' WHERE id = v_loan_id;
+      UPDATE loan_installments
+         SET status = 'cancelled'
+       WHERE loan_id = v_loan_id AND status = 'pending';
+    ELSE
+      -- Re-price the UNTOUCHED installments against the new outstanding balance.
+      -- 'partial' rows are deliberately excluded: restating the interest on a row
+      -- someone has already part-paid would rewrite an agreed figure.
+      v_new_int := round(v_outstanding * COALESCE(v_rate, 0.05));
+      SELECT max(installment_number) INTO v_last
+        FROM loan_installments WHERE loan_id = v_loan_id AND status <> 'cancelled';
+
+      UPDATE loan_installments
+         SET interest_due  = v_new_int,
+             principal_due = CASE WHEN installment_number = v_last THEN v_outstanding ELSE 0 END
+       WHERE loan_id = v_loan_id
+         AND status = 'pending';
+    END IF;
+
+  -- --------------------------------------------------------------------- savings
+  ELSE
+    UPDATE payment_submissions SET amount_claimed = v_final_amount
+      WHERE id = p_submission_id;
+  END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_submission', 'submission', p_submission_id,
+          jsonb_build_object(
+            'submission_type', s.submission_type,
+            'member_id',       s.member_id,
+            'amount_received', v_final_amount,
+            'approvals',       v_approvals
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ---------------------------------------------------------------------------
+-- 022_loan_distress.sql
+-- ---------------------------------------------------------------------------
+
+-- 022_loan_distress.sql — what happens when a loan goes bad.
+--
+-- Before this migration `loans.status` was (pending, active, closed, rejected). A
+-- borrower who could not repay simply accrued 5% a month forever: there was no way
+-- to reschedule, to write the debt off, or to settle it against the savings they
+-- already hold in the pool. Three admin actions, each 2-of-N, fill that gap:
+--
+--   restructure  — cancel the untouched installments and re-cut the schedule over a
+--                  new term against the CURRENT outstanding principal.
+--   write off    — recognise the loss: outstanding → 0, loan closed as written_off,
+--                  the pool permanently absorbs the principal.
+--   recover from — settle part or all of the debt against the borrower's own
+--   savings       savings, which are already sitting in the pool.
+--
+-- NOT ADDED: a manual 'defaulted' status. A status an admin has to remember to set
+-- drifts out of sync with reality the moment someone forgets. `v_loan_risk` below
+-- derives non-performance from the installment record instead, so it is always
+-- current and needs no maintenance.
+--
+-- RESTRUCTURING FORGIVES ACCRUED PENALTY on the installments it cancels — cancelled
+-- rows stop accruing (021's views return penalty_months = 0 for them). That is a
+-- real decision, which is why it takes two admin signatures and lands in audit_log.
+--
+-- Requires 020 (interest_rate snapshot) and 021 (partial payments).
+
+-- --------------------------------------------------------------------------
+-- 1. Schema
+-- --------------------------------------------------------------------------
+
+ALTER TABLE loans DROP CONSTRAINT IF EXISTS loans_status_check;
+ALTER TABLE loans
+  ADD CONSTRAINT loans_status_check
+  CHECK (status IN ('pending', 'active', 'closed', 'rejected', 'written_off'));
+
+-- A restructure appends installments after the existing ones, so a loan that is
+-- rescheduled more than once can pass 12. The UNIQUE (loan_id, installment_number)
+-- constraint is what actually keeps them distinct.
+ALTER TABLE loan_installments DROP CONSTRAINT IF EXISTS loan_installments_installment_number_check;
+ALTER TABLE loan_installments
+  ADD CONSTRAINT loan_installments_installment_number_check
+  CHECK (installment_number > 0);
+
+-- One table for all three actions, mirroring pool_adjustments (015).
+CREATE TABLE IF NOT EXISTS loan_actions (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id      uuid NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  action       text NOT NULL CHECK (action IN ('restructure', 'write_off', 'recover_from_savings')),
+  amount       numeric(12,2),   -- recover_from_savings only
+  term_months  int,             -- restructure only
+  reason       text NOT NULL,
+  requested_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  status       text NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'approved', 'cancelled')),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  applied_at   timestamptz
+);
+CREATE INDEX IF NOT EXISTS loan_actions_status_idx ON loan_actions (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS loan_action_approvals (
+  action_id   uuid NOT NULL REFERENCES loan_actions(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (action_id, admin_id)
+);
+
+-- Recoveries are booked against the pool to cancel out the negative savings
+-- adjustment they create. No cash moves when a debt is settled from savings: the
+-- member's claim on the pool shrinks and the receivable shrinks with it, so the
+-- pool's CASH balance must stay exactly where it was. Without this offset the
+-- savings adjustment alone would double-count the loss.
+CREATE TABLE IF NOT EXISTS loan_recoveries (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id     uuid NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  member_id   uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  amount      numeric(12,2) NOT NULL CHECK (amount > 0),
+  action_id   uuid REFERENCES loan_actions(id) ON DELETE SET NULL,
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS loan_recoveries_loan_idx ON loan_recoveries (loan_id);
+
+ALTER TABLE loan_actions          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_action_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_recoveries       ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins read loan actions" ON loan_actions;
+CREATE POLICY "Admins read loan actions" ON loan_actions
+  FOR SELECT USING (is_admin());
+
+-- A borrower can see what is being proposed about their own loan.
+DROP POLICY IF EXISTS "Borrower reads own loan actions" ON loan_actions;
+CREATE POLICY "Borrower reads own loan actions" ON loan_actions
+  FOR SELECT USING (loan_id IN (SELECT id FROM loans WHERE member_id = auth.uid()));
+
+DROP POLICY IF EXISTS "Admins read loan action approvals" ON loan_action_approvals;
+CREATE POLICY "Admins read loan action approvals" ON loan_action_approvals
+  FOR SELECT USING (is_admin());
+
+DROP POLICY IF EXISTS "Read own or all recoveries" ON loan_recoveries;
+CREATE POLICY "Read own or all recoveries" ON loan_recoveries
+  FOR SELECT USING (member_id = auth.uid() OR is_admin());
+
+GRANT SELECT ON loan_actions, loan_action_approvals, loan_recoveries TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. v_group_pool — recognise written-off principal and recovery offsets.
+--
+--   * 'written_off' joins ('active','closed') in the principal subtraction: the
+--     money left the pool and is never coming back.
+--   * loan_recoveries add back the cash the negative savings_adjustments row
+--     removes, because settling a debt from savings moves no actual cash.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_group_pool AS
+SELECT
+    (SELECT COALESCE(SUM(amount_claimed), 0)
+       FROM payment_submissions
+       WHERE submission_type = 'savings_deposit' AND status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM savings_adjustments WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM pool_adjustments    WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(amount), 0)
+       FROM loan_recoveries)
+  + (SELECT COALESCE(SUM(amount_paid), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM monthly_fees)
+  + (SELECT COALESCE(SUM(interest_paid), 0)
+           + COALESCE(SUM(principal_paid), 0)
+           + COALESCE(SUM(penalty_collected), 0)
+       FROM loan_installments)
+  - (SELECT COALESCE(SUM(principal), 0)
+       FROM loans             WHERE status IN ('active', 'closed', 'written_off'))
+  AS pool_balance_tzs;
+
+-- --------------------------------------------------------------------------
+-- 3. v_loan_risk — non-performance derived from the record, never hand-set.
+--    security_invoker so it inherits the loans/installments RLS: a member sees
+--    only their own loan here, an admin sees every one.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_loan_risk
+WITH (security_invoker = true) AS
+SELECT
+  l.id                        AS loan_id,
+  l.member_id,
+  l.principal,
+  l.outstanding_principal,
+  count(i.id)                 AS overdue_installments,
+  min(i.due_date)             AS oldest_overdue,
+  (today_eat() - min(i.due_date))::int AS days_overdue,
+  COALESCE(SUM(i.penalty_due), 0)      AS penalty_accrued
+FROM loans l
+JOIN v_installment_status_money i ON i.loan_id = l.id
+WHERE l.status = 'active'
+  AND i.computed_status = 'overdue'
+GROUP BY l.id, l.member_id, l.principal, l.outstanding_principal
+HAVING count(i.id) >= 2;
+
+GRANT SELECT ON v_loan_risk TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. Execution — runs only once the approval threshold is met.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION execute_loan_action(p_action_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_act         loan_actions%ROWTYPE;
+  v_loan        loans%ROWTYPE;
+  v_outstanding numeric(12,2);
+  v_rate        numeric;
+  v_int         numeric(12,2);
+  v_next        int;
+  v_n           int;
+  v_amount      numeric(12,2);
+  v_savings     numeric(14,2);
+  v_title       text;
+  v_body        text;
+BEGIN
+  SELECT * INTO v_act FROM loan_actions WHERE id = p_action_id FOR UPDATE;
+  IF v_act.id IS NULL          THEN RAISE EXCEPTION 'Loan action not found'; END IF;
+  IF v_act.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';     END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = v_act.loan_id FOR UPDATE;
+  IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';           END IF;
+  IF v_loan.status <> 'active'  THEN RAISE EXCEPTION 'Loan is no longer active'; END IF;
+
+  v_outstanding := v_loan.outstanding_principal;
+  v_rate        := COALESCE(v_loan.interest_rate, 0.05);
+
+  -- ------------------------------------------------------------- restructure
+  IF v_act.action = 'restructure' THEN
+    -- Untouched installments are cancelled (this is what stops the penalty clock);
+    -- 'partial' rows are left alone so a member's part-payment is never erased.
+    UPDATE loan_installments
+       SET status = 'cancelled'
+     WHERE loan_id = v_loan.id AND status = 'pending';
+
+    SELECT COALESCE(max(installment_number), 0) INTO v_next
+      FROM loan_installments WHERE loan_id = v_loan.id;
+
+    v_int := round(v_outstanding * v_rate);
+    FOR v_n IN 1..v_act.term_months LOOP
+      INSERT INTO loan_installments
+        (loan_id, installment_number, due_date, principal_due, interest_due, penalty_rate)
+      VALUES (
+        v_loan.id,
+        v_next + v_n,
+        (today_eat() + (v_n || ' month')::interval)::date,
+        CASE WHEN v_n = v_act.term_months THEN v_outstanding ELSE 0 END,
+        v_int,
+        setting('penalty_rate')
+      );
+    END LOOP;
+
+    v_title := 'Loan rescheduled';
+    v_body  := 'Your loan has been rescheduled over ' || v_act.term_months ||
+               ' month(s). See your updated repayment schedule.';
+
+  -- --------------------------------------------------------------- write off
+  ELSIF v_act.action = 'write_off' THEN
+    UPDATE loans
+       SET status = 'written_off', outstanding_principal = 0
+     WHERE id = v_loan.id;
+    UPDATE loan_installments
+       SET status = 'cancelled'
+     WHERE loan_id = v_loan.id AND status IN ('pending', 'partial');
+
+    -- A negative earnings entry: the loss lands on the cycle in which the group
+    -- decided to take it, so a share-out distributes profit net of write-offs.
+    IF v_outstanding > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, source_type, source_id)
+      VALUES (v_loan.member_id, 'write_off', -v_outstanding, 'loan', v_loan.id);
+    END IF;
+    v_outstanding := 0;
+
+    v_title := 'Loan written off';
+    v_body  := 'The group has written off the remaining balance of your loan.';
+
+  -- ------------------------------------------------- recover from savings
+  ELSE
+    -- Never recover more than is owed, nor more than the member actually holds.
+    SELECT
+        COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                   WHERE member_id = v_loan.member_id
+                     AND submission_type = 'savings_deposit'
+                     AND status = 'approved'), 0)
+      + COALESCE((SELECT SUM(amount_paid) FROM monthly_fees
+                   WHERE member_id = v_loan.member_id), 0)
+      + COALESCE((SELECT SUM(delta) FROM savings_adjustments
+                   WHERE target_member_id = v_loan.member_id AND status = 'approved'), 0)
+    INTO v_savings;
+
+    v_amount := least(v_act.amount, v_outstanding, v_savings);
+    IF v_amount <= 0 THEN
+      RAISE EXCEPTION 'Nothing to recover: outstanding %, member savings %',
+        v_outstanding, v_savings;
+    END IF;
+
+    -- The member's claim on the pool shrinks…
+    INSERT INTO savings_adjustments
+      (target_member_id, requested_by, delta, reason, status, applied_at)
+    VALUES (v_loan.member_id, v_act.requested_by, -v_amount,
+            'Loan recovery: ' || v_act.reason, 'approved', now());
+
+    -- …and this cancels the cash movement that adjustment would otherwise imply.
+    INSERT INTO loan_recoveries (loan_id, member_id, amount, action_id)
+    VALUES (v_loan.id, v_loan.member_id, v_amount, v_act.id);
+
+    v_outstanding := v_outstanding - v_amount;
+    UPDATE loans SET outstanding_principal = v_outstanding WHERE id = v_loan.id;
+
+    IF v_outstanding <= 0 THEN
+      UPDATE loans SET status = 'closed' WHERE id = v_loan.id;
+      UPDATE loan_installments
+         SET status = 'cancelled'
+       WHERE loan_id = v_loan.id AND status IN ('pending', 'partial');
+    END IF;
+
+    v_title := 'Loan settled from your savings';
+    v_body  := v_amount || ' TZS of your savings was applied to your loan balance.';
+  END IF;
+
+  UPDATE loan_actions SET status = 'approved', applied_at = now() WHERE id = p_action_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'execute_loan_' || v_act.action, 'loan', v_loan.id,
+          jsonb_build_object(
+            'action_id',   p_action_id,
+            'member_id',   v_loan.member_id,
+            'principal',   v_loan.principal,
+            'outstanding_before', v_loan.outstanding_principal,
+            'outstanding_after',  v_outstanding,
+            'amount',      v_act.amount,
+            'term_months', v_act.term_months,
+            'reason',      v_act.reason
+          ));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_loan.member_id, 'loan_' || v_act.action, v_title, v_body,
+          jsonb_build_object('loan_id', v_loan.id, 'action_id', p_action_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. Request / approve / cancel — same 2-of-N shape as pool edits (015).
+--    The requester's vote does NOT auto-count, and an admin can never open or
+--    approve an action against their OWN loan.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION request_loan_action(
+  p_loan_id uuid, p_action text, p_reason text,
+  p_amount numeric DEFAULT NULL, p_term_months int DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_action_id    uuid;
+  v_loan         loans%ROWTYPE;
+  v_requester    text;
+  v_member       text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every loan action';
+  END IF;
+  IF p_action NOT IN ('restructure', 'write_off', 'recover_from_savings') THEN
+    RAISE EXCEPTION 'Unknown loan action: %', p_action;
+  END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id;
+  IF v_loan.id IS NULL         THEN RAISE EXCEPTION 'Loan not found';                  END IF;
+  IF v_loan.status <> 'active' THEN RAISE EXCEPTION 'Only an active loan can be actioned'; END IF;
+  IF v_loan.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot open an action against your own loan';
+  END IF;
+
+  IF p_action = 'restructure' THEN
+    IF p_term_months IS NULL OR p_term_months < 1 OR p_term_months > 24 THEN
+      RAISE EXCEPTION 'Term must be between 1 and 24 months';
+    END IF;
+  ELSIF p_action = 'recover_from_savings' THEN
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+      RAISE EXCEPTION 'Enter the amount to recover';
+    END IF;
+  END IF;
+
+  -- One open action per loan, so two admins can't approve conflicting outcomes.
+  IF EXISTS (SELECT 1 FROM loan_actions WHERE loan_id = p_loan_id AND status = 'pending') THEN
+    RAISE EXCEPTION 'This loan already has a pending action; cancel or approve it first';
+  END IF;
+
+  INSERT INTO loan_actions (loan_id, action, amount, term_months, reason, requested_by)
+  VALUES (p_loan_id, p_action, p_amount, p_term_months, trim(p_reason), auth.uid())
+  RETURNING id INTO v_action_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_loan_' || p_action, 'loan', p_loan_id,
+          jsonb_build_object(
+            'action_id',   v_action_id,
+            'member_id',   v_loan.member_id,
+            'amount',      p_amount,
+            'term_months', p_term_months,
+            'reason',      p_reason
+          ));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  SELECT full_name INTO v_member    FROM profiles WHERE id = v_loan.member_id;
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'loan_action_requested',
+         'Loan action proposed',
+         COALESCE(v_requester, 'An admin') || ' proposed to ' ||
+           replace(p_action, '_', ' ') || ' ' || COALESCE(v_member, 'a member') || '''s loan',
+         jsonb_build_object('action_id', v_action_id, 'loan_id', p_loan_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles
+   WHERE role = 'admin' AND is_active = true
+     AND id <> auth.uid() AND id <> v_loan.member_id;
+  v_required := least(2, v_other_admins);
+
+  IF v_required = 0 THEN
+    PERFORM execute_loan_action(v_action_id);
+  END IF;
+
+  RETURN v_action_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION approve_loan_action(p_action_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_act          loan_actions%ROWTYPE;
+  v_borrower     uuid;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_act FROM loan_actions WHERE id = p_action_id FOR UPDATE;
+  IF v_act.id IS NULL          THEN RAISE EXCEPTION 'Loan action not found';  END IF;
+  IF v_act.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_act.requested_by = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  SELECT member_id INTO v_borrower FROM loans WHERE id = v_act.loan_id;
+  IF v_borrower = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve an action on your own loan';
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_action_approvals (action_id, admin_id) VALUES (p_action_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this action';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles
+   WHERE role = 'admin' AND is_active = true
+     AND id <> v_act.requested_by AND id <> v_borrower;
+  v_required := least(2, v_other_admins);
+
+  SELECT count(*) INTO v_approvals FROM loan_action_approvals WHERE action_id = p_action_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan_action', 'loan', v_act.loan_id,
+            jsonb_build_object(
+              'action_id', p_action_id,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_loan_action(p_action_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION cancel_loan_action(p_action_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_act loan_actions%ROWTYPE;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_act FROM loan_actions WHERE id = p_action_id;
+  IF v_act.id IS NULL OR v_act.status <> 'pending' THEN RETURN; END IF;
+
+  UPDATE loan_actions SET status = 'cancelled' WHERE id = p_action_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'cancel_loan_action', 'loan', v_act.loan_id,
+          jsonb_build_object('action_id', p_action_id, 'action', v_act.action));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 023_cycles.sql
+-- ---------------------------------------------------------------------------
+
+-- 023_cycles.sql — the group finally has a financial year.
+--
+-- Until now money only ever flowed IN. Interest and penalties accumulated into one
+-- anonymous pool figure and there was no way to say "this cycle we earned X, and
+-- your share of it is Y". A SACCOS/VICOBA runs in cycles — typically twelve months
+-- — and at the end distributes what it earned in proportion to what each member
+-- had at risk. This migration defines the cycle and the attribution; 024 does the
+-- distribution.
+--
+-- TIME-WEIGHTED, NOT CLOSING BALANCE. A member who deposits in month 11 must not
+-- take the same share as one who carried the group from month 1. The basis is
+-- member-months: each member's capital measured at every month-end in the cycle
+-- and summed. `share_ratio = member basis / total basis`.
+--
+-- Capital is reconstructed from DATED events, never from a current balance:
+--   * approved savings deposits            → reviewed_at
+--   * the base (non-penalty) part of a fee → the fee submission's reviewed_at
+--   * approved savings adjustments         → applied_at
+-- The penalty part of a fee payment is subtracted using earnings_ledger (021),
+-- because a fine is not the member's capital.
+--
+-- Requires 021 (earnings_ledger).
+
+-- --------------------------------------------------------------------------
+-- 1. cycles
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS cycles (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       text NOT NULL,
+  start_date date NOT NULL,
+  end_date   date NOT NULL,
+  status     text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  mode       text CHECK (mode IN ('earnings_only', 'full_shareout')),
+  closed_at  timestamptz,
+  closed_by  uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  CHECK (end_date > start_date)
+);
+
+-- Exactly one cycle can be open at a time. A partial unique index is the only way
+-- to say that in the schema rather than hoping the RPCs remember.
+CREATE UNIQUE INDEX IF NOT EXISTS cycles_single_open ON cycles ((status)) WHERE status = 'open';
+
+ALTER TABLE cycles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Everyone reads cycles" ON cycles;
+CREATE POLICY "Everyone reads cycles" ON cycles
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON cycles TO authenticated;
+
+-- Seed the first cycle from the group's actual history, so every existing fee,
+-- deposit and repayment falls inside it rather than being stranded before cycle 1.
+INSERT INTO cycles (name, start_date, end_date)
+SELECT
+  'Cycle 1',
+  s.first_day,
+  (s.first_day + INTERVAL '12 months' - INTERVAL '1 day')::date
+FROM (
+  SELECT COALESCE(
+    least(
+      (SELECT min(period)                  FROM monthly_fees),
+      (SELECT min(submitted_at)::date      FROM payment_submissions),
+      (SELECT min(created_at)::date        FROM profiles)
+    ),
+    today_eat()
+  ) AS first_day
+) s
+WHERE NOT EXISTS (SELECT 1 FROM cycles);
+
+-- --------------------------------------------------------------------------
+-- 2. v_member_capital_events — every dated change to a member's capital.
+--
+--    security_invoker so it inherits the RLS of the tables underneath: a member
+--    sees their own events, an admin sees everyone's.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_member_capital_events
+WITH (security_invoker = true) AS
+  -- Savings deposits, at the moment they were approved.
+  SELECT
+    ps.member_id,
+    ps.amount_claimed          AS amount,
+    COALESCE(ps.reviewed_at, ps.submitted_at) AS occurred_at,
+    'deposit'::text            AS kind
+  FROM payment_submissions ps
+  WHERE ps.submission_type = 'savings_deposit' AND ps.status = 'approved'
+
+  UNION ALL
+
+  -- Monthly fee payments, minus the penalty portion — a fine is the group's
+  -- income, not the payer's savings.
+  SELECT
+    ps.member_id,
+    ps.amount_claimed - COALESCE(
+      (SELECT SUM(el.amount) FROM earnings_ledger el
+        WHERE el.submission_id = ps.id AND el.kind = 'penalty'), 0),
+    COALESCE(ps.reviewed_at, ps.submitted_at),
+    'fee'::text
+  FROM payment_submissions ps
+  WHERE ps.submission_type = 'monthly_fee' AND ps.status = 'approved'
+
+  UNION ALL
+
+  -- Corrective adjustments, including the negative ones a loan recovery writes.
+  SELECT
+    sa.target_member_id,
+    sa.delta,
+    COALESCE(sa.applied_at, sa.created_at),
+    'adjustment'::text
+  FROM savings_adjustments sa
+  WHERE sa.status = 'approved';
+
+GRANT SELECT ON v_member_capital_events TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. member_cycle_basis(cycle) — time-weighted member-months.
+--
+--    For each month-end inside the cycle, every member's capital as it stood on
+--    that date; summed across the months that is the basis. Negative balances are
+--    floored at zero so a member who has been overdrawn by an adjustment cannot
+--    drag the denominator around.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_cycle_basis(p_cycle_id uuid)
+RETURNS TABLE (
+  member_id     uuid,
+  basis         numeric,
+  months        int,
+  closing_capital numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH c AS (
+    SELECT start_date, end_date FROM cycles WHERE id = p_cycle_id
+  ),
+  -- Month-end dates inside the cycle. The final point is the cycle's end_date
+  -- itself, so a cycle that stops mid-month still counts that month.
+  month_ends AS (
+    SELECT least((date_trunc('month', d) + INTERVAL '1 month' - INTERVAL '1 day')::date,
+                 (SELECT end_date FROM c)) AS as_of
+    FROM c, generate_series(c.start_date, c.end_date, INTERVAL '1 month') d
+  ),
+  -- Active members only: someone who has exited (025) has already been settled.
+  members AS (
+    SELECT id FROM profiles WHERE is_active = true
+  ),
+  points AS (
+    SELECT
+      m.id AS member_id,
+      me.as_of,
+      greatest(COALESCE((
+        SELECT SUM(e.amount)
+        FROM v_member_capital_events e
+        WHERE e.member_id = m.id
+          AND e.occurred_at::date <= me.as_of
+      ), 0), 0) AS capital
+    FROM members m
+    CROSS JOIN (SELECT DISTINCT as_of FROM month_ends) me
+  )
+  SELECT
+    p.member_id,
+    SUM(p.capital)                                             AS basis,
+    count(*)::int                                              AS months,
+    -- Capital as at the final measurement point = what they would take home if
+    -- the group returns capital as well as earnings.
+    max(p.capital) FILTER (WHERE p.as_of = (SELECT max(as_of) FROM month_ends)) AS closing_capital
+  FROM points p
+  GROUP BY p.member_id;
+$$;
+
+GRANT EXECUTE ON FUNCTION member_cycle_basis(uuid) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. cycle_earnings(cycle) — what the group made, net of losses.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION cycle_earnings(p_cycle_id uuid)
+RETURNS TABLE (
+  interest_tzs  numeric,
+  penalty_tzs   numeric,
+  write_off_tzs numeric,
+  net_tzs       numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    COALESCE(SUM(amount) FILTER (WHERE kind = 'interest'),  0),
+    COALESCE(SUM(amount) FILTER (WHERE kind = 'penalty'),   0),
+    COALESCE(SUM(amount) FILTER (WHERE kind = 'write_off'), 0),
+    COALESCE(SUM(amount), 0)
+  FROM earnings_ledger el, cycles c
+  WHERE c.id = p_cycle_id
+    AND el.occurred_at::date BETWEEN c.start_date AND c.end_date;
+$$;
+
+GRANT EXECUTE ON FUNCTION cycle_earnings(uuid) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 5. Admin: adjust the open cycle's dates (2-of-N is overkill here — no money
+--    moves until close_cycle runs, which IS 2-of-N).
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION update_cycle_dates(
+  p_cycle_id uuid, p_start date, p_end date, p_name text
+)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_end <= p_start THEN RAISE EXCEPTION 'The cycle must end after it starts'; END IF;
+  IF (SELECT status FROM cycles WHERE id = p_cycle_id) <> 'open' THEN
+    RAISE EXCEPTION 'A closed cycle can no longer be edited';
+  END IF;
+
+  UPDATE cycles
+     SET start_date = p_start, end_date = p_end, name = COALESCE(NULLIF(trim(p_name), ''), name)
+   WHERE id = p_cycle_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'update_cycle_dates', 'cycle', p_cycle_id,
+          jsonb_build_object('start_date', p_start, 'end_date', p_end));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 024_share_out.sql
+-- ---------------------------------------------------------------------------
+
+-- 024_share_out.sql — closing a cycle and paying everyone their share.
+--
+-- close_cycle() freezes the arithmetic into `distributions` rows: each member's
+-- time-weighted basis, their share ratio, their slice of the group's earnings and
+-- (in full_shareout mode) their capital back. SNAPSHOTTING IS THE POINT — once the
+-- group has agreed a share-out, a later savings correction must not silently
+-- restate what everyone was told they would receive.
+--
+-- Two modes:
+--   earnings_only  profit is paid out, capital rolls into the next cycle. The
+--                  common choice for a group that wants to keep lending.
+--   full_shareout  profit AND capital go back; everyone starts the next cycle at
+--                  zero. The classic VICOBA year-end.
+--
+-- ROUNDING uses largest-remainder: every share is floored to whole shillings and
+-- the leftover shillings go to the largest fractional parts. The shares therefore
+-- sum EXACTLY to the pot — no stray shilling, no member quietly short-changed.
+--
+-- A LOSS YEAR pays no earnings (shares are floored at zero) rather than billing
+-- members for a negative share. The loss already reduced the pool when it was
+-- recognised. In full_shareout mode the pool must actually cover the payout, and
+-- close_cycle refuses with the shortfall if it does not — the admins then have to
+-- allocate the loss explicitly (a savings or pool edit) before closing.
+--
+-- Requires 023.
+
+-- --------------------------------------------------------------------------
+-- 1. Schema
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS distributions (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cycle_id             uuid NOT NULL REFERENCES cycles(id) ON DELETE CASCADE,
+  member_id            uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  basis_amount         numeric(16,2) NOT NULL,
+  share_ratio          numeric(12,10) NOT NULL,
+  earnings_tzs         numeric(14,2) NOT NULL DEFAULT 0,
+  capital_returned_tzs numeric(14,2) NOT NULL DEFAULT 0,
+  total_payout_tzs     numeric(14,2) NOT NULL DEFAULT 0,
+  status               text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+  paid_at              timestamptz,
+  paid_by              uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  proof_url            text,
+  UNIQUE (cycle_id, member_id)
+);
+CREATE INDEX IF NOT EXISTS distributions_member_idx ON distributions (member_id);
+
+-- 2-of-N approval to close a cycle, same shape as pool edits (015).
+CREATE TABLE IF NOT EXISTS cycle_closures (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cycle_id     uuid NOT NULL REFERENCES cycles(id) ON DELETE CASCADE,
+  mode         text NOT NULL CHECK (mode IN ('earnings_only', 'full_shareout')),
+  reason       text NOT NULL,
+  requested_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  status       text NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'approved', 'cancelled')),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  applied_at   timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS cycle_closure_approvals (
+  closure_id  uuid NOT NULL REFERENCES cycle_closures(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (closure_id, admin_id)
+);
+
+ALTER TABLE distributions           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cycle_closures          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cycle_closure_approvals ENABLE ROW LEVEL SECURITY;
+
+-- A share-out is the group's business: everyone sees everyone's share. That is
+-- the same transparency stance as the member directory (019), and it is the only
+-- way members can check the split adds up.
+DROP POLICY IF EXISTS "Everyone reads distributions" ON distributions;
+CREATE POLICY "Everyone reads distributions" ON distributions
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Everyone reads cycle closures" ON cycle_closures;
+CREATE POLICY "Everyone reads cycle closures" ON cycle_closures
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins read closure approvals" ON cycle_closure_approvals;
+CREATE POLICY "Admins read closure approvals" ON cycle_closure_approvals
+  FOR SELECT USING (is_admin());
+
+GRANT SELECT ON distributions, cycle_closures, cycle_closure_approvals TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. v_group_pool — a paid-out earnings share is cash leaving the group.
+--
+--    The CAPITAL half of a payout is not subtracted here: mark_distribution_paid
+--    writes a negative savings_adjustments row for it, which this view already
+--    counts. Subtracting both would take the money out twice.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_group_pool AS
+SELECT
+    (SELECT COALESCE(SUM(amount_claimed), 0)
+       FROM payment_submissions
+       WHERE submission_type = 'savings_deposit' AND status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM savings_adjustments WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM pool_adjustments    WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(amount), 0)
+       FROM loan_recoveries)
+  + (SELECT COALESCE(SUM(amount_paid), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM monthly_fees)
+  + (SELECT COALESCE(SUM(interest_paid), 0)
+           + COALESCE(SUM(principal_paid), 0)
+           + COALESCE(SUM(penalty_collected), 0)
+       FROM loan_installments)
+  - (SELECT COALESCE(SUM(principal), 0)
+       FROM loans             WHERE status IN ('active', 'closed', 'written_off'))
+  - (SELECT COALESCE(SUM(earnings_tzs), 0)
+       FROM distributions     WHERE status = 'paid')
+  AS pool_balance_tzs;
+
+-- --------------------------------------------------------------------------
+-- 3. preview_cycle_close — exactly what close_cycle will write, without writing
+--    it. The admin wizard renders this table before anyone votes.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION preview_cycle_close(p_cycle_id uuid, p_mode text)
+RETURNS TABLE (
+  member_id            uuid,
+  full_name            text,
+  basis_amount         numeric,
+  share_ratio          numeric,
+  earnings_tzs         numeric,
+  capital_returned_tzs numeric,
+  total_payout_tzs     numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH b AS (
+    SELECT * FROM member_cycle_basis(p_cycle_id)
+  ),
+  totals AS (
+    SELECT
+      tb.total_basis,
+      -- Floored to whole shillings so the largest-remainder pass below distributes
+      -- an integer pot and the shares can sum to it exactly. With no basis at all
+      -- nobody has a proportional claim, so the pot stays in the pool instead of
+      -- the remainder pass handing shillings to members who contributed nothing.
+      CASE WHEN tb.total_basis > 0
+           THEN floor(greatest((SELECT net_tzs FROM cycle_earnings(p_cycle_id)), 0))
+           ELSE 0 END AS pot
+    FROM (SELECT COALESCE(SUM(basis), 0) AS total_basis FROM b) tb
+  ),
+  raw AS (
+    SELECT
+      b.member_id,
+      b.basis,
+      b.closing_capital,
+      CASE WHEN t.total_basis > 0 THEN b.basis / t.total_basis ELSE 0 END AS ratio,
+      CASE WHEN t.total_basis > 0 THEN t.pot * b.basis / t.total_basis ELSE 0 END AS exact_share,
+      t.pot
+    FROM b CROSS JOIN totals t
+  ),
+  -- Largest remainder: floor everyone, then hand the leftover shillings to the
+  -- biggest fractional parts so the shares sum exactly to the pot.
+  ranked AS (
+    SELECT
+      raw.*,
+      floor(exact_share) AS base_share,
+      row_number() OVER (ORDER BY exact_share - floor(exact_share) DESC, member_id) AS rn,
+      (SELECT pot FROM totals) - (SELECT COALESCE(SUM(floor(exact_share)), 0) FROM raw) AS leftover
+    FROM raw
+  )
+  SELECT
+    r.member_id,
+    p.full_name,
+    r.basis,
+    r.ratio,
+    (r.base_share + CASE WHEN r.rn <= r.leftover THEN 1 ELSE 0 END)::numeric AS earnings_tzs,
+    CASE WHEN p_mode = 'full_shareout' THEN COALESCE(r.closing_capital, 0) ELSE 0 END,
+    (r.base_share + CASE WHEN r.rn <= r.leftover THEN 1 ELSE 0 END)
+      + CASE WHEN p_mode = 'full_shareout' THEN COALESCE(r.closing_capital, 0) ELSE 0 END
+  FROM ranked r
+  JOIN profiles p ON p.id = r.member_id
+  ORDER BY p.full_name;
+$$;
+
+GRANT EXECUTE ON FUNCTION preview_cycle_close(uuid, text) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. Execution
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION execute_cycle_close(p_closure_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_closure  cycle_closures%ROWTYPE;
+  v_cycle    cycles%ROWTYPE;
+  v_pool     numeric(14,2);
+  v_payout   numeric(14,2);
+  v_next_end date;
+BEGIN
+  SELECT * INTO v_closure FROM cycle_closures WHERE id = p_closure_id FOR UPDATE;
+  IF v_closure.id IS NULL          THEN RAISE EXCEPTION 'Closure request not found'; END IF;
+  IF v_closure.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';         END IF;
+
+  SELECT * INTO v_cycle FROM cycles WHERE id = v_closure.cycle_id FOR UPDATE;
+  IF v_cycle.status <> 'open' THEN RAISE EXCEPTION 'This cycle is already closed'; END IF;
+
+  -- Freeze the numbers.
+  INSERT INTO distributions
+    (cycle_id, member_id, basis_amount, share_ratio, earnings_tzs,
+     capital_returned_tzs, total_payout_tzs)
+  SELECT
+    v_cycle.id, member_id, basis_amount, share_ratio, earnings_tzs,
+    capital_returned_tzs, total_payout_tzs
+  FROM preview_cycle_close(v_cycle.id, v_closure.mode)
+  WHERE total_payout_tzs > 0;
+
+  SELECT COALESCE(SUM(total_payout_tzs), 0) INTO v_payout
+    FROM distributions WHERE cycle_id = v_cycle.id;
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+
+  IF v_payout > v_pool THEN
+    RAISE EXCEPTION
+      'The payout of % exceeds the pool of % (short by %). Settle outstanding loans or allocate the shortfall before closing.',
+      v_payout, v_pool, v_payout - v_pool;
+  END IF;
+
+  UPDATE cycles
+     SET status = 'closed', mode = v_closure.mode, closed_at = now(), closed_by = auth.uid()
+   WHERE id = v_cycle.id;
+
+  UPDATE cycle_closures SET status = 'approved', applied_at = now() WHERE id = p_closure_id;
+
+  -- Open the next cycle immediately: the group keeps running, and every fee and
+  -- deposit from tomorrow needs a cycle to belong to.
+  v_next_end := ((v_cycle.end_date + 1) + INTERVAL '12 months' - INTERVAL '1 day')::date;
+  INSERT INTO cycles (name, start_date, end_date)
+  VALUES (
+    'Cycle ' || (SELECT count(*) + 1 FROM cycles),
+    v_cycle.end_date + 1,
+    v_next_end
+  );
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'close_cycle', 'cycle', v_cycle.id,
+          jsonb_build_object(
+            'mode',        v_closure.mode,
+            'total_payout', v_payout,
+            'members',     (SELECT count(*) FROM distributions WHERE cycle_id = v_cycle.id),
+            'reason',      v_closure.reason
+          ));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT d.member_id, 'share_out_ready',
+         'Your share-out is ready',
+         'The group closed ' || v_cycle.name || '. Your share is ' || d.total_payout_tzs || ' TZS.',
+         jsonb_build_object('cycle_id', v_cycle.id, 'distribution_id', d.id)
+    FROM distributions d WHERE d.cycle_id = v_cycle.id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION request_cycle_close(p_cycle_id uuid, p_mode text, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_closure_id   uuid;
+  v_cycle        cycles%ROWTYPE;
+  v_open_loans   int;
+  v_open_subs    int;
+  v_requester    text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_mode NOT IN ('earnings_only', 'full_shareout') THEN
+    RAISE EXCEPTION 'Unknown share-out mode: %', p_mode;
+  END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required to close a cycle';
+  END IF;
+
+  SELECT * INTO v_cycle FROM cycles WHERE id = p_cycle_id;
+  IF v_cycle.id IS NULL       THEN RAISE EXCEPTION 'Cycle not found';           END IF;
+  IF v_cycle.status <> 'open' THEN RAISE EXCEPTION 'This cycle is already closed'; END IF;
+
+  -- Nothing may be in flight: a submission approved mid-close would land in a
+  -- cycle whose numbers are already frozen.
+  SELECT count(*) INTO v_open_subs FROM payment_submissions WHERE status = 'pending';
+  IF v_open_subs > 0 THEN
+    RAISE EXCEPTION 'Clear the % pending payment(s) before closing the cycle', v_open_subs;
+  END IF;
+
+  SELECT count(*) INTO v_open_loans FROM loans WHERE status IN ('pending', 'active');
+  IF v_open_loans > 0 AND p_mode = 'full_shareout' THEN
+    RAISE EXCEPTION
+      'Cannot return everyone''s capital while % loan(s) are still out. Settle or write them off first, or close with earnings only.',
+      v_open_loans;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM cycle_closures WHERE cycle_id = p_cycle_id AND status = 'pending') THEN
+    RAISE EXCEPTION 'A closure request for this cycle is already open';
+  END IF;
+
+  INSERT INTO cycle_closures (cycle_id, mode, reason, requested_by)
+  VALUES (p_cycle_id, p_mode, trim(p_reason), auth.uid())
+  RETURNING id INTO v_closure_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_cycle_close', 'cycle', p_cycle_id,
+          jsonb_build_object('closure_id', v_closure_id, 'mode', p_mode, 'reason', p_reason));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'cycle_close_requested',
+         'Cycle close proposed',
+         COALESCE(v_requester, 'An admin') || ' proposed to close ' || v_cycle.name,
+         jsonb_build_object('closure_id', v_closure_id, 'cycle_id', p_cycle_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := least(2, v_other_admins);
+
+  IF v_required = 0 THEN
+    PERFORM execute_cycle_close(v_closure_id);
+  END IF;
+
+  RETURN v_closure_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION approve_cycle_close(p_closure_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_closure      cycle_closures%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_closure FROM cycle_closures WHERE id = p_closure_id FOR UPDATE;
+  IF v_closure.id IS NULL          THEN RAISE EXCEPTION 'Closure request not found'; END IF;
+  IF v_closure.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_closure.requested_by = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO cycle_closure_approvals (closure_id, admin_id) VALUES (p_closure_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this closure';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_closure.requested_by;
+  v_required := least(2, v_other_admins);
+
+  SELECT count(*) INTO v_approvals FROM cycle_closure_approvals WHERE closure_id = p_closure_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_cycle_close', 'cycle', v_closure.cycle_id,
+            jsonb_build_object('closure_id', p_closure_id,
+                               'approvals', v_approvals, 'required', v_required));
+    RETURN;
+  END IF;
+
+  PERFORM execute_cycle_close(p_closure_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION cancel_cycle_close(p_closure_id uuid)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE cycle_closures SET status = 'cancelled'
+   WHERE id = p_closure_id AND status = 'pending';
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'cancel_cycle_close', 'cycle', NULL,
+          jsonb_build_object('closure_id', p_closure_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. mark_distribution_paid — record the actual payout, with its M-Pesa proof.
+--
+--    The capital half is written back as a negative savings adjustment, so the
+--    member's savings, the transparency directory and the pool all fall together
+--    without any of them needing to know that a share-out happened.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION mark_distribution_paid(p_distribution_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_dist  distributions%ROWTYPE;
+  v_pool  numeric(14,2);
+  v_cycle text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_dist FROM distributions WHERE id = p_distribution_id FOR UPDATE;
+  IF v_dist.id IS NULL          THEN RAISE EXCEPTION 'Distribution not found'; END IF;
+  IF v_dist.status = 'paid'     THEN RAISE EXCEPTION 'Already paid out';       END IF;
+  IF v_dist.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'Another admin must record your own payout';
+  END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_dist.total_payout_tzs > v_pool THEN
+    RAISE EXCEPTION 'The pool holds only % — not enough to pay %', v_pool, v_dist.total_payout_tzs;
+  END IF;
+
+  UPDATE distributions
+     SET status = 'paid', paid_at = now(), paid_by = auth.uid(), proof_url = p_proof_url
+   WHERE id = p_distribution_id;
+
+  SELECT name INTO v_cycle FROM cycles WHERE id = v_dist.cycle_id;
+
+  IF v_dist.capital_returned_tzs > 0 THEN
+    INSERT INTO savings_adjustments
+      (target_member_id, requested_by, delta, reason, status, applied_at)
+    VALUES (v_dist.member_id, auth.uid(), -v_dist.capital_returned_tzs,
+            'Capital returned at share-out (' || COALESCE(v_cycle, 'cycle') || ')',
+            'approved', now());
+  END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'mark_distribution_paid', 'distribution', p_distribution_id,
+          jsonb_build_object(
+            'member_id', v_dist.member_id,
+            'earnings',  v_dist.earnings_tzs,
+            'capital',   v_dist.capital_returned_tzs,
+            'total',     v_dist.total_payout_tzs
+          ));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_dist.member_id, 'share_out_paid', 'Share-out paid',
+          v_dist.total_payout_tzs || ' TZS has been paid out to you.',
+          jsonb_build_object('distribution_id', p_distribution_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 025_withdrawals_and_exit.sql
+-- ---------------------------------------------------------------------------
+
+-- 025_withdrawals_and_exit.sql — a way out that isn't deletion.
+--
+-- Two gaps this closes:
+--
+--   1. A member could deposit forever and never withdraw a shilling mid-cycle.
+--   2. The only way to remove someone was request_member_deletion, which WIPES
+--      their financial history — useful for an account created in error, terrible
+--      for a member who simply leaves. request_member_exit settles them and
+--      deactivates them, keeping every record intact.
+--
+-- Withdrawals get their own table rather than a fourth payment_submissions type:
+-- money going OUT has a different approval shape (the proof is attached at payout,
+-- by the admin, not at request time by the member) and different guards.
+--
+-- THE COLLATERAL GUARD is the important one. Loans are capped at
+-- `contribution_multiplier x savings` (020), so savings are effectively the
+-- security behind an active loan. A borrower may therefore only withdraw down to
+-- `outstanding / multiplier` — withdrawing more would leave a loan the group would
+-- never have approved in the first place.
+--
+-- Requires 024.
+
+-- --------------------------------------------------------------------------
+-- 1. Schema
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS withdrawal_requests (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  amount       numeric(12,2) NOT NULL CHECK (amount > 0),
+  reason       text NOT NULL,
+  status       text NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'approved', 'rejected', 'paid')),
+  is_exit      boolean NOT NULL DEFAULT false,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  approved_at  timestamptz,
+  paid_at      timestamptz,
+  paid_by      uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  proof_url    text,
+  rejection_reason text
+);
+CREATE INDEX IF NOT EXISTS withdrawal_requests_status_idx
+  ON withdrawal_requests (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS withdrawal_approvals (
+  request_id  uuid NOT NULL REFERENCES withdrawal_requests(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (request_id, admin_id)
+);
+
+ALTER TABLE withdrawal_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE withdrawal_approvals ENABLE ROW LEVEL SECURITY;
+
+-- Withdrawals move group money, so the group sees them — same transparency stance
+-- as the member directory (019) and the share-out (024).
+DROP POLICY IF EXISTS "Everyone reads withdrawals" ON withdrawal_requests;
+CREATE POLICY "Everyone reads withdrawals" ON withdrawal_requests
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins read withdrawal approvals" ON withdrawal_approvals;
+CREATE POLICY "Admins read withdrawal approvals" ON withdrawal_approvals
+  FOR SELECT USING (is_admin());
+
+GRANT SELECT ON withdrawal_requests, withdrawal_approvals TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. member_withdrawable(member) — the single source of truth for the ceiling,
+--    used by the request RPC, the approval RPC and the member's own form.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_withdrawable(p_member_id uuid)
+RETURNS TABLE (
+  savings_tzs     numeric,
+  outstanding_tzs numeric,
+  locked_tzs      numeric,
+  pool_tzs        numeric,
+  withdrawable_tzs numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH s AS (
+    SELECT
+        COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                   WHERE member_id = p_member_id
+                     AND submission_type = 'savings_deposit'
+                     AND status = 'approved'), 0)
+      + COALESCE((SELECT SUM(amount_paid) FROM monthly_fees
+                   WHERE member_id = p_member_id), 0)
+      + COALESCE((SELECT SUM(delta) FROM savings_adjustments
+                   WHERE target_member_id = p_member_id AND status = 'approved'), 0)
+      -- Money already committed to a withdrawal that hasn't been paid yet is not
+      -- available again, or a member could drain the pool with parallel requests.
+      - COALESCE((SELECT SUM(amount) FROM withdrawal_requests
+                   WHERE member_id = p_member_id AND status IN ('pending', 'approved')), 0)
+        AS savings,
+      COALESCE((SELECT SUM(COALESCE(outstanding_principal, principal))
+                  FROM loans WHERE member_id = p_member_id AND status = 'active'), 0)
+        AS outstanding,
+      (SELECT pool_balance_tzs FROM v_group_pool) AS pool
+  )
+  SELECT
+    s.savings,
+    s.outstanding,
+    -- Savings held as security behind the active loan.
+    CASE WHEN s.outstanding > 0
+         THEN ceil(s.outstanding / greatest(setting('contribution_multiplier'), 1))
+         ELSE 0 END,
+    s.pool,
+    greatest(
+      least(
+        s.savings - CASE WHEN s.outstanding > 0
+                         THEN ceil(s.outstanding / greatest(setting('contribution_multiplier'), 1))
+                         ELSE 0 END,
+        s.pool
+      ),
+      0
+    )
+  FROM s;
+$$;
+
+GRANT EXECUTE ON FUNCTION member_withdrawable(uuid) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Member: open a withdrawal request.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION request_withdrawal(p_amount numeric, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_id      uuid;
+  v_max     numeric(14,2);
+  v_name    text;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_active = true) THEN
+    RAISE EXCEPTION 'Your membership is not active';
+  END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN RAISE EXCEPTION 'Enter an amount greater than zero'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every withdrawal';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM withdrawal_requests
+              WHERE member_id = auth.uid() AND status IN ('pending', 'approved')) THEN
+    RAISE EXCEPTION 'You already have a withdrawal in progress';
+  END IF;
+
+  SELECT withdrawable_tzs INTO v_max FROM member_withdrawable(auth.uid());
+  IF p_amount > v_max THEN
+    RAISE EXCEPTION 'You can withdraw at most % right now', v_max;
+  END IF;
+
+  INSERT INTO withdrawal_requests (member_id, amount, reason)
+  VALUES (auth.uid(), p_amount, trim(p_reason))
+  RETURNING id INTO v_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_withdrawal', 'withdrawal', v_id,
+          jsonb_build_object('amount', p_amount, 'reason', p_reason));
+
+  SELECT full_name INTO v_name FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'withdrawal_requested',
+         'Withdrawal requested',
+         COALESCE(v_name, 'A member') || ' wants to withdraw ' || p_amount || ' TZS',
+         jsonb_build_object('request_id', v_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. Admin: approve (2-of-N), reject, and record the payout.
+--
+--    Approval only authorises the payment. The money — and the member's savings —
+--    move at mark_withdrawal_paid, when the M-Pesa proof exists.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_withdrawal(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_req          withdrawal_requests%ROWTYPE;
+  v_max          numeric(14,2);
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_req FROM withdrawal_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_req.id IS NULL          THEN RAISE EXCEPTION 'Withdrawal not found';    END IF;
+  IF v_req.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';       END IF;
+  IF v_req.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve your own withdrawal';
+  END IF;
+
+  BEGIN
+    INSERT INTO withdrawal_approvals (request_id, admin_id) VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this withdrawal';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_req.member_id;
+  v_required := least(2, v_other_admins);
+
+  SELECT count(*) INTO v_approvals FROM withdrawal_approvals WHERE request_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_withdrawal', 'withdrawal', p_request_id,
+            jsonb_build_object('approvals', v_approvals, 'required', v_required));
+    RETURN;
+  END IF;
+
+  -- Re-check the ceiling at the moment of approval: the pool and the member's
+  -- balance may both have moved since the request was opened. The request's own
+  -- amount is excluded from the "committed" subtraction inside member_withdrawable
+  -- by adding it back here.
+  SELECT withdrawable_tzs + v_req.amount INTO v_max FROM member_withdrawable(v_req.member_id);
+  IF v_req.amount > v_max THEN
+    RAISE EXCEPTION 'Only % can be withdrawn now — the pool or their balance has changed', v_max;
+  END IF;
+
+  UPDATE withdrawal_requests
+     SET status = 'approved', approved_at = now()
+   WHERE id = p_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_withdrawal', 'withdrawal', p_request_id,
+          jsonb_build_object('member_id', v_req.member_id, 'amount', v_req.amount));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_req.member_id, 'withdrawal_approved', 'Withdrawal approved',
+          'Your withdrawal of ' || v_req.amount || ' TZS was approved and will be paid out.',
+          jsonb_build_object('request_id', p_request_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION reject_withdrawal(p_request_id uuid, p_reason text)
+RETURNS void AS $$
+DECLARE
+  v_req withdrawal_requests%ROWTYPE;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_req FROM withdrawal_requests WHERE id = p_request_id;
+  IF v_req.id IS NULL OR v_req.status NOT IN ('pending', 'approved') THEN RETURN; END IF;
+
+  UPDATE withdrawal_requests
+     SET status = 'rejected', rejection_reason = p_reason
+   WHERE id = p_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'reject_withdrawal', 'withdrawal', p_request_id,
+          jsonb_build_object('member_id', v_req.member_id, 'reason', p_reason));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_req.member_id, 'withdrawal_rejected', 'Withdrawal rejected',
+          COALESCE(p_reason, 'Your withdrawal request was rejected.'),
+          jsonb_build_object('request_id', p_request_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- The money actually leaves here. The negative savings adjustment is what makes
+-- the member's balance, the transparency directory and the pool all fall together.
+CREATE OR REPLACE FUNCTION mark_withdrawal_paid(p_request_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_req  withdrawal_requests%ROWTYPE;
+  v_pool numeric(14,2);
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_req FROM withdrawal_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_req.id IS NULL           THEN RAISE EXCEPTION 'Withdrawal not found';        END IF;
+  IF v_req.status <> 'approved' THEN RAISE EXCEPTION 'This withdrawal is not approved'; END IF;
+  IF v_req.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'Another admin must record your own payout';
+  END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_req.amount > v_pool THEN
+    RAISE EXCEPTION 'The pool holds only % — not enough to pay %', v_pool, v_req.amount;
+  END IF;
+
+  UPDATE withdrawal_requests
+     SET status = 'paid', paid_at = now(), paid_by = auth.uid(), proof_url = p_proof_url
+   WHERE id = p_request_id;
+
+  INSERT INTO savings_adjustments
+    (target_member_id, requested_by, delta, reason, status, applied_at)
+  VALUES (v_req.member_id, auth.uid(), -v_req.amount,
+          CASE WHEN v_req.is_exit THEN 'Exit settlement' ELSE 'Withdrawal' END ||
+            ': ' || v_req.reason,
+          'approved', now());
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'mark_withdrawal_paid', 'withdrawal', p_request_id,
+          jsonb_build_object('member_id', v_req.member_id, 'amount', v_req.amount,
+                             'is_exit', v_req.is_exit));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_req.member_id, 'withdrawal_paid', 'Withdrawal paid',
+          v_req.amount || ' TZS has been paid out to you.',
+          jsonb_build_object('request_id', p_request_id));
+
+  -- An exit settlement is the member's last act in the group.
+  IF v_req.is_exit THEN
+    UPDATE profiles SET is_active = false WHERE id = v_req.member_id;
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'member_exited', 'member', v_req.member_id,
+            jsonb_build_object('settlement', v_req.amount));
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. Member exit — settle and deactivate, KEEPING the history.
+--
+--    Deliberately distinct from request_member_deletion (010), which erases
+--    everything. Exit opens a withdrawal for the member's whole remaining balance;
+--    paying it out deactivates them. Every fee, loan and repayment stays on record
+--    so past cycles still reconcile.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION request_member_exit(p_member_id uuid, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_id          uuid;
+  v_settlement  numeric(14,2);
+  v_outstanding numeric(14,2);
+  v_name        text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required to exit a member';
+  END IF;
+  IF p_member_id = auth.uid() THEN
+    RAISE EXCEPTION 'Another admin must process your own exit';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_member_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+
+  -- The group cannot let someone walk away from an open loan. Settle it, write it
+  -- off, or recover it from their savings first (all in 022).
+  SELECT COALESCE(SUM(COALESCE(outstanding_principal, principal)), 0) INTO v_outstanding
+    FROM loans WHERE member_id = p_member_id AND status IN ('pending', 'active');
+  IF v_outstanding > 0 THEN
+    RAISE EXCEPTION
+      'This member still owes %. Settle, recover from savings, or write off the loan before they exit.',
+      v_outstanding;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM withdrawal_requests
+              WHERE member_id = p_member_id AND status IN ('pending', 'approved')) THEN
+    RAISE EXCEPTION 'That member already has a withdrawal in progress';
+  END IF;
+
+  SELECT withdrawable_tzs INTO v_settlement FROM member_withdrawable(p_member_id);
+  IF v_settlement <= 0 THEN
+    RAISE EXCEPTION 'There is nothing to settle — deactivate the member instead';
+  END IF;
+
+  INSERT INTO withdrawal_requests (member_id, amount, reason, is_exit)
+  VALUES (p_member_id, v_settlement, trim(p_reason), true)
+  RETURNING id INTO v_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_member_exit', 'member', p_member_id,
+          jsonb_build_object('request_id', v_id, 'settlement', v_settlement, 'reason', p_reason));
+
+  SELECT full_name INTO v_name FROM profiles WHERE id = p_member_id;
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'member_exit_requested',
+         'Member exit proposed',
+         COALESCE(v_name, 'A member') || ' would be settled for ' || v_settlement || ' TZS and leave the group',
+         jsonb_build_object('request_id', v_id, 'member_id', p_member_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 026_notification_delivery.sql
+-- ---------------------------------------------------------------------------
+
+-- 026_notification_delivery.sql — get reminders off the dashboard and onto phones.
+--
+-- 009 built a good notification system that nobody ever sees: it writes rows to
+-- `notifications`, which only surface when a member opens the PWA. The members who
+-- most need a reminder are exactly the ones who are not opening it.
+--
+-- ONE OUTBOX, MANY CHANNELS. A trigger on `notifications` INSERT enqueues a
+-- delivery row per channel the recipient has enabled, so every existing trigger in
+-- 009 — and every notification added since — gains external delivery without being
+-- touched. An Edge Function drains the outbox.
+--
+--   push      free, no vendor, needs the PWA installed
+--   sms       reaches feature phones; costs ~TZS 20–30 a message
+--   whatsapp  same outbox, behind a flag
+--
+-- COST GUARD. `notification_deliveries` is deduped per (recipient, kind, dedupe_key)
+-- so a member who is a month overdue is not billed an SMS every single day. The
+-- daily reminder job builds its dedupe key from the obligation and the week.
+--
+-- Requires 021 (v_fee_status_money / v_installment_status_money with `remaining`).
+
+-- --------------------------------------------------------------------------
+-- 1. Contact & channel preferences
+-- --------------------------------------------------------------------------
+
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS phone_e164   text,
+  ADD COLUMN IF NOT EXISTS sms_opt_in   boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS push_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS preferred_language text NOT NULL DEFAULT 'sw';
+
+-- Tanzanian numbers are entered every which way — 0712…, 255712…, +255 712 …
+-- SMS needs one canonical form, so normalise to E.164 (+255…) once, here, rather
+-- than in three different places at send time.
+CREATE OR REPLACE FUNCTION to_e164(p_phone text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_phone IS NULL THEN NULL
+    WHEN digits = ''     THEN NULL
+    -- already international
+    WHEN left(digits, 3) = '255' AND length(digits) = 12 THEN '+' || digits
+    -- local 0712345678
+    WHEN left(digits, 1) = '0'   AND length(digits) = 10 THEN '+255' || substring(digits from 2)
+    -- bare 712345678
+    WHEN length(digits) = 9                              THEN '+255' || digits
+    ELSE NULL
+  END
+  FROM (SELECT regexp_replace(COALESCE(p_phone, ''), '[^0-9]', '', 'g') AS digits) d;
+$$;
+
+UPDATE profiles SET phone_e164 = to_e164(phone_number)
+ WHERE phone_e164 IS NULL AND phone_number IS NOT NULL;
+
+-- Web Push subscriptions. One member can have several (phone + laptop).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id  uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  endpoint   text NOT NULL UNIQUE,
+  p256dh     text NOT NULL,
+  auth       text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_ok_at timestamptz
+);
+
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members manage own push subscriptions" ON push_subscriptions;
+CREATE POLICY "Members manage own push subscriptions" ON push_subscriptions
+  FOR ALL USING (member_id = auth.uid()) WITH CHECK (member_id = auth.uid());
+
+GRANT SELECT, INSERT, DELETE ON push_subscriptions TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. The outbox
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_id uuid REFERENCES notifications(id) ON DELETE CASCADE,
+  recipient_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  channel         text NOT NULL CHECK (channel IN ('push', 'sms', 'whatsapp')),
+  address         text NOT NULL,          -- E.164 number, or a push endpoint
+  title           text NOT NULL,
+  body            text,
+  status          text NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued', 'sent', 'failed', 'skipped')),
+  attempts        int NOT NULL DEFAULT 0,
+  last_error      text,
+  -- Dedupe: one delivery per recipient per logical event. NULL means "always send".
+  dedupe_key      text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  sent_at         timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS notification_deliveries_queued_idx
+  ON notification_deliveries (status, created_at) WHERE status = 'queued';
+CREATE UNIQUE INDEX IF NOT EXISTS notification_deliveries_dedupe_idx
+  ON notification_deliveries (recipient_id, channel, dedupe_key)
+  WHERE dedupe_key IS NOT NULL;
+
+ALTER TABLE notification_deliveries ENABLE ROW LEVEL SECURITY;
+
+-- Delivery records carry phone numbers, so only admins (and the owner) see them.
+DROP POLICY IF EXISTS "Read own or all deliveries" ON notification_deliveries;
+CREATE POLICY "Read own or all deliveries" ON notification_deliveries
+  FOR SELECT USING (recipient_id = auth.uid() OR is_admin());
+
+GRANT SELECT ON notification_deliveries TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. enqueue_delivery — the one place that decides which channels to use.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION enqueue_delivery(
+  p_recipient uuid, p_title text, p_body text,
+  p_notification_id uuid DEFAULT NULL, p_dedupe_key text DEFAULT NULL
+)
+RETURNS void AS $$
+DECLARE
+  v_profile profiles%ROWTYPE;
+BEGIN
+  SELECT * INTO v_profile FROM profiles WHERE id = p_recipient;
+  IF v_profile.id IS NULL OR v_profile.is_active = false THEN RETURN; END IF;
+
+  -- Push: one row per registered device.
+  IF v_profile.push_enabled THEN
+    INSERT INTO notification_deliveries
+      (notification_id, recipient_id, channel, address, title, body, dedupe_key)
+    SELECT p_notification_id, p_recipient, 'push', ps.endpoint, p_title, p_body,
+           CASE WHEN p_dedupe_key IS NULL THEN NULL ELSE p_dedupe_key || ':' || ps.id END
+      FROM push_subscriptions ps
+     WHERE ps.member_id = p_recipient
+    ON CONFLICT DO NOTHING;
+  END IF;
+
+  -- SMS: costs money, so it needs an opted-in member AND a usable number.
+  IF v_profile.sms_opt_in AND v_profile.phone_e164 IS NOT NULL THEN
+    INSERT INTO notification_deliveries
+      (notification_id, recipient_id, channel, address, title, body, dedupe_key)
+    VALUES (p_notification_id, p_recipient, 'sms', v_profile.phone_e164,
+            p_title, p_body, p_dedupe_key)
+    ON CONFLICT DO NOTHING;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Every notification 009 (or anything since) writes now also goes out externally.
+CREATE OR REPLACE FUNCTION fan_out_notification()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM enqueue_delivery(NEW.recipient_id, NEW.title, NEW.body, NEW.id, NULL);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_notification_fan_out ON notifications;
+CREATE TRIGGER on_notification_fan_out
+  AFTER INSERT ON notifications
+  FOR EACH ROW EXECUTE FUNCTION fan_out_notification();
+
+-- --------------------------------------------------------------------------
+-- 4. The daily reminder sweep.
+--
+--    Runs once a morning. Reminds about anything due in the next 3 days and
+--    anything already overdue. The dedupe key includes the ISO week, so an overdue
+--    member is nudged weekly rather than every single day — the difference between
+--    a helpful reminder and an SMS bill nobody agreed to.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION send_due_reminders()
+RETURNS int AS $$
+DECLARE
+  r      record;
+  v_week text := to_char(today_eat(), 'IYYY-IW');
+  v_n    int := 0;
+BEGIN
+  -- Monthly fees: due soon, or already overdue.
+  FOR r IN
+    SELECT f.member_id, f.id, f.due_date, f.total_with_penalty, f.computed_status
+      FROM v_fee_status_money f
+     WHERE f.computed_status <> 'paid'
+       AND f.remaining > 0
+       AND f.due_date <= today_eat() + 3
+  LOOP
+    PERFORM enqueue_delivery(
+      r.member_id,
+      CASE WHEN r.computed_status = 'overdue' THEN 'Monthly fee overdue' ELSE 'Monthly fee due soon' END,
+      CASE WHEN r.computed_status = 'overdue'
+           THEN 'Your monthly fee of ' || r.total_with_penalty || ' TZS is overdue. Pay in the app to stop the penalty growing.'
+           ELSE 'Your monthly fee of ' || r.total_with_penalty || ' TZS is due on ' || r.due_date || '.'
+      END,
+      NULL,
+      'fee:' || r.id || ':' || v_week
+    );
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Loan installments: same rule.
+  FOR r IN
+    SELECT l.member_id, i.id, i.due_date, i.total_with_penalty, i.computed_status
+      FROM v_installment_status_money i
+      JOIN loans l ON l.id = i.loan_id
+     WHERE i.computed_status NOT IN ('paid', 'cancelled')
+       AND i.remaining > 0
+       AND l.status = 'active'
+       AND i.due_date <= today_eat() + 3
+  LOOP
+    PERFORM enqueue_delivery(
+      r.member_id,
+      CASE WHEN r.computed_status = 'overdue' THEN 'Loan repayment overdue' ELSE 'Loan repayment due soon' END,
+      CASE WHEN r.computed_status = 'overdue'
+           THEN 'Your loan repayment of ' || r.total_with_penalty || ' TZS is overdue. Pay in the app to stop the penalty growing.'
+           ELSE 'Your loan repayment of ' || r.total_with_penalty || ' TZS is due on ' || r.due_date || '.'
+      END,
+      NULL,
+      'inst:' || r.id || ':' || v_week
+    );
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Share-outs waiting to be collected.
+  FOR r IN
+    SELECT d.member_id, d.id, d.total_payout_tzs
+      FROM distributions d
+     WHERE d.status = 'pending'
+  LOOP
+    PERFORM enqueue_delivery(
+      r.member_id,
+      'Your share-out is waiting',
+      r.total_payout_tzs || ' TZS is ready for you from the last cycle.',
+      NULL,
+      'dist:' || r.id || ':' || v_week
+    );
+    v_n := v_n + 1;
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (NULL, 'send_due_reminders', 'system', NULL,
+          jsonb_build_object('reminders', v_n, 'week', v_week));
+
+  RETURN v_n;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. Member self-service for channels + push registration.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION update_notification_prefs(
+  p_sms_opt_in boolean, p_push_enabled boolean, p_language text DEFAULT NULL
+)
+RETURNS void AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE profiles
+     SET sms_opt_in   = COALESCE(p_sms_opt_in, sms_opt_in),
+         push_enabled = COALESCE(p_push_enabled, push_enabled),
+         preferred_language = COALESCE(NULLIF(trim(p_language), ''), preferred_language),
+         -- Keep the canonical number in step with whatever they last saved.
+         phone_e164   = COALESCE(to_e164(phone_number), phone_e164)
+   WHERE id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 6. Schedule.
+--
+--    Same approach as 017: call the SQL directly from pg_cron rather than standing
+--    up an Edge Function + pg_net just to schedule it. The DISPATCH job (which does
+--    need network access) is the Edge Function `dispatch-notifications`; wire it up
+--    per supabase/README.md once its secrets are set.
+--
+--    Times are UTC. 05:00 UTC = 08:00 EAT.
+-- --------------------------------------------------------------------------
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.unschedule('daily-due-reminders')
+      WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'daily-due-reminders');
+    PERFORM cron.schedule('daily-due-reminders', '0 5 * * *', 'SELECT send_due_reminders();');
+  ELSE
+    RAISE NOTICE 'pg_cron is not installed — enable it in the Supabase dashboard, then re-run this block.';
+  END IF;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 027_reconciliation.sql
+-- ---------------------------------------------------------------------------
+
+-- 027_reconciliation.sql — prove the books balance, and make the views scope the
+-- way the comments always claimed they did.
+--
+-- TWO UNRELATED FIXES, both about trusting what the app displays.
+--
+-- 1. RECONCILIATION. v_group_pool is now a ten-term expression over eight tables,
+--    rewritten three times (021 cash correction, 022 write-offs and recoveries,
+--    024 distributions). Nothing checks it against anything. A drift would surface
+--    as a number that is quietly wrong — the worst kind of bug in a system whose
+--    only product is numbers members trust.
+--
+--    So compute the group's worth a second way, from an independent direction, and
+--    compare. Assets and claims must agree:
+--
+--      ASSETS  = liquid pool + principal still out on active loans
+--      CLAIMS  = member capital + retained earnings − earnings already paid out
+--
+--    Where member capital is what members put in (deposits + fee base + approved
+--    adjustments) and retained earnings is everything the group made (interest +
+--    penalties − write-offs). The two are derived from different tables by
+--    different paths, so agreement is meaningful; a non-zero difference means a
+--    money path exists that one of them does not know about.
+--
+-- 2. security_invoker. 003_rls_policies.sql:50 says the status/money views scope
+--    per member "(security_invoker default)". That is backwards: Postgres views
+--    default to security_invoker = FALSE and run with the OWNER's rights, which
+--    bypasses RLS on the tables underneath. On a project where the views are owned
+--    by a privileged role, any member could read every other member's fee and
+--    installment rows straight out of v_fee_status_money. This sets the flag the
+--    comment always assumed, and 05_guards.test.sql asserts it from now on.
+
+-- --------------------------------------------------------------------------
+-- 1. security_invoker on the member-scoped views.
+--
+--    The policies underneath are already `own row OR is_admin()`, so admins keep
+--    seeing everything and members see themselves. The SECURITY DEFINER RPCs
+--    (approve_submission, approve_loan, the cycle functions) run as their owner
+--    and are unaffected.
+--
+--    v_group_pool and v_group_assets are deliberately LEFT ALONE: they are single
+--    aggregates over the whole group with no per-member rows to leak, every member
+--    is entitled to see them, and they are read inside SECURITY DEFINER functions
+--    that must not be subject to the caller's RLS.
+-- --------------------------------------------------------------------------
+
+ALTER VIEW v_fee_status                SET (security_invoker = true);
+ALTER VIEW v_fee_status_money          SET (security_invoker = true);
+ALTER VIEW v_installment_status        SET (security_invoker = true);
+ALTER VIEW v_installment_status_money  SET (security_invoker = true);
+
+-- --------------------------------------------------------------------------
+-- 2. The identity, one component per row so a mismatch says WHERE it is.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_pool_reconciliation AS
+WITH
+  -- What members have put in and not taken out. Withdrawals and returned capital
+  -- both land here as negative savings_adjustments, so this needs no special case.
+  capital AS (
+    SELECT
+        COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                   WHERE submission_type = 'savings_deposit' AND status = 'approved'), 0)
+      + COALESCE((SELECT SUM(amount_paid) FROM monthly_fees), 0)
+      + COALESCE((SELECT SUM(delta) FROM savings_adjustments WHERE status = 'approved'), 0)
+      AS member_capital
+  ),
+  -- What the group has earned over its whole life, less what it has paid out.
+  earnings AS (
+    SELECT
+        COALESCE((SELECT SUM(amount) FROM earnings_ledger), 0)
+      - COALESCE((SELECT SUM(earnings_tzs) FROM distributions WHERE status = 'paid'), 0)
+      AS retained_earnings
+  ),
+  -- Admin corrections to the pool that are not attributable to any member. A
+  -- legitimate part of the group's worth, so the identity has to include them or
+  -- every pool edit would look like a discrepancy.
+  adjustments AS (
+    SELECT COALESCE((SELECT SUM(delta) FROM pool_adjustments WHERE status = 'approved'), 0)
+      AS pool_adjustments_tzs
+  ),
+  assets AS (
+    SELECT
+      (SELECT pool_balance_tzs FROM v_group_pool) AS pool_tzs,
+      COALESCE((SELECT SUM(outstanding_principal) FROM loans WHERE status = 'active'), 0)
+        AS outstanding_tzs
+  )
+SELECT
+  a.pool_tzs,
+  a.outstanding_tzs,
+  a.pool_tzs + a.outstanding_tzs                              AS total_assets_tzs,
+  c.member_capital                                            AS member_capital_tzs,
+  e.retained_earnings                                         AS retained_earnings_tzs,
+  j.pool_adjustments_tzs,
+  c.member_capital + e.retained_earnings + j.pool_adjustments_tzs AS total_claims_tzs,
+  (a.pool_tzs + a.outstanding_tzs)
+    - (c.member_capital + e.retained_earnings + j.pool_adjustments_tzs) AS difference_tzs,
+  (a.pool_tzs + a.outstanding_tzs)
+    = (c.member_capital + e.retained_earnings + j.pool_adjustments_tzs) AS balanced
+FROM assets a, capital c, earnings e, adjustments j;
+
+-- Every member can see that the group's books balance. That is the same
+-- transparency stance as the member directory (019) and the share-out (024), and
+-- a reconciliation only the admins can see is worth much less.
+GRANT SELECT ON v_pool_reconciliation TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 028_loan_guarantors.sql
+-- ---------------------------------------------------------------------------
+
+-- 028_loan_guarantors.sql — co-signers who stand behind a loan.
+--
+-- The standard SACCOS risk control, and the last big one this app was missing. A
+-- borrower nominates one or more guarantors; each pledges an amount of their own
+-- savings and must ACCEPT before the loan can be approved. While the loan is live
+-- the pledge is locked — a guarantor cannot withdraw money they have promised.
+--
+-- If the loan is written off, the admins may CALL the pledges instead of the group
+-- absorbing the whole loss.
+--
+-- TWO DELIBERATE NON-CHANGES:
+--
+--   * A guarantee does NOT raise the loan ceiling. min(multiplier x contribution,
+--     fraction x pool) stands. Letting guarantees lift the cap is a policy decision
+--     for the group to vote on, not something to smuggle in with the mechanism.
+--   * No new lock mechanism. member_withdrawable() (025) already computes what a
+--     member may take out and already reports `locked_tzs` for a borrower's own
+--     collateral; accepted pledges simply add to the same figure, so the member's
+--     withdrawal screen explains itself with no UI change.
+--
+-- Requires 022 (loan_recoveries) and 025 (member_withdrawable).
+
+-- --------------------------------------------------------------------------
+-- 1. Schema
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS loan_guarantors (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id       uuid NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  guarantor_id  uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  pledged_amount numeric(12,2) NOT NULL CHECK (pledged_amount > 0),
+  status        text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'accepted', 'declined', 'released', 'called')),
+  responded_at  timestamptz,
+  called_amount numeric(12,2) NOT NULL DEFAULT 0,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, guarantor_id)
+);
+CREATE INDEX IF NOT EXISTS loan_guarantors_guarantor_idx
+  ON loan_guarantors (guarantor_id, status);
+
+ALTER TABLE loan_guarantors ENABLE ROW LEVEL SECURITY;
+
+-- Everyone sees who backs whom. Standing behind a loan is a public act in a group
+-- this size — and a guarantor needs to see the request to accept it.
+DROP POLICY IF EXISTS "Everyone reads guarantees" ON loan_guarantors;
+CREATE POLICY "Everyone reads guarantees" ON loan_guarantors
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON loan_guarantors TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. member_withdrawable — accepted pledges join the borrower's own collateral.
+--
+--    Same shape as 025; the only change is the extra `pledged` term. Redefined in
+--    full rather than patched because the CTE has to compute both together.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_withdrawable(p_member_id uuid)
+RETURNS TABLE (
+  savings_tzs      numeric,
+  outstanding_tzs  numeric,
+  locked_tzs       numeric,
+  pool_tzs         numeric,
+  withdrawable_tzs numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH s AS (
+    SELECT
+        COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                   WHERE member_id = p_member_id
+                     AND submission_type = 'savings_deposit'
+                     AND status = 'approved'), 0)
+      + COALESCE((SELECT SUM(amount_paid) FROM monthly_fees
+                   WHERE member_id = p_member_id), 0)
+      + COALESCE((SELECT SUM(delta) FROM savings_adjustments
+                   WHERE target_member_id = p_member_id AND status = 'approved'), 0)
+      - COALESCE((SELECT SUM(amount) FROM withdrawal_requests
+                   WHERE member_id = p_member_id AND status IN ('pending', 'approved')), 0)
+        AS savings,
+      COALESCE((SELECT SUM(COALESCE(outstanding_principal, principal))
+                  FROM loans WHERE member_id = p_member_id AND status = 'active'), 0)
+        AS outstanding,
+      -- Money promised to somebody else's loan is not this member's to withdraw.
+      COALESCE((SELECT SUM(g.pledged_amount)
+                  FROM loan_guarantors g
+                  JOIN loans l ON l.id = g.loan_id
+                 WHERE g.guarantor_id = p_member_id
+                   AND g.status = 'accepted'
+                   AND l.status IN ('pending', 'active')), 0)
+        AS pledged,
+      (SELECT pool_balance_tzs FROM v_group_pool) AS pool
+  ),
+  l AS (
+    SELECT s.*,
+      CASE WHEN s.outstanding > 0
+           THEN ceil(s.outstanding / greatest(setting('contribution_multiplier'), 1))
+           ELSE 0 END + s.pledged AS locked
+    FROM s
+  )
+  SELECT
+    l.savings,
+    l.outstanding,
+    l.locked,
+    l.pool,
+    greatest(least(l.savings - l.locked, l.pool), 0)
+  FROM l;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 3. Nominating and responding.
+--
+--    A pledge is capped at what the guarantor could actually withdraw today: a
+--    promise larger than their free savings is a promise they cannot keep.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION nominate_guarantor(
+  p_loan_id uuid, p_guarantor_id uuid, p_amount numeric
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id        uuid;
+  v_loan      loans%ROWTYPE;
+  v_free      numeric(14,2);
+  v_borrower  text;
+BEGIN
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id;
+  IF v_loan.id IS NULL THEN RAISE EXCEPTION 'Loan not found'; END IF;
+  IF v_loan.member_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Only the borrower can nominate their guarantors';
+  END IF;
+  IF v_loan.status <> 'pending' THEN
+    RAISE EXCEPTION 'Guarantors can only be added while the request is still pending';
+  END IF;
+  IF p_guarantor_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot guarantee your own loan';
+  END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Enter the amount they are guaranteeing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_guarantor_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+
+  SELECT withdrawable_tzs INTO v_free FROM member_withdrawable(p_guarantor_id);
+  IF p_amount > v_free THEN
+    RAISE EXCEPTION 'They can only guarantee up to % — the rest of their savings is already committed',
+      v_free;
+  END IF;
+
+  INSERT INTO loan_guarantors (loan_id, guarantor_id, pledged_amount)
+  VALUES (p_loan_id, p_guarantor_id, p_amount)
+  RETURNING id INTO v_id;
+
+  SELECT full_name INTO v_borrower FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (p_guarantor_id, 'guarantee_requested',
+          'You have been asked to guarantee a loan',
+          COALESCE(v_borrower, 'A member') || ' has asked you to guarantee ' ||
+            p_amount || ' TZS of their loan.',
+          jsonb_build_object('loan_id', p_loan_id, 'guarantee_id', v_id));
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'nominate_guarantor', 'loan', p_loan_id,
+          jsonb_build_object('guarantor_id', p_guarantor_id, 'amount', p_amount));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION respond_to_guarantee(p_guarantee_id uuid, p_accept boolean)
+RETURNS void AS $$
+DECLARE
+  v_g        loan_guarantors%ROWTYPE;
+  v_free     numeric(14,2);
+  v_borrower uuid;
+  v_name     text;
+BEGIN
+  SELECT * INTO v_g FROM loan_guarantors WHERE id = p_guarantee_id FOR UPDATE;
+  IF v_g.id IS NULL              THEN RAISE EXCEPTION 'Guarantee not found';        END IF;
+  IF v_g.guarantor_id <> auth.uid() THEN RAISE EXCEPTION 'Not your guarantee';      END IF;
+  IF v_g.status <> 'pending'     THEN RAISE EXCEPTION 'You have already responded'; END IF;
+
+  IF p_accept THEN
+    -- Re-check at acceptance: their balance may have moved since the nomination.
+    SELECT withdrawable_tzs INTO v_free FROM member_withdrawable(auth.uid());
+    IF v_g.pledged_amount > v_free THEN
+      RAISE EXCEPTION 'You only have % free to guarantee right now', v_free;
+    END IF;
+  END IF;
+
+  UPDATE loan_guarantors
+     SET status = CASE WHEN p_accept THEN 'accepted' ELSE 'declined' END,
+         responded_at = now()
+   WHERE id = p_guarantee_id;
+
+  SELECT member_id INTO v_borrower FROM loans WHERE id = v_g.loan_id;
+  SELECT full_name INTO v_name FROM profiles WHERE id = auth.uid();
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_borrower,
+          CASE WHEN p_accept THEN 'guarantee_accepted' ELSE 'guarantee_declined' END,
+          CASE WHEN p_accept THEN 'Guarantee accepted' ELSE 'Guarantee declined' END,
+          COALESCE(v_name, 'A member') ||
+            CASE WHEN p_accept THEN ' is guaranteeing your loan.'
+                 ELSE ' declined to guarantee your loan.' END,
+          jsonb_build_object('loan_id', v_g.loan_id));
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), CASE WHEN p_accept THEN 'accept_guarantee' ELSE 'decline_guarantee' END,
+          'loan', v_g.loan_id,
+          jsonb_build_object('guarantee_id', p_guarantee_id, 'amount', v_g.pledged_amount));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- The borrower can withdraw a nomination that has not been answered yet.
+CREATE OR REPLACE FUNCTION cancel_guarantee(p_guarantee_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_g        loan_guarantors%ROWTYPE;
+  v_borrower uuid;
+BEGIN
+  SELECT * INTO v_g FROM loan_guarantors WHERE id = p_guarantee_id;
+  IF v_g.id IS NULL THEN RETURN; END IF;
+
+  SELECT member_id INTO v_borrower FROM loans WHERE id = v_g.loan_id;
+  IF v_borrower <> auth.uid() AND NOT is_admin() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF v_g.status <> 'pending' THEN
+    RAISE EXCEPTION 'Only an unanswered nomination can be withdrawn';
+  END IF;
+
+  DELETE FROM loan_guarantors WHERE id = p_guarantee_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. approve_loan — refuse while a nomination is unanswered.
+--
+--    Everything else is the 020 version unchanged. A loan with no guarantors at
+--    all is still fine: guarantees are a tool the group can use, not a mandate.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_loan              loans%ROWTYPE;
+  v_int               numeric(12,2);
+  v_pool              numeric(14,2);
+  v_contribution      numeric(14,2);
+  v_required          int;
+  v_approvals         int;
+  v_final_proof       text;
+  v_other_admin_loans int;
+  v_total_admins      int;
+  v_unanswered        int;
+  v_fraction          numeric := setting('pool_loan_fraction');
+  v_multiplier        numeric := setting('contribution_multiplier');
+  v_rate              numeric := setting('loan_interest_rate');
+  v_months            int     := setting('default_loan_months')::int;
+  v_n                 int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL             THEN RAISE EXCEPTION 'Loan not found';      END IF;
+  IF v_loan.status <> 'pending'    THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+  IF v_loan.member_id = auth.uid() THEN RAISE EXCEPTION 'Cannot approve your own loan'; END IF;
+
+  -- Approving while a guarantor has not answered would bind them to a decision
+  -- they never made.
+  SELECT count(*) INTO v_unanswered
+    FROM loan_guarantors WHERE loan_id = p_loan_id AND status = 'pending';
+  IF v_unanswered > 0 THEN
+    RAISE EXCEPTION '% nominated guarantor(s) have not responded yet', v_unanswered;
+  END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_loan.principal > floor(v_fraction * COALESCE(v_pool, 0)) THEN
+    RAISE EXCEPTION 'Loan exceeds % of the group pool (max %).',
+      round(v_fraction * 100) || '%', floor(v_fraction * COALESCE(v_pool, 0));
+  END IF;
+
+  SELECT
+      COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                WHERE member_id = v_loan.member_id
+                  AND submission_type = 'savings_deposit'
+                  AND status = 'approved'), 0)
+    + COALESCE((SELECT SUM(amount) FROM monthly_fees
+                WHERE member_id = v_loan.member_id AND status = 'paid'), 0)
+  INTO v_contribution;
+  IF v_loan.principal > floor(v_multiplier * v_contribution) THEN
+    RAISE EXCEPTION 'Loan exceeds %x member contribution (max %).',
+      v_multiplier, floor(v_multiplier * v_contribution);
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_approvals (loan_id, admin_id, proof_url)
+    VALUES (p_loan_id, auth.uid(), p_proof_url);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this loan';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM loan_approvals WHERE loan_id = p_loan_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan', 'loan', p_loan_id,
+            jsonb_build_object(
+              'member_id', v_loan.member_id,
+              'principal', v_loan.principal,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  IF (SELECT role FROM profiles WHERE id = v_loan.member_id) = 'admin' THEN
+    SELECT count(*) INTO v_total_admins
+      FROM profiles WHERE role = 'admin' AND is_active = true;
+    SELECT count(*) INTO v_other_admin_loans
+      FROM loans
+      WHERE status = 'active'
+        AND member_id IN (SELECT id FROM profiles WHERE role = 'admin' AND is_active = true)
+        AND member_id <> v_loan.member_id;
+    IF v_other_admin_loans >= v_total_admins - 1 THEN
+      RAISE EXCEPTION 'Not all admins may hold loans simultaneously; one admin must remain loan-free.';
+    END IF;
+  END IF;
+
+  SELECT proof_url INTO v_final_proof
+  FROM loan_approvals WHERE loan_id = p_loan_id
+  ORDER BY approved_at ASC LIMIT 1;
+
+  v_int := round(v_loan.principal * v_rate);
+
+  UPDATE loans
+    SET status = 'active',
+        approved_at = now(),
+        approved_by = auth.uid(),
+        disbursed_at = now(),
+        disbursement_proof_url = v_final_proof,
+        outstanding_principal = v_loan.principal,
+        interest_rate = v_rate
+    WHERE id = p_loan_id;
+
+  FOR v_n IN 1..v_months LOOP
+    INSERT INTO loan_installments
+      (loan_id, installment_number, due_date, principal_due, interest_due, penalty_rate)
+    VALUES (
+      p_loan_id,
+      v_n,
+      (today_eat() + (v_n || ' month')::interval)::date,
+      CASE WHEN v_n = v_months THEN v_loan.principal ELSE 0 END,
+      v_int,
+      setting('penalty_rate')
+    );
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_loan', 'loan', p_loan_id,
+          jsonb_build_object(
+            'member_id',     v_loan.member_id,
+            'principal',     v_loan.principal,
+            'approvals',     v_approvals,
+            'interest_rate', v_rate,
+            'months',        v_months,
+            'guarantors',    (SELECT count(*) FROM loan_guarantors
+                               WHERE loan_id = p_loan_id AND status = 'accepted')
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- --------------------------------------------------------------------------
+-- 5. Releasing and calling.
+--
+--    Release is automatic: the moment a loan stops being a liability, the pledge
+--    stops locking anyone's savings. A trigger does it so no code path can forget.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION release_guarantees_on_loan_close()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status IN ('closed', 'rejected') AND OLD.status <> NEW.status THEN
+    UPDATE loan_guarantors
+       SET status = 'released'
+     WHERE loan_id = NEW.id AND status IN ('pending', 'accepted');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_loan_close_release_guarantees ON loans;
+CREATE TRIGGER on_loan_close_release_guarantees
+  AFTER UPDATE OF status ON loans
+  FOR EACH ROW EXECUTE FUNCTION release_guarantees_on_loan_close();
+
+-- Calling the pledges after a write-off: 2-of-N, and it reuses 022's machinery
+-- exactly — a negative savings_adjustments row per guarantor, each offset by a
+-- loan_recoveries row so no cash moves and the pool stays correct.
+--
+-- Called amounts are capped at the shortfall and shared pro-rata across the
+-- accepted pledges, so no guarantor pays more than their share of what was lost.
+CREATE OR REPLACE FUNCTION call_guarantees(p_loan_id uuid, p_reason text)
+RETURNS numeric AS $$
+DECLARE
+  v_loan      loans%ROWTYPE;
+  v_shortfall numeric(14,2);
+  v_pledged   numeric(14,2);
+  v_total     numeric(14,2) := 0;
+  g           record;
+  v_share     numeric(14,2);
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required to call a guarantee';
+  END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL THEN RAISE EXCEPTION 'Loan not found'; END IF;
+  IF v_loan.status <> 'written_off' THEN
+    RAISE EXCEPTION 'Guarantees are only called on a loan that has been written off';
+  END IF;
+  IF v_loan.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot call the guarantees on your own loan';
+  END IF;
+
+  -- What the group actually lost: the write-off entry booked in 022.
+  SELECT COALESCE(-SUM(amount), 0) INTO v_shortfall
+    FROM earnings_ledger
+   WHERE kind = 'write_off' AND source_type = 'loan' AND source_id = p_loan_id;
+  IF v_shortfall <= 0 THEN RAISE EXCEPTION 'This loan recorded no loss to recover'; END IF;
+
+  SELECT COALESCE(SUM(pledged_amount), 0) INTO v_pledged
+    FROM loan_guarantors WHERE loan_id = p_loan_id AND status = 'accepted';
+  IF v_pledged <= 0 THEN RAISE EXCEPTION 'This loan has no accepted guarantees'; END IF;
+
+  FOR g IN
+    SELECT * FROM loan_guarantors WHERE loan_id = p_loan_id AND status = 'accepted'
+  LOOP
+    -- Never more than they promised, never more than their share of the loss.
+    v_share := least(g.pledged_amount, round(v_shortfall * g.pledged_amount / v_pledged));
+    IF v_share > 0 THEN
+      INSERT INTO savings_adjustments
+        (target_member_id, requested_by, delta, reason, status, applied_at)
+      VALUES (g.guarantor_id, auth.uid(), -v_share,
+              'Guarantee called: ' || p_reason, 'approved', now());
+
+      INSERT INTO loan_recoveries (loan_id, member_id, amount)
+      VALUES (p_loan_id, g.guarantor_id, v_share);
+
+      -- The loss is partly recovered, so reverse that much of the write-off.
+      INSERT INTO earnings_ledger (member_id, kind, amount, source_type, source_id)
+      VALUES (g.guarantor_id, 'write_off', v_share, 'loan', p_loan_id);
+
+      INSERT INTO notifications (recipient_id, kind, title, body, data)
+      VALUES (g.guarantor_id, 'guarantee_called', 'Your guarantee has been called',
+              v_share || ' TZS was taken from your savings to cover the loan you guaranteed.',
+              jsonb_build_object('loan_id', p_loan_id));
+
+      v_total := v_total + v_share;
+    END IF;
+
+    UPDATE loan_guarantors
+       SET status = 'called', called_amount = v_share
+     WHERE id = g.id;
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'call_guarantees', 'loan', p_loan_id,
+          jsonb_build_object('shortfall', v_shortfall, 'recovered', v_total, 'reason', p_reason));
+
+  RETURN v_total;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 029_reports.sql
+-- ---------------------------------------------------------------------------
+
+-- 029_reports.sql — the numbers a group reads out at its annual meeting.
+--
+-- Members could already download their own statement (Phase 4), but the GROUP had
+-- no accounts: no income statement, no balance sheet, nothing to project on a wall
+-- at an AGM and say "this is what we made and this is what we hold".
+--
+-- Almost no new data is needed. 021's earnings_ledger records every shilling of
+-- income with a date, and 023's v_member_capital_events reconstructs any member's
+-- capital at any point in time — both were built for the share-out and turn out to
+-- be exactly what a set of accounts needs. This migration is mostly presentation.
+--
+-- The balance sheet reuses the SAME identity as v_pool_reconciliation (027), so the
+-- report and the books-balance check can never tell the group different stories.
+--
+-- Requires 021, 023, 027.
+
+-- --------------------------------------------------------------------------
+-- 1. Income statement — what the group earned over a period.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION group_income_statement(p_from date, p_to date)
+RETURNS TABLE (
+  interest_tzs   numeric,
+  penalty_tzs    numeric,
+  write_off_tzs  numeric,
+  net_tzs        numeric,
+  loans_issued   bigint,
+  loans_issued_tzs numeric,
+  fees_collected_tzs numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    COALESCE((SELECT SUM(amount) FROM earnings_ledger
+               WHERE kind = 'interest' AND occurred_at::date BETWEEN p_from AND p_to), 0),
+    COALESCE((SELECT SUM(amount) FROM earnings_ledger
+               WHERE kind = 'penalty' AND occurred_at::date BETWEEN p_from AND p_to), 0),
+    COALESCE((SELECT SUM(amount) FROM earnings_ledger
+               WHERE kind = 'write_off' AND occurred_at::date BETWEEN p_from AND p_to), 0),
+    COALESCE((SELECT SUM(amount) FROM earnings_ledger
+               WHERE occurred_at::date BETWEEN p_from AND p_to), 0),
+    -- Activity, not income: how much lending the group actually did.
+    COALESCE((SELECT count(*) FROM loans
+               WHERE approved_at::date BETWEEN p_from AND p_to), 0),
+    COALESCE((SELECT SUM(principal) FROM loans
+               WHERE approved_at::date BETWEEN p_from AND p_to), 0),
+    -- Fee base is members' own capital, never income — reported separately so
+    -- nobody mistakes a healthy fee month for profit.
+    COALESCE((SELECT SUM(ps.amount_claimed) FROM payment_submissions ps
+               WHERE ps.submission_type = 'monthly_fee' AND ps.status = 'approved'
+                 AND COALESCE(ps.reviewed_at, ps.submitted_at)::date BETWEEN p_from AND p_to), 0);
+$$;
+
+GRANT EXECUTE ON FUNCTION group_income_statement(date, date) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. Balance sheet — what the group holds, and whose it is.
+--
+--    Same identity as v_pool_reconciliation (027): assets = claims. Reported
+--    as-at a date so a closed cycle can be re-read exactly as it stood.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION group_balance_sheet(p_as_of date DEFAULT NULL)
+RETURNS TABLE (
+  as_of              date,
+  pool_tzs           numeric,
+  outstanding_tzs    numeric,
+  total_assets_tzs   numeric,
+  member_capital_tzs numeric,
+  retained_earnings_tzs numeric,
+  distributions_paid_tzs numeric,
+  total_claims_tzs   numeric,
+  difference_tzs     numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH d AS (SELECT COALESCE(p_as_of, today_eat()) AS as_of),
+  cap AS (
+    SELECT COALESCE(SUM(e.amount), 0) AS member_capital
+    FROM v_member_capital_events e, d
+    WHERE e.occurred_at::date <= d.as_of
+  ),
+  earn AS (
+    SELECT COALESCE(SUM(el.amount), 0) AS retained
+    FROM earnings_ledger el, d
+    WHERE el.occurred_at::date <= d.as_of
+  ),
+  dist AS (
+    SELECT COALESCE(SUM(x.earnings_tzs), 0) AS paid
+    FROM distributions x, d
+    WHERE x.status = 'paid' AND x.paid_at::date <= d.as_of
+  ),
+  adj AS (
+    SELECT COALESCE(SUM(p.delta), 0) AS pool_adj
+    FROM pool_adjustments p, d
+    WHERE p.status = 'approved' AND COALESCE(p.applied_at, p.created_at)::date <= d.as_of
+  ),
+  assets AS (
+    SELECT
+      (SELECT pool_balance_tzs FROM v_group_pool) AS pool,
+      COALESCE((SELECT SUM(outstanding_principal) FROM loans WHERE status = 'active'), 0)
+        AS outstanding
+  )
+  SELECT
+    d.as_of,
+    a.pool,
+    a.outstanding,
+    a.pool + a.outstanding,
+    c.member_capital,
+    e.retained,
+    x.paid,
+    c.member_capital + e.retained - x.paid + j.pool_adj,
+    (a.pool + a.outstanding) - (c.member_capital + e.retained - x.paid + j.pool_adj)
+  FROM d, assets a, cap c, earn e, dist x, adj j;
+$$;
+
+GRANT EXECUTE ON FUNCTION group_balance_sheet(date) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Per-member ledger — every movement in one member's capital, with a running
+--    balance. This is what settles an argument about somebody's savings.
+--
+--    security_invoker is not available on a function, so this checks explicitly:
+--    a member may read their own ledger, an admin may read anyone's.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_ledger(
+  p_member uuid, p_from date DEFAULT NULL, p_to date DEFAULT NULL
+)
+RETURNS TABLE (
+  occurred_at timestamptz,
+  kind        text,
+  amount      numeric,
+  balance     numeric
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF p_member <> auth.uid() AND NOT is_admin() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    e.occurred_at,
+    e.kind,
+    e.amount,
+    -- Running balance over the whole history, then filtered — so a ledger for a
+    -- single month still opens at the right number rather than at zero.
+    SUM(e.amount) OVER (ORDER BY e.occurred_at, e.kind
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+  FROM v_member_capital_events e
+  WHERE e.member_id = p_member
+    AND (p_from IS NULL OR e.occurred_at::date >= p_from)
+    AND (p_to   IS NULL OR e.occurred_at::date <= p_to)
+  ORDER BY e.occurred_at, e.kind;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION member_ledger(uuid, date, date) TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. Member summary for the AGM — one row per member: capital, what they still
+--    owe, and what they earned from the last closed cycle.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION group_member_report(p_as_of date DEFAULT NULL)
+RETURNS TABLE (
+  member_id      uuid,
+  full_name      text,
+  role           text,
+  capital_tzs    numeric,
+  outstanding_tzs numeric,
+  fees_paid_tzs  numeric,
+  penalties_tzs  numeric,
+  last_payout_tzs numeric
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH d AS (SELECT COALESCE(p_as_of, today_eat()) AS as_of)
+  SELECT
+    p.id,
+    p.full_name,
+    p.role,
+    COALESCE((SELECT SUM(e.amount) FROM v_member_capital_events e, d
+               WHERE e.member_id = p.id AND e.occurred_at::date <= d.as_of), 0),
+    COALESCE((SELECT SUM(COALESCE(l.outstanding_principal, l.principal))
+               FROM loans l WHERE l.member_id = p.id AND l.status = 'active'), 0),
+    COALESCE((SELECT SUM(f.amount_paid) FROM monthly_fees f WHERE f.member_id = p.id), 0),
+    -- Penalties this member has paid: a fine, not a contribution, and the one
+    -- number that shows who is carrying the group and who is costing it.
+    COALESCE((SELECT SUM(el.amount) FROM earnings_ledger el
+               WHERE el.member_id = p.id AND el.kind = 'penalty'), 0),
+    COALESCE((SELECT x.total_payout_tzs FROM distributions x
+               JOIN cycles c ON c.id = x.cycle_id
+              WHERE x.member_id = p.id
+              ORDER BY c.end_date DESC LIMIT 1), 0)
+  FROM profiles p, d
+  WHERE p.is_active = true
+  ORDER BY p.full_name;
+$$;
+
+GRANT EXECUTE ON FUNCTION group_member_report(date) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 030_meetings_and_social_fund.sql
+-- ---------------------------------------------------------------------------
+
+-- 030_meetings_and_social_fund.sql — the two structures every VICOBA has that
+-- this app did not model at all.
+--
+-- 1. MEETINGS AND ATTENDANCE. The group meets monthly; that is where loans get
+--    agreed and rules get voted on. Attendance fines are a normal revenue line and
+--    the main thing that keeps a meeting quorate.
+--
+--    Fines are DEDUCTED, not invoiced. A fine writes a negative savings_adjustments
+--    row plus a positive earnings_ledger row, so it flows straight into the
+--    member's balance, the transparency directory, the pool and the cycle
+--    share-out with no new plumbing — and approve_submission is not touched a
+--    fourth time. Fine amounts are group_settings keys, so they change by the same
+--    2-of-N vote as every other rule.
+--
+-- 2. SOCIAL FUND (bima ya jamii). A separate pot for funerals and medical
+--    emergencies. Deliberately OUTSIDE v_group_pool: it is welfare money, not
+--    loanable capital, and folding it in would silently raise every member's loan
+--    ceiling (the cap is a fraction of the pool). Kept separate, it also cannot be
+--    lent out by accident.
+--
+-- Requires 020 (settings), 021 (earnings_ledger).
+
+-- --------------------------------------------------------------------------
+-- 1. Fine amounts as group rules
+-- --------------------------------------------------------------------------
+
+INSERT INTO group_settings (key, value, min_value, max_value, label) VALUES
+  ('attendance_fine_late',   1000, 0, 100000, 'Fine for arriving late'),
+  ('attendance_fine_absent', 2000, 0, 100000, 'Fine for missing a meeting')
+ON CONFLICT (key) DO NOTHING;
+
+-- --------------------------------------------------------------------------
+-- 2. Meetings and the register
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS meetings (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  held_on    date NOT NULL,
+  title      text NOT NULL,
+  minutes    text,
+  cycle_id   uuid REFERENCES cycles(id) ON DELETE SET NULL,
+  -- Fines only bite once. Recording the register is reversible; applying the
+  -- fines is not, so it is a separate, explicit step.
+  fines_applied_at timestamptz,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS meetings_held_on_idx ON meetings (held_on DESC);
+
+CREATE TABLE IF NOT EXISTS meeting_attendance (
+  meeting_id uuid NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  member_id  uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  status     text NOT NULL DEFAULT 'present'
+               CHECK (status IN ('present', 'late', 'excused', 'absent')),
+  fine_tzs   numeric(12,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (meeting_id, member_id)
+);
+
+ALTER TABLE meetings           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE meeting_attendance ENABLE ROW LEVEL SECURITY;
+
+-- Minutes and the register are the group's record; everyone reads them.
+DROP POLICY IF EXISTS "Everyone reads meetings" ON meetings;
+CREATE POLICY "Everyone reads meetings" ON meetings
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Everyone reads attendance" ON meeting_attendance;
+CREATE POLICY "Everyone reads attendance" ON meeting_attendance
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON meetings, meeting_attendance TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Recording a meeting
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION record_meeting(
+  p_held_on date, p_title text, p_minutes text DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_title), '') = '' THEN RAISE EXCEPTION 'Give the meeting a title'; END IF;
+  IF p_held_on > today_eat() THEN RAISE EXCEPTION 'A meeting cannot be recorded in the future'; END IF;
+
+  INSERT INTO meetings (held_on, title, minutes, created_by, cycle_id)
+  VALUES (p_held_on, trim(p_title), NULLIF(trim(p_minutes), ''), auth.uid(),
+          (SELECT id FROM cycles WHERE status = 'open' LIMIT 1))
+  RETURNING id INTO v_id;
+
+  -- Everyone starts present; the admin marks the exceptions. In a 15-member group
+  -- that is far less tapping than the other way round.
+  INSERT INTO meeting_attendance (meeting_id, member_id, status)
+  SELECT v_id, p.id, 'present' FROM profiles p WHERE p.is_active = true;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'record_meeting', 'meeting', v_id,
+          jsonb_build_object('held_on', p_held_on, 'title', p_title));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION set_attendance(
+  p_meeting_id uuid, p_member_id uuid, p_status text
+)
+RETURNS void AS $$
+DECLARE
+  v_applied timestamptz;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_status NOT IN ('present', 'late', 'excused', 'absent') THEN
+    RAISE EXCEPTION 'Unknown attendance status: %', p_status;
+  END IF;
+
+  SELECT fines_applied_at INTO v_applied FROM meetings WHERE id = p_meeting_id;
+  IF v_applied IS NOT NULL THEN
+    RAISE EXCEPTION 'The fines for this meeting have already been applied';
+  END IF;
+
+  INSERT INTO meeting_attendance (meeting_id, member_id, status)
+  VALUES (p_meeting_id, p_member_id, p_status)
+  ON CONFLICT (meeting_id, member_id) DO UPDATE SET status = EXCLUDED.status;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION update_meeting_minutes(p_meeting_id uuid, p_minutes text)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE meetings SET minutes = NULLIF(trim(p_minutes), '') WHERE id = p_meeting_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. Applying the fines — once, and irreversibly.
+--
+--    Each fine is a negative savings adjustment (the member's balance falls) plus
+--    a positive earnings entry (the group's income rises). That is the same pair
+--    022 uses for a loan recovery, and it means the fine reaches the pool, the
+--    directory and the share-out with no code that knows what a fine is.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION apply_attendance_fines(p_meeting_id uuid)
+RETURNS numeric AS $$
+DECLARE
+  v_meeting meetings%ROWTYPE;
+  v_late    numeric := setting('attendance_fine_late');
+  v_absent  numeric := setting('attendance_fine_absent');
+  v_total   numeric := 0;
+  r         record;
+  v_fine    numeric;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_meeting FROM meetings WHERE id = p_meeting_id FOR UPDATE;
+  IF v_meeting.id IS NULL THEN RAISE EXCEPTION 'Meeting not found'; END IF;
+  IF v_meeting.fines_applied_at IS NOT NULL THEN
+    RAISE EXCEPTION 'The fines for this meeting have already been applied';
+  END IF;
+
+  FOR r IN
+    SELECT * FROM meeting_attendance WHERE meeting_id = p_meeting_id
+  LOOP
+    -- 'excused' is the whole point of having four statuses rather than two: a
+    -- member who sent word is not fined.
+    v_fine := CASE r.status
+                WHEN 'late'   THEN v_late
+                WHEN 'absent' THEN v_absent
+                ELSE 0
+              END;
+
+    IF v_fine > 0 THEN
+      INSERT INTO savings_adjustments
+        (target_member_id, requested_by, delta, reason, status, applied_at)
+      VALUES (r.member_id, auth.uid(), -v_fine,
+              'Attendance fine: ' || v_meeting.title || ' (' || r.status || ')',
+              'approved', now());
+
+      INSERT INTO earnings_ledger (member_id, kind, amount, source_type, source_id)
+      VALUES (r.member_id, 'penalty', v_fine, 'meeting', p_meeting_id);
+
+      UPDATE meeting_attendance SET fine_tzs = v_fine
+       WHERE meeting_id = p_meeting_id AND member_id = r.member_id;
+
+      INSERT INTO notifications (recipient_id, kind, title, body, data)
+      VALUES (r.member_id, 'attendance_fine', 'Attendance fine',
+              v_fine || ' TZS was deducted from your savings for ' ||
+                CASE r.status WHEN 'late' THEN 'arriving late to ' ELSE 'missing ' END ||
+                v_meeting.title || '.',
+              jsonb_build_object('meeting_id', p_meeting_id));
+
+      v_total := v_total + v_fine;
+    END IF;
+  END LOOP;
+
+  UPDATE meetings SET fines_applied_at = now() WHERE id = p_meeting_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'apply_attendance_fines', 'meeting', p_meeting_id,
+          jsonb_build_object('total', v_total, 'late', v_late, 'absent', v_absent));
+
+  RETURN v_total;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. v_group_pool — a fine moves ownership, not cash.
+--
+--    NO CASH MOVES WHEN A FINE IS LEVIED. The money is already sitting in the
+--    pool as the member's savings; the fine only changes whose it is — the
+--    member's capital falls and the group's earnings rise by the same amount.
+--
+--    But the negative savings_adjustments row a fine writes is, on its own, read
+--    by v_group_pool as cash leaving. Without an offsetting term the pool would
+--    drop by every fine ever levied while retained earnings rose by the same
+--    amount, so assets and claims would drift apart by the total fines collected
+--    and v_pool_reconciliation would (correctly) report the books as broken.
+--
+--    Same fix as loan_recoveries in 022, for the same reason.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_group_pool AS
+SELECT
+    (SELECT COALESCE(SUM(amount_claimed), 0)
+       FROM payment_submissions
+       WHERE submission_type = 'savings_deposit' AND status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM savings_adjustments WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(delta), 0)
+       FROM pool_adjustments    WHERE status = 'approved')
+  + (SELECT COALESCE(SUM(amount), 0)
+       FROM loan_recoveries)
+  -- Offsets the negative savings adjustment each fine writes.
+  + (SELECT COALESCE(SUM(fine_tzs), 0)
+       FROM meeting_attendance)
+  + (SELECT COALESCE(SUM(amount_paid), 0) + COALESCE(SUM(penalty_collected), 0)
+       FROM monthly_fees)
+  + (SELECT COALESCE(SUM(interest_paid), 0)
+           + COALESCE(SUM(principal_paid), 0)
+           + COALESCE(SUM(penalty_collected), 0)
+       FROM loan_installments)
+  - (SELECT COALESCE(SUM(principal), 0)
+       FROM loans             WHERE status IN ('active', 'closed', 'written_off'))
+  - (SELECT COALESCE(SUM(earnings_tzs), 0)
+       FROM distributions     WHERE status = 'paid')
+  AS pool_balance_tzs;
+
+-- --------------------------------------------------------------------------
+-- 6. Social fund — a separate pot.
+--
+--    Contributions and grants are tracked here and NOWHERE in v_group_pool. It is
+--    welfare money: not lendable, not part of anyone's loan ceiling, and not
+--    shared out at the end of a cycle.
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS social_fund_entries (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id   uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  kind        text NOT NULL CHECK (kind IN ('contribution', 'grant')),
+  amount      numeric(12,2) NOT NULL CHECK (amount > 0),
+  reason      text NOT NULL,
+  recorded_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  proof_url   text,
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS social_fund_entries_kind_idx ON social_fund_entries (kind, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_fund_grant_requests (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  amount       numeric(12,2) NOT NULL CHECK (amount > 0),
+  reason       text NOT NULL,
+  status       text NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'approved', 'rejected')),
+  requested_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  applied_at   timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS social_fund_grant_approvals (
+  request_id  uuid NOT NULL REFERENCES social_fund_grant_requests(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (request_id, admin_id)
+);
+
+ALTER TABLE social_fund_entries         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE social_fund_grant_requests  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE social_fund_grant_approvals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Everyone reads social fund" ON social_fund_entries;
+CREATE POLICY "Everyone reads social fund" ON social_fund_entries
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Everyone reads grant requests" ON social_fund_grant_requests;
+CREATE POLICY "Everyone reads grant requests" ON social_fund_grant_requests
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins read grant approvals" ON social_fund_grant_approvals;
+CREATE POLICY "Admins read grant approvals" ON social_fund_grant_approvals
+  FOR SELECT USING (is_admin());
+
+GRANT SELECT ON social_fund_entries, social_fund_grant_requests,
+                social_fund_grant_approvals TO authenticated;
+
+CREATE OR REPLACE VIEW v_social_fund AS
+SELECT
+  COALESCE(SUM(amount) FILTER (WHERE kind = 'contribution'), 0) AS contributed_tzs,
+  COALESCE(SUM(amount) FILTER (WHERE kind = 'grant'), 0)        AS granted_tzs,
+  COALESCE(SUM(amount) FILTER (WHERE kind = 'contribution'), 0)
+    - COALESCE(SUM(amount) FILTER (WHERE kind = 'grant'), 0)    AS balance_tzs
+FROM social_fund_entries;
+
+GRANT SELECT ON v_social_fund TO authenticated;
+
+CREATE OR REPLACE FUNCTION record_social_contribution(
+  p_member_id uuid, p_amount numeric, p_reason text, p_proof_url text DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN RAISE EXCEPTION 'Enter an amount'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN RAISE EXCEPTION 'A reason is required'; END IF;
+
+  INSERT INTO social_fund_entries (member_id, kind, amount, reason, recorded_by, proof_url)
+  VALUES (p_member_id, 'contribution', p_amount, trim(p_reason), auth.uid(), p_proof_url)
+  RETURNING id INTO v_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'social_contribution', 'social_fund', v_id,
+          jsonb_build_object('member_id', p_member_id, 'amount', p_amount));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Paying out of the social fund is 2-of-N like every other outflow.
+CREATE OR REPLACE FUNCTION request_social_grant(
+  p_member_id uuid, p_amount numeric, p_reason text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id       uuid;
+  v_balance  numeric;
+  v_others   int;
+  v_name     text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN RAISE EXCEPTION 'Enter an amount'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN RAISE EXCEPTION 'A reason is required'; END IF;
+
+  SELECT balance_tzs INTO v_balance FROM v_social_fund;
+  IF p_amount > v_balance THEN
+    RAISE EXCEPTION 'The social fund holds only %', v_balance;
+  END IF;
+
+  INSERT INTO social_fund_grant_requests (member_id, amount, reason, requested_by)
+  VALUES (p_member_id, p_amount, trim(p_reason), auth.uid())
+  RETURNING id INTO v_id;
+
+  SELECT full_name INTO v_name FROM profiles WHERE id = p_member_id;
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'social_grant_requested', 'Social fund grant proposed',
+         p_amount || ' TZS for ' || COALESCE(v_name, 'a member') || ': ' || p_reason,
+         jsonb_build_object('request_id', v_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_others
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  IF least(2, v_others) = 0 THEN
+    PERFORM execute_social_grant(v_id);
+  END IF;
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION execute_social_grant(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_req     social_fund_grant_requests%ROWTYPE;
+  v_balance numeric;
+BEGIN
+  SELECT * INTO v_req FROM social_fund_grant_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_req.id IS NULL          THEN RAISE EXCEPTION 'Grant request not found'; END IF;
+  IF v_req.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';       END IF;
+
+  SELECT balance_tzs INTO v_balance FROM v_social_fund;
+  IF v_req.amount > v_balance THEN
+    RAISE EXCEPTION 'The social fund holds only %', v_balance;
+  END IF;
+
+  INSERT INTO social_fund_entries (member_id, kind, amount, reason, recorded_by)
+  VALUES (v_req.member_id, 'grant', v_req.amount, v_req.reason, auth.uid());
+
+  UPDATE social_fund_grant_requests
+     SET status = 'approved', applied_at = now() WHERE id = p_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'social_grant', 'social_fund', p_request_id,
+          jsonb_build_object('member_id', v_req.member_id, 'amount', v_req.amount));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_req.member_id, 'social_grant_approved', 'Social fund grant approved',
+          v_req.amount || ' TZS has been granted to you from the social fund.',
+          jsonb_build_object('request_id', p_request_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION approve_social_grant(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_req       social_fund_grant_requests%ROWTYPE;
+  v_approvals int;
+  v_others    int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_req FROM social_fund_grant_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_req.id IS NULL          THEN RAISE EXCEPTION 'Grant request not found'; END IF;
+  IF v_req.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';       END IF;
+  IF v_req.requested_by = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO social_fund_grant_approvals (request_id, admin_id)
+    VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this grant';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_others
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_req.requested_by;
+  SELECT count(*) INTO v_approvals
+    FROM social_fund_grant_approvals WHERE request_id = p_request_id;
+
+  IF v_approvals < least(2, v_others) THEN RETURN; END IF;
+
+  PERFORM execute_social_grant(p_request_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION reject_social_grant(p_request_id uuid)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  UPDATE social_fund_grant_requests SET status = 'rejected'
+   WHERE id = p_request_id AND status = 'pending';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

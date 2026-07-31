@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from './useAuth'
 import { getAdminData } from '../lib/admin'
+import { SETTING_DEFAULTS } from '../lib/settings'
 
 const EMPTY = {
   stats: {
@@ -24,7 +25,15 @@ const EMPTY = {
   pendingSavingsEdits: [],
   pendingPoolEdits: [],
   pendingRoleChanges: [],
+  pendingSettingChanges: [],
+  pendingLoanActions: [],
+  pendingWithdrawals: [],
   pendingMembers: [],
+  activeLoans: [],
+  callableLoans: [],
+  reconciliation: null,
+  settings: SETTING_DEFAULTS,
+  settingRows: [],
   currentMonthKey: '',
 }
 
@@ -74,6 +83,14 @@ export function useAdminData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pool_adjustment_approvals' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_requests' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_changes' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_change_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_settings' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_actions' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_action_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_approvals' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_guarantors' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
       .subscribe()
     return () => {

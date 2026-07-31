@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first: this project deploys from
+# main, so only the latest result is ever interesting.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: lint · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  database:
+    name: sql tests
+    runs-on: ubuntu-latest
+    # The money logic lives in plpgsql. This job applies every migration in order
+    # to a real Postgres and runs the assertions against it — the JS suites in the
+    # `app` job only cover the mirrors of that logic, not the logic itself.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: micro_saccos_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Run the SQL suites
+        run: npm run test:db
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/micro_saccos_test
+
+      # setup.sql is the hosted one-shot paste and is generated from the migrations.
+      # It drifted twice while it was maintained by hand, each time leaving the
+      # documented setup path building an incomplete database.
+      - name: setup.sql is in sync with the migrations
+        run: npm run build:setup -- --check

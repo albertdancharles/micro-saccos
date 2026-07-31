@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
+import { useGroupSettings } from '../hooks/useGroupSettings'
 import { signOut, updatePassword } from '../lib/auth'
 import { updateOwnPhone } from '../lib/profile'
 import { getApprovedSavings } from '../lib/savings'
@@ -13,6 +14,7 @@ import { supabase } from '../supabaseClient'
 import { formatTZS } from '../lib/format'
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
+import NotificationPrefs from '../components/member/NotificationPrefs'
 
 function Section({ title, children }) {
   return (
@@ -178,6 +180,7 @@ function StatementSection({ memberId, memberName, memberEmail }) {
 
 function ContributionsCard({ memberId }) {
   const { t } = useLanguage()
+  const { settings } = useGroupSettings()
   const [savings, setSavings] = useState(null)
   const [err, setErr] = useState('')
 
@@ -203,7 +206,9 @@ function ContributionsCard({ memberId }) {
     <div className="space-y-2">
       <ContributionRow label={t('Total savings')} value={savings} />
       <p className="text-xs text-slate-400 mt-2">
-        {t("Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is 5× this amount (capped at 25% of the group pool).")}
+        {t('Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of the group pool).')
+          .replace('{n}', settings.contribution_multiplier)
+          .replace('{p}', Number((settings.pool_loan_fraction * 100).toFixed(2)))}
       </p>
     </div>
   )
@@ -248,6 +253,10 @@ export default function Profile() {
 
         <Section title={t('Phone number')}>
           <PhoneForm initialPhone={profile?.phone_number} onSaved={refreshProfile} />
+        </Section>
+
+        <Section title={t('Reminders')}>
+          <NotificationPrefs memberId={user?.id} />
         </Section>
 
         <Section title={t('Change password')}>

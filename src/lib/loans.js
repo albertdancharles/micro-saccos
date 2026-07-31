@@ -3,6 +3,7 @@
 import { formatTZS } from './format'
 import { maxLoan as computeMaxLoan } from './loanMath'
 import { getMemberContribution } from './savings'
+import { getSettings } from './settings'
 
 // The member's one non-terminal loan (pending or active), if any (Decision #4).
 export async function getCurrentLoan(supabase, memberId) {
@@ -38,18 +39,23 @@ export async function submitLoanRequest(supabase, memberId, requestedAmount) {
     throw new Error('You already have a loan in progress. Close it before requesting another.')
   }
 
-  const [contribution, poolRes] = await Promise.all([
+  // The caps come from group_settings (migration 020), so this client-side gate
+  // stays in step with the approve_loan RPC's hard guard even after a rate vote.
+  const [contribution, poolRes, { values: settings }] = await Promise.all([
     getMemberContribution(supabase, memberId),
     supabase.from('v_group_pool').select('pool_balance_tzs').single(),
+    getSettings(supabase),
   ])
   if (poolRes.error) throw poolRes.error
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
-  const ceiling = computeMaxLoan(contribution.total, pool)
+  const multiplier = settings.contribution_multiplier
+  const fraction = settings.pool_loan_fraction
+  const ceiling = computeMaxLoan(contribution.total, pool, { fraction, multiplier })
 
   if (!(requestedAmount > 0)) throw new Error('Enter a valid amount.')
   if (requestedAmount > ceiling) {
     throw new Error(
-      `Exceeds the maximum loan of ${formatTZS(ceiling)} (lower of 3× your savings + paid fees and 25% of the group pool).`,
+      `Exceeds the maximum loan of ${formatTZS(ceiling)} (lower of ${multiplier}× your savings + paid fees and ${Number((fraction * 100).toFixed(2))}% of the group pool).`,
     )
   }
 

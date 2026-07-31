@@ -27,6 +27,7 @@ export default function RepaymentSchedule({ installments, currentMonthKey }) {
           const status = isFuture ? 'upcoming' : i.computed_status
           const principalDue = Number(i.principal_due) || 0
           const principalPaid = Number(i.principal_paid) || 0
+          const paidSoFar = principalPaid + (Number(i.interest_paid) || 0)
           const breakdown = isPaid
             ? principalPaid > 0
               ? t('Principal + interest')
@@ -57,6 +58,13 @@ export default function RepaymentSchedule({ installments, currentMonthKey }) {
                 {isPaid && principalPaid > 0 && (
                   <p className="text-xs text-emerald-700 mt-1 tabular-nums">
                     {t('Repaid {amount} principal').replace('{amount}', formatTZS(principalPaid))}
+                  </p>
+                )}
+                {/* Part-settled rows: the money column shows what is STILL owed,
+                    so the payment already made needs saying out loud. */}
+                {!isPaid && !isCancelled && paidSoFar > 0 && (
+                  <p className="text-xs text-sky-700 mt-1 tabular-nums">
+                    {t('{amount} already paid').replace('{amount}', formatTZS(paidSoFar))}
                   </p>
                 )}
               </div>

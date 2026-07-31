@@ -10,6 +10,15 @@ import { approveLoan, rejectLoan } from '../../lib/loans'
 import { buildDisbursementPath, uploadPaymentProof } from '../../lib/storage'
 import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
+import { useGroupSettings } from '../../hooks/useGroupSettings'
+
+const GUARANTEE_LABEL = {
+  pending: 'awaiting answer',
+  accepted: 'accepted',
+  declined: 'declined',
+  released: 'released',
+  called: 'called',
+}
 
 function Row({ label, value, danger }) {
   return (
@@ -36,6 +45,15 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
   const contribBinds = Number(loan.contributionCeiling) <= Number(loan.poolCeiling)
+
+  // Both caps are group settings now (020), so the labels have to track the vote
+  // rather than hardcode the seeded 3x / 25%.
+  const { settings } = useGroupSettings()
+  const contribLabel = t('{n}× savings').replace('{n}', settings.contribution_multiplier)
+  const poolLabel = t('{n}% of pool').replace(
+    '{n}',
+    Number((settings.pool_loan_fraction * 100).toFixed(2)),
+  )
 
   async function handleApprove() {
     setError('')
@@ -135,18 +153,50 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
       <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <Row label={t('Member savings')} value={formatTZS(loan.contribution)} />
-        <Row label={t('5× savings')} value={formatTZS(loan.contributionCeiling)} />
-        <Row label={t('25% of pool')} value={formatTZS(loan.poolCeiling)} />
+        <Row label={contribLabel} value={formatTZS(loan.contributionCeiling)} />
+        <Row label={poolLabel} value={formatTZS(loan.poolCeiling)} />
         <div className="border-t border-slate-200 my-1" />
         <Row label={t('Max eligible')} value={formatTZS(loan.maxEligible)} />
         <Row label={t('Requested')} value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600 pt-1">
             {t('Exceeds the {cap} cap; the database will reject the approval.')
-              .replace('{cap}', contribBinds ? t('5× savings') : t('25% of pool'))}
+              .replace('{cap}', contribBinds ? contribLabel : poolLabel)}
           </p>
         )}
       </div>
+
+      {/* Guarantors (migration 028). The RPC refuses to approve while a nomination
+          is unanswered, so an admin should see that here, not in an error. */}
+      {loan.guarantees?.length > 0 && (
+        <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
+          <p className="text-xs font-medium text-slate-700">{t('Guarantors')}</p>
+          {loan.guarantees.map((g) => (
+            <div key={g.id} className="flex justify-between">
+              <span
+                className={
+                  g.status === 'accepted'
+                    ? 'text-emerald-700'
+                    : g.status === 'declined'
+                      ? 'text-red-600'
+                      : 'text-amber-700'
+                }
+              >
+                {g.guarantorName} · {t(GUARANTEE_LABEL[g.status] || g.status)}
+              </span>
+              <span className="tabular-nums text-slate-700">
+                {formatTZS(g.pledged_amount)}
+              </span>
+            </div>
+          ))}
+          {loan.unansweredGuarantees > 0 && (
+            <p className="text-xs text-amber-700 pt-1">
+              {t('{n} guarantor(s) have not answered — approval is blocked until they do.')
+                .replace('{n}', loan.unansweredGuarantees)}
+            </p>
+          )}
+        </div>
+      )}
 
       {rejecting ? (
         <div className="space-y-2">

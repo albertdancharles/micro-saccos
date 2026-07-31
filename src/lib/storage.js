@@ -39,6 +39,15 @@ export function buildDisbursementPath(loanId, file) {
   return `loan-disbursements/${loanId}/${crypto.randomUUID()}.${ext}`
 }
 
+// Money going OUT to a member — a withdrawal, an exit settlement, or a share-out
+// (migrations 024/025). Uploaded by an admin, so the same is_admin()-only storage
+// policy as disbursements applies and any path works; these are kept grouped by
+// kind so payouts are easy to audit as a set.
+export function buildPayoutPath(kind, recordId, file) {
+  const ext = EXT_BY_TYPE[file.type] || 'jpg'
+  return `payouts/${kind}/${recordId}/${crypto.randomUUID()}.${ext}`
+}
+
 export async function uploadPaymentProof(supabase, file, path) {
   const { data, error } = await supabase.storage
     .from(BUCKET)

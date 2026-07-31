@@ -57,6 +57,13 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
     setAmount(i ? String(i.total_with_penalty) : '')
   }
 
+  // What is still owed on the selected obligation. total_with_penalty is the
+  // REMAINING balance (migration 021), so this already accounts for anything paid
+  // earlier. Savings deposits have no ceiling.
+  const owed = Number((selectedFee ?? selectedInst)?.total_with_penalty ?? 0)
+  const amountNum = Number(amount)
+  const overOwed = owed > 0 && amountNum > owed
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -190,6 +197,20 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
           placeholder={t('Amount')}
           className="input-field tabular-nums"
         />
+        {owed > 0 && !overOwed && (
+          <p className="mt-1 text-xs text-slate-500">
+            {t('{amount} is owed. You can pay less — whatever you pay is applied to the penalty first, then the balance.')
+              .replace('{amount}', formatTZS(owed))}
+          </p>
+        )}
+        {overOwed && (
+          <p className="mt-1 text-xs text-red-600">
+            {t('Only {amount} is owed. Log anything extra as a savings deposit instead.').replace(
+              '{amount}',
+              formatTZS(owed),
+            )}
+          </p>
+        )}
       </div>
 
       <div>
@@ -199,7 +220,7 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <button type="submit" disabled={busy} className="btn-primary w-full">
+      <button type="submit" disabled={busy || overOwed} className="btn-primary w-full">
         {busy ? t('Submitting…') : t('Submit for approval')}
       </button>
     </form>

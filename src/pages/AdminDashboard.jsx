@@ -24,6 +24,14 @@ import RoleChangeQueue from '../components/admin/RoleChangeQueue'
 import RequestRoleChangeModal from '../components/admin/RequestRoleChangeModal'
 import PoolEditQueue from '../components/admin/PoolEditQueue'
 import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
+import SettingChangeQueue from '../components/admin/SettingChangeQueue'
+import SettingsPanel from '../components/admin/SettingsPanel'
+import LoanActionQueue from '../components/admin/LoanActionQueue'
+import ActiveLoansPanel from '../components/admin/ActiveLoansPanel'
+import WithdrawalQueue from '../components/admin/WithdrawalQueue'
+import RequestMemberExitModal from '../components/admin/RequestMemberExitModal'
+import ReconciliationBanner from '../components/admin/ReconciliationBanner'
+import CallGuaranteesPanel from '../components/admin/CallGuaranteesPanel'
 import PoolChart from '../components/admin/PoolChart'
 
 export default function AdminDashboard() {
@@ -36,6 +44,7 @@ export default function AdminDashboard() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [editSavingsTarget, setEditSavingsTarget] = useState(null)
   const [roleChangeTarget, setRoleChangeTarget] = useState(null)
+  const [exitTarget, setExitTarget] = useState(null)
   const [poolEditOpen, setPoolEditOpen] = useState(false)
 
   useEffect(() => {
@@ -76,6 +85,9 @@ export default function AdminDashboard() {
           <p className="text-center text-slate-400 py-8">{t('Loading…')}</p>
         ) : (
           <>
+            {/* Above everything: if the books don't balance, nothing else on this
+                page can be trusted. Renders nothing when they do. */}
+            <ReconciliationBanner reconciliation={admin.reconciliation} />
             <AdminSummaryCards
               stats={admin.stats}
               onEditTotalAssets={() => setPoolEditOpen(true)}
@@ -104,6 +116,20 @@ export default function AdminDashboard() {
               stats={admin.stats}
               onActioned={refresh}
             />
+            <SettingChangeQueue
+              pendingSettingChanges={admin.pendingSettingChanges}
+              onActioned={refresh}
+            />
+            <WithdrawalQueue
+              pendingWithdrawals={admin.pendingWithdrawals}
+              onActioned={refresh}
+            />
+            <LoanActionQueue
+              pendingLoanActions={admin.pendingLoanActions}
+              onActioned={refresh}
+            />
+            <ActiveLoansPanel activeLoans={admin.activeLoans} onActioned={refresh} />
+            <CallGuaranteesPanel callableLoans={admin.callableLoans} onActioned={refresh} />
             {/* Audit log has no tab of its own, and the header link that used to
                 reach it is desktop-only — so it gets a first-class entry point
                 here, where mobile admins can actually find it. */}
@@ -120,6 +146,24 @@ export default function AdminDashboard() {
               >
                 {t('Audit log')}
               </Link>
+              <Link
+                to="/admin/cycles"
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-sky-700 text-sm font-medium px-4 ring-1 ring-inset ring-sky-200 hover:bg-sky-50 hover:ring-sky-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Cycles & share-out')}
+              </Link>
+              <Link
+                to="/admin/reports"
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-sky-700 text-sm font-medium px-4 ring-1 ring-inset ring-sky-200 hover:bg-sky-50 hover:ring-sky-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Group report')}
+              </Link>
+              <Link
+                to="/admin/meetings"
+                className="col-span-2 inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-sky-700 text-sm font-medium px-4 ring-1 ring-inset ring-sky-200 hover:bg-sky-50 hover:ring-sky-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Meetings & social fund')}
+              </Link>
             </div>
             <MemberGrid
               rows={admin.gridRows}
@@ -127,7 +171,9 @@ export default function AdminDashboard() {
               onRequestDelete={setDeleteTarget}
               onRequestEditSavings={setEditSavingsTarget}
               onRequestRoleChange={setRoleChangeTarget}
+              onRequestExit={setExitTarget}
             />
+            <SettingsPanel rows={admin.settingRows} onChanged={refresh} />
           </>
         )}
       </main>
@@ -149,6 +195,12 @@ export default function AdminDashboard() {
         open={poolEditOpen}
         stats={admin.stats}
         onClose={() => setPoolEditOpen(false)}
+        onSubmitted={refresh}
+      />
+      <RequestMemberExitModal
+        open={!!exitTarget}
+        target={exitTarget}
+        onClose={() => setExitTarget(null)}
         onSubmitted={refresh}
       />
       <RequestRoleChangeModal

@@ -1,11 +1,45 @@
 # Micro-SACCOS — Umoja Group
 
 A mobile-first PWA for a small savings & loan co-operative (SACCOS). Members pool
-savings, pay a fixed monthly fee, request short-term loans (3-month bullet schedule,
-5% flat monthly interest), and submit M-Pesa/Tigo/Airtel payment screenshots that the
-admin verifies. Overdue fees and installments accrue a recurring 5% monthly penalty.
+savings, pay a monthly fee, request short-term loans (bullet schedule, flat monthly
+interest), and submit M-Pesa/Tigo/Airtel payment screenshots that the admin verifies.
+Overdue fees and installments accrue a recurring monthly penalty. The group runs in
+cycles and shares out what it earned at the end of each one.
 
 The admin is also a contributing member; their role only grants approval permissions.
+
+**The group sets its own rules.** The monthly fee, loan interest, penalty rate, loan
+caps and term all live in `group_settings` and change by 2-of-N admin vote — no code
+change needed. A new rate only ever applies to *new* fees and loans: every obligation
+snapshots the rate it was raised under, so a vote can never retroactively restate a
+penalty someone has already been charged.
+
+| Area | What it does |
+|---|---|
+| **Partial payments** | Pay what you have. Money is applied penalty → interest → principal, and the row is marked *part paid* until it's clear. Penalties then accrue on the balance still owed, not the original total. |
+| **Loans that go bad** | Reschedule, write off, or settle against the borrower's own savings — each 2-of-N. `v_loan_risk` flags non-performance from the record rather than a flag someone has to remember to set. |
+| **Cycles & share-out** | Close a cycle and split what the group earned. Shares are **time-weighted** (member-months), so a late joiner doesn't take an equal cut, and largest-remainder rounding means the shares sum exactly to the pot. Earnings-only or full share-out. |
+| **Withdrawals & exit** | Members withdraw mid-cycle, capped by pool liquidity and by the savings held as security behind any active loan. Exit settles a member and deactivates them — *keeping* their history, unlike deletion. |
+| **Reminders** | Notifications fan out to SMS (Africa's Talking) and Web Push, deduped per week so an overdue member is nudged, not spammed. A daily pg_cron sweep raises what's due. |
+| **Guarantors** | Members co-sign each other's loans. An accepted pledge locks that much of the guarantor's savings; if the loan is written off the group can call the pledges pro-rata, capped at what each promised. |
+| **Group accounts** | Income statement, balance sheet and a per-member ledger — the pack a co-operative reads at its AGM, exportable as CSV. |
+| **Meetings** | Register, minutes, and attendance fines that are *deducted* from savings rather than invoiced. Plus a social fund (*bima ya jamii*) kept deliberately outside the loan pool. |
+
+**The books are checked, not assumed.** `v_pool_reconciliation` derives the group's worth a
+second way — member capital + retained earnings — and compares it to pool + outstanding loans.
+The admin dashboard is silent while they agree and shouts if they ever don't.
+
+## Testing
+
+```bash
+npm test          # pure financial helpers (Vitest)
+npm run test:db:up && npm run test:db    # the money logic in SQL, against real Postgres
+npm run lint && npm run build
+```
+
+The SQL suites apply every migration unmodified to a throwaway Postgres and assert the
+arithmetic where it actually runs — see [supabase/README.md](supabase/README.md). CI runs all
+of it on every push.
 
 > **Security note — single-admin bootstrap.** Monetary actions (loan/payment approvals,
 > savings/pool/role/deletion edits) require two of N admins. While only **one** admin

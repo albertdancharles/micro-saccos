@@ -69,12 +69,11 @@ export function useMemberSummary(overrideMemberId = null) {
       // Current month = the latest fee period (fees are generated monthly).
       const currentMonthKey = fees.length ? monthKey(fees[0].period) : ''
 
-      // Paid base fees broken out for the Profile contributions breakdown.
-      // getApprovedSavings already folds these into the savings total, so the
-      // contribution that drives the 3x loan ceiling equals savings directly.
-      const paidFees = fees
-        .filter((f) => f.status === 'paid')
-        .reduce((s, f) => s + Number(f.amount), 0)
+      // Fee money actually banked, broken out for the Profile contributions
+      // breakdown. Uses amount_paid across every row so a part-settled fee still
+      // counts (migration 021). getApprovedSavings already folds these into the
+      // savings total, so the contribution driving the loan ceiling equals savings.
+      const paidFees = fees.reduce((s, f) => s + Number(f.amount_paid ?? 0), 0)
       const contribution = savings
 
       // Amount due now = unpaid fees + installments that are overdue or due this

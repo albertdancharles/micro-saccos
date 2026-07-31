@@ -12,6 +12,8 @@ import SummaryCards from '../components/member/SummaryCards'
 import ObligationsCard from '../components/member/ObligationsCard'
 import RepaymentSchedule from '../components/member/RepaymentSchedule'
 import LoanRequestForm from '../components/member/LoanRequestForm'
+import WithdrawalCard from '../components/member/WithdrawalCard'
+import GuaranteeRequestsCard from '../components/member/GuaranteeRequestsCard'
 import LogTransactionSheet from '../components/member/LogTransactionSheet'
 import History from '../components/member/History'
 import LoanProgressBar from '../components/member/LoanProgressBar'
@@ -128,13 +130,17 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
             />
             <SavingsChart memberId={viewAs} />
             {!isView && (
-              <LoanRequestForm
-                memberId={user?.id}
-                contribution={summary.contribution}
-                pool={summary.pool}
-                loan={summary.loan}
-                onSubmitted={handleSubmitted}
-              />
+              <>
+                <LoanRequestForm
+                  memberId={user?.id}
+                  contribution={summary.contribution}
+                  pool={summary.pool}
+                  loan={summary.loan}
+                  onSubmitted={handleSubmitted}
+                />
+                <GuaranteeRequestsCard memberId={user?.id} onChanged={handleSubmitted} />
+                <WithdrawalCard memberId={user?.id} onSubmitted={handleSubmitted} />
+              </>
             )}
             <History refreshKey={version} memberId={viewAs} />
           </>
