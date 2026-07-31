@@ -45,7 +45,7 @@ export default function ViewMember() {
   if (blocked) return <Navigate to="/admin" replace />
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-500 bg-[var(--color-app-bg)]">
+      <div className="min-h-dvh flex items-center justify-center text-slate-500 bg-[var(--color-app-bg)]">
         {t('Loading…')}
       </div>
     )

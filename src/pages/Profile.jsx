@@ -2,15 +2,17 @@
 // password, and view a breakdown of what they've contributed (savings + paid fees).
 // Reduces the admin's manual reset and update burden.
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
-import { updatePassword } from '../lib/auth'
+import { signOut, updatePassword } from '../lib/auth'
 import { updateOwnPhone } from '../lib/profile'
 import { getApprovedSavings } from '../lib/savings'
 import { buildMemberStatement, downloadBlob } from '../lib/statements'
 import { supabase } from '../supabaseClient'
 import { formatTZS } from '../lib/format'
+import AppHeader from '../components/ui/AppHeader'
+import BottomNav from '../components/ui/BottomNav'
 
 function Section({ title, children }) {
   return (
@@ -213,28 +215,20 @@ export default function Profile() {
   const navigate = useNavigate()
   const home = profile?.role === 'admin' ? '/admin' : '/dashboard'
 
-  return (
-    <div className="min-h-screen bg-[var(--color-app-bg)]">
-      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {t('Micro-SACCOS')}
-            </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
-              {t('Profile')}
-            </h1>
-          </div>
-          <Link
-            to={home}
-            className="text-sm font-medium text-slate-500 hover:text-slate-800 shrink-0"
-          >
-            {t('← Back')}
-          </Link>
-        </div>
-      </header>
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
 
-      <main className="max-w-md mx-auto px-6 py-6 space-y-4">
+  return (
+    <div className="min-h-dvh bg-[var(--color-app-bg)]">
+      <AppHeader
+        eyebrow={t('Micro-SACCOS')}
+        title={t('Profile')}
+        back={{ to: home, label: t('← Back') }}
+      />
+
+      <main className="max-w-md mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
         <Section title={t('Account')}>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
@@ -278,7 +272,16 @@ export default function Profile() {
         >
           {t('Back to dashboard')}
         </button>
+
+        {/* Sign out lives here on mobile. It used to sit only in the header,
+            which the tab bar replaced — and the account screen is where people
+            look for it anyway. */}
+        <button onClick={handleSignOut} className="btn-ghost w-full !text-red-600 sm:hidden">
+          {t('Sign out')}
+        </button>
       </main>
+
+      <BottomNav isAdmin={profile?.role === 'admin'} />
     </div>
   )
 }

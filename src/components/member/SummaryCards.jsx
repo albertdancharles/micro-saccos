@@ -32,10 +32,8 @@ function HeroCard({ label, value, sub, tone = 'sky' }) {
       <p className={`text-[11px] font-semibold uppercase tracking-wide ${palette.chip}`}>
         {label}
       </p>
-      <p className={`mt-1 text-[28px] font-semibold leading-tight tabular-nums ${palette.text}`}>
-        {value}
-      </p>
-      {sub && <p className={`mt-1.5 text-xs ${palette.sub}`}>{sub}</p>}
+      <p className={`money-xl mt-1 font-semibold ${palette.text}`}>{value}</p>
+      {sub && <p className={`mt-1.5 text-xs text-pretty ${palette.sub}`}>{sub}</p>}
     </div>
   )
 }

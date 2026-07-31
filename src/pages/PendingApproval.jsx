@@ -27,7 +27,7 @@ export default function PendingApproval() {
   }
 
   return (
-    <div className="relative min-h-screen bg-slate-50 flex items-center justify-center px-6 py-12">
+    <div className="relative min-h-dvh bg-slate-50 flex items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm text-center">
         <div className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 ring-1 ring-inset ring-amber-200 text-amber-600">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

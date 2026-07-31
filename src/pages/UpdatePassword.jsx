@@ -48,12 +48,12 @@ export default function UpdatePassword() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50">
+    <div className="relative min-h-dvh overflow-hidden bg-slate-50">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] bg-gradient-to-b from-emerald-100/60 via-emerald-50/40 to-transparent"
       />
-      <div className="relative flex min-h-screen flex-col justify-center px-6 py-12">
+      <div className="relative flex min-h-dvh flex-col justify-center px-6 py-12">
         <div className="mx-auto w-full max-w-sm">
           <div className="text-center mb-8">
             <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">

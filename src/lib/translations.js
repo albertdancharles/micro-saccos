@@ -508,6 +508,13 @@ const sw = {
 
   // Modal
   'Close': 'Funga',
+
+  // Mobile tab bar. Kept short — the labels sit under a 22px icon in a quarter
+  // of the screen width, so anything longer than ~10 characters truncates.
+  'Home': 'Nyumbani',
+  'Admin': 'Msimamizi',
+  'Main navigation': 'Urambazaji mkuu',
+  'No members yet.': 'Bado hakuna wanachama.',
 }
 
 export function createTranslator(lang) {

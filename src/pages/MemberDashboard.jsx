@@ -1,8 +1,8 @@
 // Member dashboard (build plan §9, item 23). Calls ensure_current_fees() on mount
 // (self-healing fee generation, §8c-bis) then loads the summary and renders the
 // member flows. A "Log transaction" sheet feeds new proofs into the approvals queue.
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { useMemberSummary } from '../hooks/useMemberSummary'
@@ -15,13 +15,9 @@ import LoanRequestForm from '../components/member/LoanRequestForm'
 import LogTransactionSheet from '../components/member/LogTransactionSheet'
 import History from '../components/member/History'
 import LoanProgressBar from '../components/member/LoanProgressBar'
-import NotificationsBell from '../components/ui/NotificationsBell'
-import LangToggle from '../components/ui/LangToggle'
-
-// Lazy-loaded so recharts lands in its own async chunk and stays off the dashboard's
-// first paint. SavingsChart renders nothing until it has data, so a null fallback is
-// visually seamless.
-const SavingsChart = lazy(() => import('../components/member/SavingsChart'))
+import AppHeader from '../components/ui/AppHeader'
+import BottomNav from '../components/ui/BottomNav'
+import SavingsChart from '../components/member/SavingsChart'
 
 export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const { profile, user } = useAuth()
@@ -68,54 +64,27 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   )
 
   return (
-    <div className="min-h-screen bg-[var(--color-app-bg)]">
-      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {isView ? t('Viewing as admin') : t('Micro-SACCOS')}
-            </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
-              {isView ? viewedName || 'Member' : profile?.full_name || user?.email}
-            </h1>
-          </div>
-          <div className="flex items-center gap-4 shrink-0">
-            {isView ? (
-              <Link
-                to="/admin"
-                className="text-sm font-medium text-slate-500 hover:text-slate-800"
-              >
-                {t('← Admin')}
-              </Link>
-            ) : (
-              <>
-                <LangToggle />
-                <NotificationsBell />
-                <Link
-                  to="/members"
-                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
-                >
-                  {t('Members')}
-                </Link>
-                <Link
-                  to="/profile"
-                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
-                >
-                  {t('Profile')}
-                </Link>
-                <button
-                  onClick={handleSignOut}
-                  className="text-sm font-medium text-slate-500 hover:text-slate-800"
-                >
-                  {t('Sign out')}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+    <div className="min-h-dvh bg-[var(--color-app-bg)]">
+      {isView ? (
+        <AppHeader
+          eyebrow={t('Viewing as admin')}
+          title={viewedName || 'Member'}
+          back={{ to: '/admin', label: t('← Admin') }}
+          showControls={false}
+        />
+      ) : (
+        <AppHeader
+          eyebrow={t('Micro-SACCOS')}
+          title={profile?.full_name || user?.email}
+          links={[
+            { to: '/members', label: t('Members') },
+            { to: '/profile', label: t('Profile') },
+          ]}
+          onSignOut={handleSignOut}
+        />
+      )}
 
-      <main className="max-w-md mx-auto px-6 py-6 space-y-4">
+      <main className="max-w-md mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
         {!isView && (
           <button onClick={() => setSheetOpen(true)} className="btn-primary w-full !min-h-12">
             {t('+ Log a transaction')}
@@ -157,9 +126,7 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
               installments={summary.installments}
               currentMonthKey={summary.currentMonthKey}
             />
-            <Suspense fallback={null}>
-              <SavingsChart memberId={viewAs} />
-            </Suspense>
+            <SavingsChart memberId={viewAs} />
             {!isView && (
               <LoanRequestForm
                 memberId={user?.id}
@@ -175,14 +142,20 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
       </main>
 
       {!isView && (
-        <LogTransactionSheet
-          open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          memberId={user?.id}
-          unpaidFees={unpaidFees}
-          payableInstallments={payableInstallments}
-          onSubmitted={handleSubmitted}
-        />
+        <>
+          <LogTransactionSheet
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            memberId={user?.id}
+            unpaidFees={unpaidFees}
+            payableInstallments={payableInstallments}
+            onSubmitted={handleSubmitted}
+          />
+          {/* Omitted in view mode: an admin inspecting a member is in a
+              read-only detour and leaves via the header's back control, not by
+              switching tabs. */}
+          <BottomNav isAdmin={profile?.role === 'admin'} />
+        </>
       )}
     </div>
   )

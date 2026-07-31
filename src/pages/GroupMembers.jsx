@@ -3,12 +3,13 @@
 // transparency. Data comes from the group_member_directory() RPC (migration 019),
 // which exposes only these aggregate figures, never personal/contact details.
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { supabase } from '../supabaseClient'
 import { getMemberDirectory } from '../lib/directory'
 import { formatTZS } from '../lib/format'
+import AppHeader from '../components/ui/AppHeader'
+import BottomNav from '../components/ui/BottomNav'
 
 export default function GroupMembers() {
   const { user, profile } = useAuth()
@@ -36,27 +37,14 @@ export default function GroupMembers() {
   const totalLoans = (rows || []).reduce((s, r) => s + r.loanBalance, 0)
 
   return (
-    <div className="min-h-screen bg-[var(--color-app-bg)]">
-      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {t('Micro-SACCOS')}
-            </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
-              {t('Group members')}
-            </h1>
-          </div>
-          <Link
-            to={home}
-            className="text-sm font-medium text-slate-500 hover:text-slate-800 shrink-0"
-          >
-            {t('← Back')}
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-dvh bg-[var(--color-app-bg)]">
+      <AppHeader
+        eyebrow={t('Micro-SACCOS')}
+        title={t('Group members')}
+        back={{ to: home, label: t('← Back') }}
+      />
 
-      <main className="max-w-md mx-auto px-6 py-6 space-y-4">
+      <main className="max-w-md mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
         <p className="text-sm text-slate-500">
           {t('Every member can see every member’s savings and loans. Full transparency keeps the group accountable.')}
         </p>
@@ -77,67 +65,77 @@ export default function GroupMembers() {
                 {t('{n} total').replace('{n}', rows.length)}
               </span>
             </div>
-            <div className="overflow-x-auto -mx-5 px-5">
-              <table className="w-full text-sm min-w-[26rem]">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
-                    <th className="py-2 pr-3 font-semibold">#</th>
-                    <th className="py-2 pr-3 font-semibold">{t('Member')}</th>
-                    <th className="py-2 pr-3 font-semibold text-right">{t('Savings')}</th>
-                    <th className="py-2 font-semibold text-right">{t('Loan balance')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, idx) => {
-                    const isSelf = r.id === user?.id
-                    return (
-                      <tr
-                        key={r.id}
-                        className={`border-t border-slate-100 ${isSelf ? 'bg-emerald-50/50' : 'hover:bg-slate-50/70'}`}
-                      >
-                        <td className="py-3 pr-3 text-slate-400 tabular-nums">{idx + 1}</td>
-                        <td className="py-3 pr-3 whitespace-nowrap">
-                          <span className="font-medium text-slate-900">{r.name}</span>
-                          {isSelf && (
-                            <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                              {t('You')}
-                            </span>
-                          )}
-                          {r.role === 'admin' && (
-                            <span className="ml-1.5 inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
-                              {t('admin')}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3 text-right text-slate-900 tabular-nums">
+            {/* A four-column table needed ~416px and so scrolled sideways on
+                every phone — meaning the loan balance, the column people come
+                here to compare, was the one always off-screen. Stacking each
+                member into a row with both figures side by side fits 320px and
+                keeps everything visible at once. */}
+            <ul className="divide-y divide-slate-100">
+              {rows.map((r) => {
+                const isSelf = r.id === user?.id
+                return (
+                  <li
+                    key={r.id}
+                    className={`-mx-5 px-5 py-3 ${isSelf ? 'bg-emerald-50/50' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-slate-900">{r.name}</span>
+                      {isSelf && (
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                          {t('You')}
+                        </span>
+                      )}
+                      {r.role === 'admin' && (
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                          {t('admin')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex items-baseline gap-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {t('Savings')}
+                        </p>
+                        <p className="truncate text-sm text-slate-900 tabular-nums">
                           {formatTZS(r.savings)}
-                        </td>
-                        <td className="py-3 text-right tabular-nums">
+                        </p>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {t('Loan balance')}
+                        </p>
+                        <p className="truncate text-sm tabular-nums">
                           {r.hasActiveLoan ? (
                             <span className="text-amber-700">{formatTZS(r.loanBalance)}</span>
                           ) : (
                             <span className="text-slate-300">—</span>
                           )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-200 font-semibold text-slate-900">
-                    <td className="py-3 pr-3" />
-                    <td className="py-3 pr-3 text-[11px] uppercase tracking-wide text-slate-400">
-                      {t('total')}
-                    </td>
-                    <td className="py-3 pr-3 text-right tabular-nums">{formatTZS(totalSavings)}</td>
-                    <td className="py-3 text-right tabular-nums">{formatTZS(totalLoans)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                        </p>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+
+            <div className="-mx-5 mt-1 border-t-2 border-slate-200 px-5 pt-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                {t('total')}
+              </p>
+              <div className="mt-1 flex items-baseline gap-4 font-semibold text-slate-900">
+                <p className="min-w-0 flex-1 truncate text-sm tabular-nums">
+                  {formatTZS(totalSavings)}
+                </p>
+                <p className="min-w-0 flex-1 truncate text-sm tabular-nums">
+                  {formatTZS(totalLoans)}
+                </p>
+              </div>
             </div>
           </section>
         )}
       </main>
+
+      <BottomNav isAdmin={profile?.role === 'admin'} />
     </div>
   )
 }

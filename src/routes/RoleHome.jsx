@@ -10,7 +10,7 @@ export default function RoleHome() {
 
   if (loadingProfile && !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
+      <div className="min-h-dvh flex items-center justify-center text-gray-500">
         {t('Loading…')}
       </div>
     )

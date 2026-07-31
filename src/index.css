@@ -28,6 +28,10 @@
   --motion-base: 180ms;
   --motion-slow: 240ms;
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Height of the mobile tab bar, excluding the home-indicator inset. Pages add
+     this (plus the inset) as bottom padding so the bar never covers content. */
+  --bottom-nav-h: 60px;
 }
 
 html,
@@ -42,14 +46,20 @@ html {
   /* Prevent iOS auto-zoom on focusing form fields — relies on 16px body default. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Anchor/focus scrolls must clear the sticky header instead of hiding under it. */
+  scroll-padding-top: 5rem;
 }
 
 body {
   margin: 0;
   background-color: var(--color-app-bg);
   color: var(--color-app-text);
+  /* System stack only. Inter was named here but never loaded (no @font-face, no
+     <link>), so every device already fell back to its system UI font — while the
+     Inter-specific `font-feature-settings` silently did nothing. Naming the real
+     stack costs zero network bytes, which matters on the 3G connections most of
+     this group is on. */
   font-family:
-    "Inter",
     ui-sans-serif,
     -apple-system,
     BlinkMacSystemFont,
@@ -57,12 +67,49 @@ body {
     Roboto,
     "Helvetica Neue",
     sans-serif;
-  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Body default = 16px so mobile inputs don't trigger iOS zoom. */
   font-size: 16px;
   line-height: 1.5;
+  /* Kill the grey flash Android/iOS paint over every tapped element — we supply
+     our own :active states, which read as far more intentional. */
+  -webkit-tap-highlight-color: transparent;
+  /* Stop scroll chaining into the browser's pull-to-refresh mid-list. */
+  overscroll-behavior-y: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Safe-area helpers.
+
+   Full-height layouts use Tailwind's built-in `min-h-dvh` rather than
+   `min-h-screen`: `100vh` on mobile Safari measures the viewport as if the URL
+   bar were always collapsed, so those layouts jumped as the bar showed and hid.
+
+   index.html sets viewport-fit=cover, which extends the page under the notch and
+   home indicator, so anything pinned to a screen edge has to pad itself back out
+   with env(safe-area-inset-*) — that's what these utilities are for.
+   ---------------------------------------------------------------------------- */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Content padding that clears the fixed tab bar on mobile and collapses to
+   nothing once the bar is replaced by the desktop header nav. */
+.pb-nav {
+  padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 1rem);
+}
+@media (min-width: 640px) {
+  .pb-nav {
+    padding-bottom: 1.5rem;
+  }
 }
 
 /* Tabular figures for any element rendering money / counts — keeps columns
@@ -154,6 +201,9 @@ body {
   -webkit-user-select: none;
   user-select: none;
   white-space: nowrap;
+  /* Opts out of the browser's 300ms double-tap-to-zoom wait, so taps register
+     immediately instead of feeling laggy. */
+  touch-action: manipulation;
 }
 .btn-primary:disabled,
 .btn-secondary:disabled,
@@ -278,4 +328,152 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1400ms linear infinite;
   border-radius: 8px;
+}
+
+/* ----------------------------------------------------------------------------
+   Touch ergonomics.
+
+   Small inline text actions ("View", "Delete") were ~16px tall — roughly a third
+   of the 44px minimum in Apple's HIG and Android's 48dp guidance. `.tap-action`
+   keeps the compact type but pads the hit area out to 44px, so a thumb hits the
+   word it aimed at rather than the row beneath it.
+   ---------------------------------------------------------------------------- */
+.tap-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 0.625rem;
+  margin: 0 -0.625rem; /* pad the target without spacing the label out */
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  touch-action: manipulation;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.tap-action:active:not(:disabled) {
+  background-color: rgba(15, 23, 42, 0.06);
+}
+
+/* Segmented control (transaction type picker, filters). Full-width segments with
+   a 44px minimum so each is comfortably thumb-sized on a 360px screen. */
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: center;
+  touch-action: manipulation;
+  transition: all var(--motion-fast) var(--ease-standard);
+}
+.segment:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ----------------------------------------------------------------------------
+   Bottom tab bar (mobile only).
+
+   The header previously carried up to five text links; on a 360px screen they
+   collided with the member's own name. Primary destinations move down here,
+   inside natural thumb reach, and the bar hides at >=640px where the header nav
+   has room again.
+   ---------------------------------------------------------------------------- */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  background-color: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (min-width: 640px) {
+  .bottom-nav {
+    display: none;
+  }
+}
+
+.bottom-nav-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: var(--bottom-nav-h);
+  padding: 0.5rem 0.25rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: #64748b;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.bottom-nav-item:active {
+  background-color: rgba(15, 23, 42, 0.04);
+}
+/* NavLink sets aria-current="page" on the active route — styling off that keeps
+   the visual state and the accessibility state impossible to drift apart. */
+.bottom-nav-item[aria-current='page'] {
+  color: #047857;
+}
+
+/* Long labels (Swahili runs longer than English) shrink rather than wrap onto a
+   second line and blow out the bar height. */
+.bottom-nav-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------------------
+   Money type.
+
+   TSh amounts reach 10+ characters ("TSh 12,500,000"). In a half-width card on a
+   360px screen that overflows, so the base size steps down on small screens and
+   back up once there's room. Applied alongside a size utility, this wins by
+   virtue of being later in the cascade.
+   ---------------------------------------------------------------------------- */
+.money-lg {
+  font-size: 1.0625rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  /* Break only if a single amount really is wider than its card. */
+  overflow-wrap: anywhere;
+}
+.money-xl {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 400px) {
+  .money-lg {
+    font-size: 1.25rem;
+  }
+  .money-xl {
+    font-size: 1.75rem;
+  }
+}
+
+/* Headings shouldn't leave a single orphaned word on the last line. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
 }

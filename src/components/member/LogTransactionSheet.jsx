@@ -107,7 +107,8 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
             type="button"
             key={tp.key}
             onClick={() => chooseType(tp.key)}
-            className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-all duration-150 ${
+            aria-pressed={type === tp.key}
+            className={`segment border ${
               type === tp.key
                 ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                 : 'border-slate-200 text-slate-600 hover:border-slate-300'
@@ -175,13 +176,17 @@ function TransactionForm({ memberId, unpaidFees, payableInstallments, onSubmitte
         <label htmlFor="txn-amount" className="block text-sm font-medium text-slate-700 mb-1">
           {t('Amount paid (TSh)')}
         </label>
+        {/* inputMode="decimal" brings up a number pad without the spinner arrows
+            and stepper quirks of type="number" — and it can't silently report an
+            empty value when someone types a stray character, which type="number"
+            does. */}
         <input
           id="txn-amount"
-          type="number"
-          min="0"
-          inputMode="numeric"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
           placeholder={t('Amount')}
           className="input-field tabular-nums"
         />

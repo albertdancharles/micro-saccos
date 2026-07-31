@@ -1,9 +1,10 @@
 // Admin dashboard (build plan §9, item 31). Calls ensure_current_fees() on mount
 // (same safety net as the member dashboard) then renders the summary, member grid,
 // and approvals queue. Approving/rejecting refreshes the data.
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+
 import { useLanguage } from '../hooks/useLanguage'
 import { useAdminData } from '../hooks/useAdminData'
 import { signOut } from '../lib/auth'
@@ -12,8 +13,8 @@ import AdminSummaryCards from '../components/admin/AdminSummaryCards'
 import MemberGrid from '../components/admin/MemberGrid'
 import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
-import NotificationsBell from '../components/ui/NotificationsBell'
-import LangToggle from '../components/ui/LangToggle'
+import AppHeader from '../components/ui/AppHeader'
+import BottomNav from '../components/ui/BottomNav'
 import PendingMembersQueue from '../components/admin/PendingMembersQueue'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
@@ -23,10 +24,7 @@ import RoleChangeQueue from '../components/admin/RoleChangeQueue'
 import RequestRoleChangeModal from '../components/admin/RequestRoleChangeModal'
 import PoolEditQueue from '../components/admin/PoolEditQueue'
 import RequestPoolEditModal from '../components/admin/RequestPoolEditModal'
-
-// Lazy-loaded so recharts lands in its own async chunk, off the dashboard's first
-// paint. PoolChart renders its own "Loading…" state, so a null fallback is fine.
-const PoolChart = lazy(() => import('../components/admin/PoolChart'))
+import PoolChart from '../components/admin/PoolChart'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -54,49 +52,20 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--color-app-bg)]">
-      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {t('Micro-SACCOS · Admin')}
-            </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900 truncate">
-              {profile?.full_name || user?.email}
-            </h1>
-          </div>
-          <div className="flex items-center gap-4 shrink-0">
-            <LangToggle />
-            <NotificationsBell />
-            <Link
-              to="/dashboard"
-              className="text-sm font-medium text-slate-500 hover:text-slate-800"
-            >
-              {t('My view')}
-            </Link>
-            <Link
-              to="/admin/audit"
-              className="text-sm font-medium text-slate-500 hover:text-slate-800"
-            >
-              {t('Audit')}
-            </Link>
-            <Link
-              to="/profile"
-              className="text-sm font-medium text-slate-500 hover:text-slate-800"
-            >
-              {t('Profile')}
-            </Link>
-            <button
-              onClick={handleSignOut}
-              className="text-sm font-medium text-slate-500 hover:text-slate-800"
-            >
-              {t('Sign out')}
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-dvh bg-[var(--color-app-bg)]">
+      <AppHeader
+        eyebrow={t('Micro-SACCOS · Admin')}
+        title={profile?.full_name || user?.email}
+        width="max-w-4xl"
+        links={[
+          { to: '/dashboard', label: t('My view') },
+          { to: '/admin/audit', label: t('Audit') },
+          { to: '/profile', label: t('Profile') },
+        ]}
+        onSignOut={handleSignOut}
+      />
 
-      <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
         {admin.error && (
           <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {admin.error}
@@ -111,9 +80,7 @@ export default function AdminDashboard() {
               stats={admin.stats}
               onEditTotalAssets={() => setPoolEditOpen(true)}
             />
-            <Suspense fallback={null}>
-              <PoolChart />
-            </Suspense>
+            <PoolChart />
             <PendingMembersQueue pendingMembers={admin.pendingMembers} onActioned={refresh} />
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
@@ -137,13 +104,22 @@ export default function AdminDashboard() {
               stats={admin.stats}
               onActioned={refresh}
             />
-            <div className="flex justify-end">
+            {/* Audit log has no tab of its own, and the header link that used to
+                reach it is desktop-only — so it gets a first-class entry point
+                here, where mobile admins can actually find it. */}
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => setAddOpen(true)}
                 className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-emerald-700 text-sm font-medium px-4 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50 hover:ring-emerald-300 active:scale-[0.99] transition-all duration-150"
               >
                 {t('+ Add member')}
               </button>
+              <Link
+                to="/admin/audit"
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-slate-600 text-sm font-medium px-4 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Audit log')}
+              </Link>
             </div>
             <MemberGrid
               rows={admin.gridRows}
@@ -182,6 +158,8 @@ export default function AdminDashboard() {
         onClose={() => setRoleChangeTarget(null)}
         onSubmitted={refresh}
       />
+
+      <BottomNav isAdmin />
     </div>
   )
 }

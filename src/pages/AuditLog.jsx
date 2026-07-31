@@ -1,12 +1,12 @@
 // Audit log page (Phase 2). Admin-only. Lists the most recent 200 actions newest
 // first: who, what, when, and a human-readable summary of the details payload.
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { getRecentAudit } from '../lib/audit'
 import { formatTZS } from '../lib/format'
 import { useLanguage } from '../hooks/useLanguage'
 import Badge from '../components/ui/Badge'
+import AppHeader from '../components/ui/AppHeader'
 
 const ACTION_LABEL = {
   approve_submission: 'Approved payment',
@@ -160,22 +160,16 @@ export default function AuditLog() {
   }, [load])
 
   return (
-    <div className="min-h-screen bg-[var(--color-app-bg)]">
-      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
-              {t('Micro-SACCOS · Admin')}
-            </p>
-            <h1 className="text-base font-semibold tracking-tight text-slate-900">{t('Audit log')}</h1>
-          </div>
-          <Link to="/admin" className="text-sm font-medium text-slate-500 hover:text-slate-800">
-            {t('← Back')}
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-dvh bg-[var(--color-app-bg)]">
+      <AppHeader
+        eyebrow={t('Micro-SACCOS · Admin')}
+        title={t('Audit log')}
+        width="max-w-4xl"
+        back={{ to: '/admin', label: t('← Back') }}
+        showControls={false}
+      />
 
-      <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-safe">
         {error && (
           <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {error}

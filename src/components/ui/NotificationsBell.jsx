@@ -63,10 +63,15 @@ export default function NotificationsBell() {
     function onKey(e) {
       if (e.key === 'Escape') setOpen(false)
     }
+    // touchstart as well as mousedown: on touch devices the emulated mouse event
+    // only arrives after the browser rules out a gesture, which reads as lag when
+    // you tap away to dismiss.
     window.addEventListener('mousedown', onDown)
+    window.addEventListener('touchstart', onDown, { passive: true })
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('touchstart', onDown)
       window.removeEventListener('keydown', onKey)
     }
   }, [open])
@@ -75,14 +80,14 @@ export default function NotificationsBell() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100/70 transition-colors"
+        className="relative inline-flex items-center justify-center w-11 h-11 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100/70 active:bg-slate-200/70 transition-colors"
         aria-label={`${t('Notifications')}${unreadCount ? ` (${unreadCount} unread)` : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <BellIcon />
         {unreadCount > 0 && (
-          <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none ring-2 ring-white">
+          <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none ring-2 ring-white tabular-nums">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -93,14 +98,17 @@ export default function NotificationsBell() {
           data-sheet-enter
           role="dialog"
           aria-label={t('Notifications')}
-          className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl bg-white/95 backdrop-blur shadow-[0_6px_14px_-8px_rgba(15,23,42,0.12),0_12px_32px_-16px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 z-30"
+          // 320px would spill off a 320px-wide iPhone SE once the header's own
+          // padding is counted, so cap against the viewport. overscroll-contain
+          // stops a flick inside the list from scrolling the page behind it.
+          className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[min(24rem,60vh)] overflow-y-auto overscroll-contain rounded-2xl bg-white/95 backdrop-blur shadow-[0_6px_14px_-8px_rgba(15,23,42,0.12),0_12px_32px_-16px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 z-30"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur">
             <p className="text-sm font-semibold tracking-tight text-slate-900">{t('Notifications')}</p>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2"
+                className="tap-action text-emerald-700 hover:text-emerald-800"
               >
                 {t('Mark all read')}
               </button>

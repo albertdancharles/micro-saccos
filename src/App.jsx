@@ -2,9 +2,9 @@
 // "/" sends admins to /admin and members to /dashboard.
 //
 // Pages are code-split via React.lazy so a member never downloads admin code (and
-// vice-versa) and the heavy recharts chart bundle stays off the first paint. Login
-// is kept eager — it's the entry point for unauthenticated users, so lazying it would
-// just add a round-trip before first paint.
+// vice-versa) and each route stays off the first paint. Login is kept eager — it's the
+// entry point for unauthenticated users, so lazying it would just add a round-trip
+// before first paint.
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
@@ -29,7 +29,7 @@ const ViewMember = lazy(() => import('./pages/ViewMember'))
 // entry chunk and paints instantly.
 function RouteFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="min-h-dvh flex items-center justify-center">
       <div className="skeleton h-24 w-full max-w-md mx-4" />
     </div>
   )

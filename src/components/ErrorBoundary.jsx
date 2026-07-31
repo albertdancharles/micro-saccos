@@ -19,7 +19,7 @@ export default class ErrorBoundary extends Component {
   render() {
     if (!this.state.hasError) return this.props.children
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-app-bg">
+      <div className="min-h-dvh flex items-center justify-center p-6 bg-app-bg">
         <div className="max-w-sm w-full rounded-2xl border border-slate-200/70 bg-white p-6 text-center shadow-card">
           <h1 className="text-base font-semibold text-slate-900">Something went wrong</h1>
           <p className="mt-1 text-sm text-slate-500">Kuna hitilafu. Tafadhali jaribu tena.</p>
