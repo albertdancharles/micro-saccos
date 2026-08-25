@@ -28,6 +28,10 @@
   --motion-base: 180ms;
   --motion-slow: 240ms;
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Slight overshoot, for entrances that should feel sprung rather than eased.
+     A curve, not a physics engine: the same weighty feel with no JS on the main
+     thread and no dependency for phones on 3G to download. */
+  --ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
 
   /* Height of the mobile tab bar, excluding the home-indicator inset. Pages add
      this (plus the inset) as bottom padding so the bar never covers content. */
@@ -171,6 +175,49 @@ body {
 
 [data-backdrop-enter] {
   animation: backdrop-enter var(--motion-fast) var(--ease-standard);
+}
+
+/* Panel entry: a section that expands in place (the fee sheet opening out of its
+   button) rather than sliding in from an edge. Scale is barely perceptible — it
+   reads as the panel settling, not as a zoom. */
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+[data-panel-enter] {
+  animation: panel-enter var(--motion-slow) var(--ease-spring);
+  transform-origin: top center;
+}
+
+/* Staggered row entry. Rows set `--row-index` inline and inherit the cascade from
+   here, so the waterfall costs no JS and no re-renders.
+   `both` matters: without it every row paints at full opacity before its delay
+   elapses, and the stagger is invisible.
+   The cap matters too: this list is one row per member, and an uncapped 26ms
+   cascade would make a fifteen-member group wait half a second to see the last
+   name. Past ~320ms the effect stops reading as choreography and starts reading
+   as lag. */
+@keyframes row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-row-enter] {
+  animation: row-enter var(--motion-base) var(--ease-spring) both;
+  animation-delay: min(calc(var(--row-index, 0) * 26ms), 320ms);
 }
 
 /* ----------------------------------------------------------------------------

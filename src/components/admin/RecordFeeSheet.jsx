@@ -117,7 +117,10 @@ export default function RecordFeeSheet({ onActioned }) {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3">
+    <section
+      data-panel-enter
+      className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3"
+    >
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">{t('Record monthly fees')}</h2>
         <button onClick={() => setOpen(false)} className="text-sm text-slate-500 hover:text-slate-700">
@@ -134,10 +137,15 @@ export default function RecordFeeSheet({ onActioned }) {
       ) : (
         <>
           <div className="divide-y divide-slate-100">
-            {others.map((r) => {
+            {others.map((r, i) => {
               const on = ticked[r.id] !== undefined
               return (
-                <div key={r.id} className="flex items-center gap-2 py-1">
+                <div
+                  key={r.id}
+                  data-row-enter
+                  style={{ '--row-index': i }}
+                  className="flex items-center gap-2 py-1"
+                >
                   <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
                     <input
                       type="checkbox"

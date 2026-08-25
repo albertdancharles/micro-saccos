@@ -138,7 +138,10 @@ export default function CorrectionsPanel({ onActioned }) {
   if (pending.length === 0 && recent.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3">
+    <section
+      data-panel-enter
+      className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3"
+    >
       <h2 className="text-sm font-semibold text-slate-900">{t('Corrections')}</h2>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -148,9 +151,11 @@ export default function CorrectionsPanel({ onActioned }) {
           <p className="text-xs font-medium text-amber-700">
             {t('Waiting for a second signature')}
           </p>
-          {pending.map((v) => (
+          {pending.map((v, i) => (
             <div
               key={v.id}
+              data-row-enter
+              style={{ '--row-index': i }}
               className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 space-y-2"
             >
               <div className="flex justify-between gap-2 text-sm">
@@ -190,8 +195,13 @@ export default function CorrectionsPanel({ onActioned }) {
         <div className="space-y-1">
           <p className="text-xs font-medium text-slate-500">{t('Recently recorded')}</p>
           <div className="divide-y divide-slate-100">
-            {recent.map((s) => (
-              <div key={s.id} className="py-2 space-y-2">
+            {recent.map((s, i) => (
+              <div
+                key={s.id}
+                data-row-enter
+                style={{ '--row-index': i }}
+                className="py-2 space-y-2"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm text-slate-900">{s.memberName}</p>
