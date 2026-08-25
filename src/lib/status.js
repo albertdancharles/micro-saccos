@@ -15,6 +15,15 @@ const LABELS = {
   upcoming: 'Not due',
   cancelled: 'Cancelled',
   na: 'N/A',
+  // A settled payment reversed by a 2-of-N correction (037). The row is kept, not
+  // deleted — a void is a correction, not an erasure — so members and admins both
+  // see it in history and it needs wording of its own.
+  voided: 'Voided',
+  // Outbound messaging (026/032). "Queued" and "Sent" are deliberately distinct:
+  // the reminder sweep only ever queues, and treating that as success is what let
+  // a broken delivery pipeline look healthy on the audit page for weeks.
+  queued: 'Queued',
+  sent: 'Sent',
 }
 
 export function statusKey(status) {

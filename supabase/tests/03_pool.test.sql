@@ -119,8 +119,8 @@ BEGIN
 
   -- =============================================== 7. withdrawal
   v_before := tests.pool();
-  PERFORM tests.as_user(v_b);
-  v_wd := request_withdrawal(50000, 'school fees');
+  PERFORM tests.as_user(v_admin);
+  v_wd := admin_request_withdrawal(v_b, 50000, 'school fees');
   PERFORM tests.as_owner();
   PERFORM tests.eq(tests.pool(), v_before, 'requesting a withdrawal moves nothing');
 

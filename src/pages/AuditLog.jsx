@@ -34,6 +34,23 @@ const ACTION_LABEL = {
   partial_approve_role_change: 'Partially approved role change',
   execute_role_change: 'Applied role change',
   cancel_role_change: 'Cancelled role change',
+  send_due_reminders: 'Queued due reminders',
+  dispatch_notifications: 'Sent reminders',
+  schedule_notification_drain: 'Scheduled reminder delivery',
+
+  // The admin mandate (034–037). Every one of these is an admin writing on a
+  // member's behalf, which is precisely what the audit log exists to make legible
+  // now that members cannot write at all.
+  record_payment: 'Recorded payment',
+  record_fee_payments: 'Recorded monthly fees',
+  file_loan: 'Filed loan',
+  admin_request_withdrawal: 'Opened withdrawal',
+  request_payment_void: 'Requested correction',
+  partial_approve_payment_void: 'Partially approved correction',
+  execute_payment_void: 'Applied correction',
+  cancel_payment_void: 'Cancelled correction',
+  admin_mandate_lockdown: 'Admin mandate applied',
+  drop_guarantors: 'Guarantees removed',
 }
 
 const ACTION_BADGE = {
@@ -62,6 +79,24 @@ const ACTION_BADGE = {
   partial_approve_role_change: 'pending',
   execute_role_change: 'approved',
   cancel_role_change: 'pending',
+  // "Queued" is honest about what the sweep does: it fills the outbox, it does not
+  // deliver. Only dispatch_notifications means a message actually left the system.
+  send_due_reminders: 'queued',
+  dispatch_notifications: 'sent',
+  schedule_notification_drain: 'approved',
+
+  record_payment: 'approved',
+  record_fee_payments: 'approved',
+  file_loan: 'pending',
+  admin_request_withdrawal: 'pending',
+  request_payment_void: 'pending',
+  partial_approve_payment_void: 'pending',
+  // Red, like execute_member_deletion: a void takes money back out of a settled
+  // position, and that should catch the eye when scanning the log.
+  execute_payment_void: 'rejected',
+  cancel_payment_void: 'pending',
+  admin_mandate_lockdown: 'approved',
+  drop_guarantors: 'rejected',
 }
 
 function summary(row, t) {
@@ -113,6 +148,49 @@ function summary(row, t) {
       return `${d.change_type || ''} → ${d.new_role || '—'}`
     case 'cancel_role_change':
       return t('Request cancelled')
+    case 'record_payment':
+      return `${d.submission_type || 'payment'} · ${formatTZS(d.amount ?? 0)}${
+        d.self_recorded ? ' · own money' : ''
+      } · ${d.settled ? 'settled' : `${d.approvals}/${d.required} signed`}`
+    case 'record_fee_payments':
+      return `${d.entries ?? 0} fee payment(s)`
+    case 'file_loan':
+      return `principal ${formatTZS(d.principal ?? 0)}`
+    case 'admin_request_withdrawal':
+      return `${formatTZS(d.amount ?? 0)} · reason: ${d.reason || '—'}`
+    case 'request_payment_void':
+      return `reason: ${d.reason || '—'}`
+    case 'partial_approve_payment_void':
+      return `${d.approvals} approved`
+    case 'execute_payment_void':
+      // Show the allocation that was reversed, not just the gross amount: it is
+      // the four figures the waterfall actually moved.
+      return `${d.submission_type || 'payment'} · ${formatTZS(d.amount ?? 0)} reversed (base ${formatTZS(
+        d.applied_base ?? 0,
+      )}, penalty ${formatTZS(d.applied_penalty ?? 0)}, interest ${formatTZS(
+        d.applied_interest ?? 0,
+      )}, principal ${formatTZS(d.applied_principal ?? 0)}) · reason: ${d.reason || '—'}`
+    case 'cancel_payment_void':
+      return t('Request cancelled')
+    case 'admin_mandate_lockdown':
+      return `${d.submissions_rejected ?? 0} payment(s), ${d.loans_rejected ?? 0} loan(s), ${
+        d.withdrawals_rejected ?? 0
+      } withdrawal(s) retired`
+    case 'drop_guarantors':
+      return `${d.pledges_dropped ?? 0} pledge(s) released`
+    case 'send_due_reminders':
+      // Says "queued", not "sent" — this step never touches a phone.
+      return `${d.reminders ?? 0} ${t('queued for delivery')} · ${t('week')} ${d.week || '—'}`
+    case 'dispatch_notifications': {
+      const parts = [`${d.sent ?? 0} ${t('sent')}`]
+      if (d.failed) parts.push(`${d.failed} ${t('failed')}`)
+      if (d.skipped) parts.push(`${d.skipped} ${t('skipped')}`)
+      if (d.stale) parts.push(`${d.stale} ${t('expired unsent')}`)
+      if (d.blocked) parts.push(d.blocked)
+      return parts.join(' · ')
+    }
+    case 'schedule_notification_drain':
+      return `${t('every')} ${d.schedule || '—'}`
     default:
       return JSON.stringify(d)
   }

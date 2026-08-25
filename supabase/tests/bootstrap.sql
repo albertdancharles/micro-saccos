@@ -34,6 +34,28 @@ $$;
 
 GRANT USAGE ON SCHEMA public TO authenticated, anon;
 
+-- Supabase's default privileges, and it matters that they are DEFAULT privileges
+-- rather than a blanket GRANT applied afterwards. A real Supabase project runs
+--
+--     ALTER DEFAULT PRIVILEGES IN SCHEMA public
+--       GRANT ALL ON TABLES/SEQUENCES/FUNCTIONS TO postgres, anon, authenticated, service_role;
+--
+-- so every object a migration creates is granted to `authenticated` at CREATE time
+-- — and a REVOKE later in that same migration, or in a later one, sticks.
+--
+-- These grants used to live in fixtures.sql, which is applied AFTER the migrations
+-- and so silently re-granted everything a migration had deliberately revoked. That
+-- made the harness unable to test any privilege lockdown: 034 revokes EXECUTE on
+-- the `execute_*` family and UPDATE on profiles, and under the old ordering the
+-- fixtures handed both straight back. Declaring them here instead reproduces
+-- production faithfully, which is the whole premise of this file.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO authenticated;
+
 -- ---------------------------------------------------------------------------
 -- auth. Only the columns the migrations actually read: `id` (FK target),
 -- `email` (018's signup trigger, 010's deletion audit) and `raw_user_meta_data`

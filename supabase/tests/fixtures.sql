@@ -14,11 +14,12 @@
 
 CREATE SCHEMA IF NOT EXISTS tests;
 
--- Supabase's default posture for a PostgREST-exposed schema. RLS is what actually
--- restricts these — the grants only make the tables reachable.
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
+-- The `authenticated` grants on the public schema have MOVED to bootstrap.sql, as
+-- ALTER DEFAULT PRIVILEGES. They cannot live here: this file is applied after the
+-- migrations, so a blanket GRANT re-granted whatever a migration had revoked, and
+-- no privilege lockdown could be tested (034 revokes EXECUTE on the execute_*
+-- family and UPDATE on profiles). Default privileges grant at CREATE time instead,
+-- which is what Supabase actually does. See bootstrap.sql.
 
 -- ---------------------------------------------------------------------------
 -- Impersonation

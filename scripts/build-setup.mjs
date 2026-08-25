@@ -32,9 +32,13 @@ const header = `-- =============================================================
 --
 -- Two migrations need a note when running this on a fresh project:
 --   * 004 requires the storage schema (present on every Supabase project)
---   * 017 enables pg_cron; if the extension is not available the statement fails
---     and can be skipped — it only schedules monthly fee generation, and
---     ensure_current_fees() already self-heals on every dashboard load.
+--   * 017 enables pg_cron. If the extension is not available the statement RAISES
+--     and the SQL editor aborts the batch there, so everything after 017 is
+--     missing too — enable pg_cron and paste from 017 on. Do not just skip it:
+--     since the admin mandate, ensure_current_fees() runs only when an ADMIN
+--     opens the dashboard (a member opening theirs used to trigger it, which was
+--     a member-initiated write), so without the cron job fee generation waits on
+--     an admin logging in.
 --
 -- ${files.length} migrations: ${files[0]} .. ${files[files.length - 1]}
 -- ===========================================================================

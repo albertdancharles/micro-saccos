@@ -1,6 +1,5 @@
-// Loan helpers (build plan §8a). Approval/schedule generation is the approve_loan
-// RPC (admin side); members only read their loan and submit a request.
-import { formatTZS } from './format'
+// Loan helpers. Since the admin mandate members only READ their loan: an admin
+// files it (file_loan) and two admins approve and disburse it (approve_loan).
 import { maxLoan as computeMaxLoan } from './loanMath'
 import { getMemberContribution } from './savings'
 import { getSettings } from './settings'
@@ -30,17 +29,25 @@ export async function getInstallments(supabase, loanId) {
   return data
 }
 
-// Submit a loan request (build plan §8a): one-loan-at-a-time guard + the combined
-// ceiling (lower of 3× contribution and 25% of pool). Over-cap requests are
-// rejected here so they never reach the admin queue.
-export async function submitLoanRequest(supabase, memberId, requestedAmount) {
-  const existing = await getCurrentLoan(supabase, memberId)
-  if (existing) {
-    throw new Error('You already have a loan in progress. Close it before requesting another.')
-  }
+// Admin: raise a loan on a member's behalf. The client-side ceiling check that
+// used to live here is gone — not moved, deleted. It was only ever advisory (a
+// disabled button), and every rule it approximated is enforced in the RPCs: both
+// ceilings in approve_loan, and the one-loan-at-a-time rule now in file_loan,
+// which is the first time that has actually been true in SQL.
+//
+// maxLoanFor below still computes the ceiling, but only to SHOW it while the admin
+// types. Nothing depends on it being right.
+export async function fileLoan(supabase, memberId, principal) {
+  const { data, error } = await supabase.rpc('file_loan', {
+    p_member_id: memberId,
+    p_principal: principal,
+  })
+  if (error) throw error
+  return data
+}
 
-  // The caps come from group_settings (migration 020), so this client-side gate
-  // stays in step with the approve_loan RPC's hard guard even after a rate vote.
+// What this member could borrow today, for display next to the amount field.
+export async function maxLoanFor(supabase, memberId) {
   const [contribution, poolRes, { values: settings }] = await Promise.all([
     getMemberContribution(supabase, memberId),
     supabase.from('v_group_pool').select('pool_balance_tzs').single(),
@@ -50,22 +57,13 @@ export async function submitLoanRequest(supabase, memberId, requestedAmount) {
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
   const multiplier = settings.contribution_multiplier
   const fraction = settings.pool_loan_fraction
-  const ceiling = computeMaxLoan(contribution.total, pool, { fraction, multiplier })
-
-  if (!(requestedAmount > 0)) throw new Error('Enter a valid amount.')
-  if (requestedAmount > ceiling) {
-    throw new Error(
-      `Exceeds the maximum loan of ${formatTZS(ceiling)} (lower of ${multiplier}× your savings + paid fees and ${Number((fraction * 100).toFixed(2))}% of the group pool).`,
-    )
+  return {
+    ceiling: computeMaxLoan(contribution.total, pool, { fraction, multiplier }),
+    contribution,
+    pool,
+    multiplier,
+    fraction,
   }
-
-  const { data, error } = await supabase
-    .from('loans')
-    .insert({ member_id: memberId, principal: requestedAmount, status: 'pending' })
-    .select()
-    .single()
-  if (error) throw error
-  return { loan: data, maxLoan: ceiling, contribution, pool }
 }
 
 // Admin: approve a loan + generate its 3-installment schedule atomically (build

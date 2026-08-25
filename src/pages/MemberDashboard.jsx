@@ -1,20 +1,25 @@
-// Member dashboard (build plan §9, item 23). Calls ensure_current_fees() on mount
-// (self-healing fee generation, §8c-bis) then loads the summary and renders the
-// member flows. A "Log transaction" sheet feeds new proofs into the approvals queue.
-import { useEffect, useState } from 'react'
+// Member dashboard — read-only since the admin mandate (migration 034).
+//
+// This used to be where a member filed things: a "Log a transaction" sheet, a loan
+// request form, a withdrawal card, guarantee responses. All of it is gone; admins
+// record every transaction now, and the database enforces that (the member INSERT
+// policies on loans and payment_submissions were dropped, so a member cannot write
+// even by calling PostgREST directly).
+//
+// What is left is an account statement: what you have saved, what you owe, what has
+// been recorded against your name, and the CSV to take away. The one thing worth
+// noticing in the diff is that this file no longer branches on `isView`. An admin
+// inspecting a member used to get a stripped-down read-only detour through the same
+// component; now every member gets exactly that view, so the two cases converged
+// and the flag only picks the header and the nav.
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { useMemberSummary } from '../hooks/useMemberSummary'
 import { signOut } from '../lib/auth'
-import { supabase } from '../supabaseClient'
 import SummaryCards from '../components/member/SummaryCards'
 import ObligationsCard from '../components/member/ObligationsCard'
 import RepaymentSchedule from '../components/member/RepaymentSchedule'
-import LoanRequestForm from '../components/member/LoanRequestForm'
-import WithdrawalCard from '../components/member/WithdrawalCard'
-import GuaranteeRequestsCard from '../components/member/GuaranteeRequestsCard'
-import LogTransactionSheet from '../components/member/LogTransactionSheet'
 import History from '../components/member/History'
 import LoanProgressBar from '../components/member/LoanProgressBar'
 import AppHeader from '../components/ui/AppHeader'
@@ -27,43 +32,16 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const navigate = useNavigate()
   const isView = !!viewAs
   const summary = useMemberSummary(viewAs)
-  const { refresh } = summary
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [version, setVersion] = useState(0) // bumps to refetch history after a submit
-
-  // Self-healing fee generation runs only when a member views their own
-  // dashboard — in view mode an admin is just looking, no side effects.
-  useEffect(() => {
-    if (!supabase || isView) return
-    supabase.rpc('ensure_current_fees').then(({ error }) => {
-      if (error) console.error('ensure_current_fees failed', error)
-      refresh()
-    })
-  }, [isView, refresh])
-
-  function handleSubmitted() {
-    refresh()
-    setVersion((v) => v + 1)
-  }
+  // ensure_current_fees() used to fire here on every member's mount. It is a
+  // WRITE — it generates the month's fee rows for the whole group — so a member
+  // loading their dashboard was writing to the database. It now runs only from the
+  // admin dashboard, with migration 017's pg_cron job as the real generator so fee
+  // creation does not depend on anyone opening the app.
 
   async function handleSignOut() {
     await signOut()
     navigate('/login', { replace: true })
   }
-
-  // Hide items the member already has a pending submission for (the server
-  // trigger also blocks duplicates, but filtering keeps the UI clean), and
-  // exclude cancelled installments (loan closed early — historical only).
-  const pending = summary.pendingRelatedIds || new Set()
-  const unpaidFees = summary.fees.filter(
-    (f) => f.computed_status !== 'paid' && !pending.has(f.id),
-  )
-  const payableInstallments = summary.installments.filter(
-    (i) =>
-      i.computed_status !== 'paid' &&
-      i.computed_status !== 'cancelled' &&
-      !pending.has(i.id),
-  )
 
   return (
     <div className="min-h-dvh bg-[var(--color-app-bg)]">
@@ -87,14 +65,9 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
       )}
 
       <main className="max-w-md mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
-        {!isView && (
-          <button onClick={() => setSheetOpen(true)} className="btn-primary w-full !min-h-12">
-            {t('+ Log a transaction')}
-          </button>
-        )}
         {isView && (
           <div className="rounded-xl border border-sky-200/70 bg-sky-50/80 p-3 text-sm text-sky-800">
-            {t("Read-only view. Submitting payments, requesting loans, and editing on this member's behalf are disabled. Use the savings edit / approvals queue on the admin dashboard to act.")}
+            {t('Read-only view. Use the admin dashboard to record a payment, file a loan, or correct an entry for this member.')}
           </div>
         )}
 
@@ -129,40 +102,19 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
               currentMonthKey={summary.currentMonthKey}
             />
             <SavingsChart memberId={viewAs} />
+            <History memberId={viewAs} />
             {!isView && (
-              <>
-                <LoanRequestForm
-                  memberId={user?.id}
-                  contribution={summary.contribution}
-                  pool={summary.pool}
-                  loan={summary.loan}
-                  onSubmitted={handleSubmitted}
-                />
-                <GuaranteeRequestsCard memberId={user?.id} onChanged={handleSubmitted} />
-                <WithdrawalCard memberId={user?.id} onSubmitted={handleSubmitted} />
-              </>
+              <p className="px-1 pb-2 text-center text-xs leading-relaxed text-slate-500">
+                {t('Payments are recorded by your admin. Speak to them to pay in, request a loan, or withdraw.')}
+              </p>
             )}
-            <History refreshKey={version} memberId={viewAs} />
           </>
         )}
       </main>
 
-      {!isView && (
-        <>
-          <LogTransactionSheet
-            open={sheetOpen}
-            onClose={() => setSheetOpen(false)}
-            memberId={user?.id}
-            unpaidFees={unpaidFees}
-            payableInstallments={payableInstallments}
-            onSubmitted={handleSubmitted}
-          />
-          {/* Omitted in view mode: an admin inspecting a member is in a
-              read-only detour and leaves via the header's back control, not by
-              switching tabs. */}
-          <BottomNav isAdmin={profile?.role === 'admin'} />
-        </>
-      )}
+      {/* Omitted in view mode: an admin inspecting a member is in a read-only
+          detour and leaves via the header's back control, not by switching tabs. */}
+      {!isView && <BottomNav isAdmin={profile?.role === 'admin'} />}
     </div>
   )
 }

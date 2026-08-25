@@ -9,11 +9,15 @@
 --
 -- Two migrations need a note when running this on a fresh project:
 --   * 004 requires the storage schema (present on every Supabase project)
---   * 017 enables pg_cron; if the extension is not available the statement fails
---     and can be skipped — it only schedules monthly fee generation, and
---     ensure_current_fees() already self-heals on every dashboard load.
+--   * 017 enables pg_cron. If the extension is not available the statement RAISES
+--     and the SQL editor aborts the batch there, so everything after 017 is
+--     missing too — enable pg_cron and paste from 017 on. Do not just skip it:
+--     since the admin mandate, ensure_current_fees() runs only when an ADMIN
+--     opens the dashboard (a member opening theirs used to trigger it, which was
+--     a member-initiated write), so without the cron job fee generation waits on
+--     an admin logging in.
 --
--- 30 migrations: 001_create_tables.sql .. 030_meetings_and_social_fund.sql
+-- 37 migrations: 001_create_tables.sql .. 037_payment_void.sql
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -7145,3 +7149,2401 @@ BEGIN
    WHERE id = p_request_id AND status = 'pending';
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 031_loan_multiplier_5x.sql
+-- ---------------------------------------------------------------------------
+
+-- 031_loan_multiplier_5x.sql — the loan ceiling moves from 3x savings to 5x.
+--
+-- `contribution_multiplier` has been a group_settings row since 020, so this is a
+-- value change, not a logic change: every RPC and view already reads setting().
+-- It is done as a migration rather than a 2-of-N vote because it is the rule the
+-- group agreed to run on, and a fresh project must stand up with 5x too — the seed
+-- in 020 is `ON CONFLICT DO NOTHING`, so an existing database keeps 3 until this
+-- UPDATE runs.
+--
+-- What actually changes, and what does not:
+--   * The contribution ceiling on a NEW request rises to floor(5 x contribution).
+--     The 25% pool cap is untouched, and the effective max is still the LOWER of
+--     the two — for most members the pool side will now be what binds.
+--   * Loans already approved are not restated. The cap gates request/approval
+--     only; nothing recomputes an existing principal.
+--   * The withdrawal collateral guard (025) locks `outstanding / multiplier`, so a
+--     borrower's locked savings FALL. A 90,000 outstanding locked 30,000 at 3x and
+--     locks 18,000 at 5x. That is the same rule, not a loosened one: it still
+--     mirrors the ceiling a loan of that size was approved under.
+--
+-- Requires 020.
+
+UPDATE group_settings
+   SET value = 5, updated_at = now()
+ WHERE key = 'contribution_multiplier';
+
+-- The COALESCE fallback in setting() has to move with the row, otherwise a
+-- database that somehow lost the row would silently revert to 3x.
+CREATE OR REPLACE FUNCTION setting(p_key text)
+RETURNS numeric
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    (SELECT value FROM group_settings WHERE key = p_key),
+    CASE p_key
+      WHEN 'monthly_fee_amount'     THEN 10000
+      WHEN 'loan_interest_rate'     THEN 0.05
+      WHEN 'penalty_rate'           THEN 0.05
+      WHEN 'pool_loan_fraction'     THEN 0.25
+      WHEN 'contribution_multiplier' THEN 5
+      WHEN 'default_loan_months'    THEN 3
+      ELSE 0
+    END
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION setting(text) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 032_notification_dispatch.sql
+-- ---------------------------------------------------------------------------
+
+-- 032_notification_dispatch.sql — connect the outbox to the outside world.
+--
+-- 026 built the reminder pipeline and scheduled the sweep, but the last hop was
+-- left as a manual step and never taken: `dispatch-notifications` was never
+-- deployed and no job ever drained `notification_deliveries`. The daily sweep has
+-- been running correctly ever since — writing ~10 reminders a week into a queue
+-- that nothing reads. Every audit row says it worked. Not one message was sent.
+--
+-- Three things follow from that, and this migration is all three:
+--
+--   1. RETIRE THE BACKLOG. Those queued rows are weeks of "your fee is due in 3
+--      days" about dates long past. Delivering them the moment dispatch is
+--      connected would spend real money to tell members things that are no longer
+--      true, so they are marked skipped instead. Only fresh rows go out.
+--
+--   2. SCHEDULE THE DRAIN. `schedule_notification_drain()` takes the URL and the
+--      shared secret as arguments rather than hard-coding them, so the secret is
+--      typed once into the SQL editor and never lands in git.
+--
+--   3. MAKE IT VISIBLE. `v_notification_health` is what would have caught this in
+--      week one: a queue that is filling but not draining.
+--
+-- Requires 026.
+
+-- --------------------------------------------------------------------------
+-- 1. Retire the backlog.
+--
+--    48 hours is the same window the Edge Function enforces on every run
+--    (DISPATCH_MAX_AGE_HOURS). A reminder older than that has outlived the thing
+--    it was reminding about.
+-- --------------------------------------------------------------------------
+
+UPDATE notification_deliveries
+   SET status     = 'skipped',
+       last_error = 'expired unsent — queued before dispatch was connected'
+ WHERE status = 'queued'
+   AND created_at < now() - interval '48 hours';
+
+-- --------------------------------------------------------------------------
+-- 2. Schedule the drain.
+--
+--    The sweep in 026 is pure SQL, so pg_cron calls it directly. Draining is
+--    different: it needs the network, so it goes out through pg_net to the Edge
+--    Function. Both are reached with dynamic SQL so this migration still applies
+--    to a plain Postgres — the test harness has no pg_net, and nothing here
+--    touches it until the function is actually called.
+--
+--    Run once, in the SQL editor, with your own values:
+--
+--      select schedule_notification_drain(
+--        'https://<project-ref>.supabase.co/functions/v1/dispatch-notifications',
+--        '<the DISPATCH_SECRET set in Edge Function secrets>'
+--      );
+--
+--    Re-run it to rotate the secret or change the cadence; it replaces the job.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION schedule_notification_drain(
+  p_url      text,
+  p_secret   text,
+  p_schedule text DEFAULT '*/15 * * * *'
+)
+RETURNS text AS $$
+DECLARE
+  v_command text;
+  v_jobid   bigint;
+BEGIN
+  -- This is run from the SQL editor, where there is no JWT and auth.uid() is NULL
+  -- — so `NOT is_admin()` alone would lock the owner out of their own helper. The
+  -- real gate is the REVOKE below: `authenticated` is never granted EXECUTE, so
+  -- PostgREST cannot reach this at all. The check below only covers the case of a
+  -- future caller that does arrive with a session.
+  IF auth.uid() IS NOT NULL AND NOT is_admin() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF COALESCE(p_url, '') = '' THEN
+    RAISE EXCEPTION 'A function URL is required';
+  END IF;
+  -- The endpoint fails closed without a secret, so a job without one would only
+  -- ever collect 503s. Better to refuse here than to schedule something useless.
+  IF COALESCE(p_secret, '') = '' THEN
+    RAISE EXCEPTION 'A dispatch secret is required — the endpoint refuses to run without one';
+  END IF;
+
+  -- pg_net lives outside the default search_path on Supabase, hence net.*.
+  -- quote_literal on both values stops a stray quote in the secret from breaking
+  -- the job definition.
+  v_command := format(
+    'select net.http_post(url := %s, headers := %s::jsonb, body := %s::jsonb)',
+    quote_literal(p_url),
+    quote_literal(json_build_object(
+      'Content-Type',      'application/json',
+      'x-dispatch-secret', p_secret
+    )::text),
+    quote_literal('{}')
+  );
+
+  -- Replace any previous definition — the secret may have been rotated.
+  BEGIN
+    EXECUTE format('SELECT cron.unschedule(%L)', 'drain-notification-outbox');
+  EXCEPTION WHEN OTHERS THEN
+    NULL;  -- not scheduled yet: the normal first run
+  END;
+
+  EXECUTE format('SELECT cron.schedule(%L, %L, %L)',
+                 'drain-notification-outbox', p_schedule, v_command)
+    INTO v_jobid;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'schedule_notification_drain', 'system', NULL,
+          jsonb_build_object('schedule', p_schedule, 'jobid', v_jobid));
+
+  RETURN format('drain-notification-outbox scheduled as job %s (%s)', v_jobid, p_schedule);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION schedule_notification_drain(text, text, text) FROM public;
+
+-- --------------------------------------------------------------------------
+-- 3. Health.
+--
+--    security_invoker, so it inherits the RLS on notification_deliveries: an
+--    admin sees the whole outbox, a member sees only their own rows.
+--
+--    `stuck` is the number that matters. Queued rows older than two hours mean
+--    the drain job is not running — which is exactly the state this project was
+--    in, undetected, for weeks.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW v_notification_health
+WITH (security_invoker = true) AS
+SELECT
+  count(*) FILTER (WHERE status = 'queued')                             AS queued,
+  count(*) FILTER (WHERE status = 'queued'
+                     AND created_at < now() - interval '2 hours')       AS stuck,
+  count(*) FILTER (WHERE status = 'sent'
+                     AND sent_at > now() - interval '7 days')           AS sent_7d,
+  count(*) FILTER (WHERE status = 'failed'
+                     AND created_at > now() - interval '7 days')        AS failed_7d,
+  count(*) FILTER (WHERE status = 'skipped'
+                     AND created_at > now() - interval '7 days')        AS skipped_7d,
+  max(sent_at)                                                          AS last_sent_at,
+  (SELECT d.last_error
+     FROM notification_deliveries d
+    WHERE d.last_error IS NOT NULL
+    ORDER BY d.created_at DESC
+    LIMIT 1)                                                            AS last_error
+FROM notification_deliveries;
+
+GRANT SELECT ON v_notification_health TO authenticated;
+
+-- Verify:
+--   select * from v_notification_health;
+--   select jobid, jobname, schedule, active from cron.job;
+--   select * from cron.job_run_details where jobname = 'drain-notification-outbox'
+--     order by start_time desc limit 5;
+--
+-- To stop the drain:  select cron.unschedule('drain-notification-outbox');
+
+-- ---------------------------------------------------------------------------
+-- 033_swahili_messages.sql
+-- ---------------------------------------------------------------------------
+
+-- 033_swahili_messages.sql — the group reads Swahili; the messages were English.
+--
+-- `profiles.preferred_language` has defaulted to 'sw' since 026 and nothing ever
+-- read it. Every notification title and body is composed in English in SQL, across
+-- 29 INSERT sites in 11 migrations — and both channels show it raw:
+-- NotificationsBell renders `{n.title}` with no t(), and the SMS dispatcher sends
+-- whatever the outbox holds.
+--
+-- WHERE TO TRANSLATE. Not at the 29 call sites: most sit inside money-path
+-- triggers and RPCs that have no business knowing about language, and editing them
+-- would put the payment waterfall back in the blast radius of a copy change.
+--
+-- Instead, one BEFORE INSERT trigger on `notifications` rewrites the row into the
+-- recipient's language. It lands before 026's AFTER INSERT fan-out, so the outbox
+-- inherits the translation for free — the SMS and the in-app bell both change, and
+-- not one existing trigger is touched.
+--
+-- `send_due_reminders` is the exception: it calls enqueue_delivery directly and
+-- never writes a `notifications` row, so it is translated in place. It is also the
+-- one that sends every single day, which makes it the one that matters most.
+--
+-- FALLBACK IS ENGLISH. No template for a kind, or a member who has chosen 'en',
+-- means the message is delivered exactly as it is composed today. Nothing breaks
+-- on a kind added later; it simply stays English until it gets a template.
+--
+-- Requires 026.
+
+-- --------------------------------------------------------------------------
+-- 1. Formatting helpers.
+--
+--    The app renders money through Intl 'sw-TZ' as "TSh 10,000". SQL was emitting
+--    raw numerics — "10000.00 TZS" — so the same fee appeared two different ways
+--    depending on whether you read it in the app or in a text message.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION fmt_tzs(p_amount numeric)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT 'TSh ' || to_char(round(COALESCE(p_amount, 0)), 'FM999,999,999,990');
+$$;
+
+-- Dates in an SMS: unambiguous and short. "31/08/2026", not "2026-08-31".
+CREATE OR REPLACE FUNCTION fmt_day(p_date date)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE WHEN p_date IS NULL THEN '' ELSE to_char(p_date, 'DD/MM/YYYY') END;
+$$;
+
+CREATE OR REPLACE FUNCTION member_lang(p_member uuid)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(NULLIF(trim(preferred_language), ''), 'sw')
+    FROM profiles WHERE id = p_member;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 2. The phrase book.
+--
+--    Keyed on `notifications.kind`, which is already a stable machine key at
+--    every one of the 29 call sites — no new vocabulary to invent.
+--
+--    body = NULL means "keep whatever was composed". That is the honest answer
+--    for the messages whose body IS free text an admin typed (a rejection
+--    reason): translating the label while leaving their words alone.
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS notification_templates (
+  kind  text NOT NULL,
+  lang  text NOT NULL DEFAULT 'sw',
+  title text NOT NULL,
+  body  text,
+  PRIMARY KEY (kind, lang)
+);
+
+ALTER TABLE notification_templates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone signed in reads templates" ON notification_templates;
+CREATE POLICY "Anyone signed in reads templates" ON notification_templates
+  FOR SELECT USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT ON notification_templates TO authenticated;
+
+-- Placeholders are filled from the notification's own `data` payload. Only keys
+-- that are actually present at the call site are used — a placeholder with no
+-- matching key would render as literal braces, so each template below was written
+-- against the jsonb_build_object() call that feeds it.
+INSERT INTO notification_templates (kind, lang, title, body) VALUES
+  -- Payments (009)
+  ('submission_approved', 'sw', 'Malipo yamethibitishwa',
+   'Malipo yako ya {amount} yamethibitishwa.'),
+  ('submission_rejected', 'sw', 'Malipo yamekataliwa', NULL),
+
+  -- Loans (009)
+  ('loan_active',   'sw', 'Mkopo umeidhinishwa',
+   'Mkopo wako umetolewa. Ratiba ya marejesho ipo kwenye programu yako.'),
+  ('loan_rejected', 'sw', 'Ombi la mkopo limekataliwa', NULL),
+  ('loan_closed',   'sw', 'Mkopo umelipwa wote',
+   'Hongera — mkopo wako umelipwa wote.'),
+
+  -- Loan distress (022)
+  ('loan_restructure',          'sw', 'Mkopo wako umepangwa upya', NULL),
+  ('loan_write_off',            'sw', 'Mkopo wako umefutwa', NULL),
+  ('loan_recover_from_savings', 'sw', 'Mkopo umelipwa kutoka akiba yako',
+   'Sehemu ya akiba yako imetumika kulipa deni la mkopo wako.'),
+
+  -- Withdrawals and exit (025)
+  ('withdrawal_approved', 'sw', 'Ombi la kutoa fedha limeidhinishwa',
+   'Ombi lako la kutoa fedha limeidhinishwa na utalipwa.'),
+  ('withdrawal_rejected', 'sw', 'Ombi la kutoa fedha limekataliwa', NULL),
+  ('withdrawal_paid',     'sw', 'Fedha zimelipwa',
+   'Fedha ulizoomba zimelipwa kwako.'),
+
+  -- Share-out (024)
+  ('share_out_ready', 'sw', 'Mgao wako uko tayari',
+   'Mzunguko umefungwa. Angalia mgao wako kwenye programu.'),
+  ('share_out_paid',  'sw', 'Mgao umelipwa',
+   'Mgao wako umelipwa kwako.'),
+
+  -- Guarantors (028)
+  ('guarantee_requested', 'sw', 'Umeombwa kudhamini mkopo',
+   'Mwanachama amekuomba udhamini mkopo wake. Fungua programu ili kujibu.'),
+  ('guarantee_accepted',  'sw', 'Dhamana imekubaliwa',
+   'Mwanachama amekubali kudhamini mkopo wako.'),
+  ('guarantee_declined',  'sw', 'Dhamana imekataliwa',
+   'Mwanachama amekataa kudhamini mkopo wako.'),
+  ('guarantee_called',    'sw', 'Dhamana yako imetumika',
+   'Kiasi kimetolewa kwenye akiba yako kulipia mkopo uliodhamini.'),
+
+  -- Savings edits (013)
+  ('savings_edited', 'sw', 'Akiba yako imerekebishwa',
+   'Marekebisho ya {delta} yamefanywa kwenye akiba yako.'),
+
+  -- Meetings and social fund (030)
+  ('attendance_fine',       'sw', 'Faini ya mahudhurio',
+   'Faini imetolewa kwenye akiba yako kwa mkutano wa kikundi.'),
+  ('social_grant_approved', 'sw', 'Msaada wa mfuko wa jamii umeidhinishwa',
+   'Umepewa msaada kutoka kwenye mfuko wa jamii.'),
+
+  -- Group rules (020) — every active member gets this one.
+  ('setting_changed', 'sw', 'Sheria ya kikundi imebadilika', NULL),
+
+  -- Admin queue (009, 013, 015, 022, 024, 025, 030). Admins are members of the
+  -- same group and read the same language.
+  ('new_submission',           'sw', 'Malipo mapya ya kukagua',
+   '{member} amewasilisha malipo yanayosubiri kukaguliwa.'),
+  ('new_loan',                 'sw', 'Ombi jipya la mkopo',
+   '{member} ameomba mkopo.'),
+  ('savings_edit_requested',   'sw', 'Marekebisho ya akiba yameombwa', NULL),
+  ('pool_edit_requested',      'sw', 'Marekebisho ya mfuko yameombwa', NULL),
+  ('setting_change_requested', 'sw', 'Mabadiliko ya sheria yamependekezwa', NULL),
+  ('loan_action_requested',    'sw', 'Hatua ya mkopo imependekezwa', NULL),
+  ('cycle_close_requested',    'sw', 'Kufunga mzunguko kumependekezwa', NULL),
+  ('withdrawal_requested',     'sw', 'Ombi la kutoa fedha', NULL),
+  ('member_exit_requested',    'sw', 'Kuondoka kwa mwanachama kumependekezwa', NULL),
+  ('deletion_requested',       'sw', 'Kufuta mwanachama kumeombwa', NULL),
+  ('social_grant_requested',   'sw', 'Msaada wa mfuko wa jamii umependekezwa', NULL)
+ON CONFLICT (kind, lang) DO UPDATE
+  SET title = EXCLUDED.title, body = EXCLUDED.body;
+
+-- `role_changed` is deliberately absent: its title depends on promote-vs-revoke,
+-- which `kind` alone cannot distinguish. It falls back to English rather than
+-- telling a member the wrong thing about their own role.
+
+-- --------------------------------------------------------------------------
+-- 3. Rendering.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION render_template(p_text text, p_data jsonb)
+RETURNS text AS $$
+DECLARE
+  v_out text := p_text;
+  v_key text;
+  v_val text;
+BEGIN
+  IF v_out IS NULL OR p_data IS NULL THEN RETURN v_out; END IF;
+
+  FOR v_key IN SELECT jsonb_object_keys(p_data) LOOP
+    v_val := p_data ->> v_key;
+    -- Money keys are formatted the way the app formats money; everything else is
+    -- substituted verbatim.
+    IF v_key IN ('amount', 'principal', 'delta', 'fine', 'settlement')
+       AND v_val ~ '^-?[0-9]+(\.[0-9]+)?$' THEN
+      v_val := fmt_tzs(v_val::numeric);
+    END IF;
+    v_out := replace(v_out, '{' || v_key || '}', COALESCE(v_val, ''));
+  END LOOP;
+
+  -- {member} is a name, and the payloads carry an id rather than the name.
+  IF v_out LIKE '%{member}%' THEN
+    v_val := COALESCE(p_data ->> 'member_id', p_data ->> 'target_id');
+    IF v_val ~* '^[0-9a-f-]{36}$' THEN
+      SELECT full_name INTO v_val FROM profiles WHERE id = v_val::uuid;
+    ELSE
+      v_val := NULL;
+    END IF;
+    v_out := replace(v_out, '{member}', COALESCE(v_val, 'Mwanachama'));
+  END IF;
+
+  RETURN v_out;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
+
+-- BEFORE INSERT, so 026's AFTER INSERT fan-out copies the translated text into
+-- the outbox and the SMS goes out in the member's language with no further work.
+CREATE OR REPLACE FUNCTION translate_notification()
+RETURNS trigger AS $$
+DECLARE
+  v_lang text;
+  v_tpl  notification_templates%ROWTYPE;
+BEGIN
+  v_lang := member_lang(NEW.recipient_id);
+  IF v_lang IS NULL OR v_lang = 'en' THEN RETURN NEW; END IF;
+
+  SELECT * INTO v_tpl
+    FROM notification_templates
+   WHERE kind = NEW.kind AND lang = v_lang;
+
+  -- No phrase for this kind: leave it exactly as composed.
+  IF v_tpl.kind IS NULL THEN RETURN NEW; END IF;
+
+  NEW.title := render_template(v_tpl.title, NEW.data);
+  -- A NULL template body means the original body is free text worth keeping.
+  IF v_tpl.body IS NOT NULL THEN
+    NEW.body := render_template(v_tpl.body, NEW.data);
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_notification_translate ON notifications;
+CREATE TRIGGER on_notification_translate
+  BEFORE INSERT ON notifications
+  FOR EACH ROW EXECUTE FUNCTION translate_notification();
+
+-- --------------------------------------------------------------------------
+-- 4. The daily reminders.
+--
+--    These never write a `notifications` row — they call enqueue_delivery
+--    directly — so the trigger above cannot reach them. They are also the only
+--    messages that go out every single day, so they are translated per member
+--    rather than in bulk.
+--
+--    Same structure as 026: due within 3 days or already overdue, deduped per
+--    obligation per ISO week so an overdue member is nudged weekly, not daily.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION send_due_reminders()
+RETURNS int AS $$
+DECLARE
+  r      record;
+  v_week text := to_char(today_eat(), 'IYYY-IW');
+  v_n    int := 0;
+  v_lang text;
+  v_title text;
+  v_body  text;
+BEGIN
+  -- Monthly fees: due soon, or already overdue.
+  FOR r IN
+    SELECT f.member_id, f.id, f.due_date, f.total_with_penalty, f.computed_status
+      FROM v_fee_status_money f
+     WHERE f.computed_status <> 'paid'
+       AND f.remaining > 0
+       AND f.due_date <= today_eat() + 3
+  LOOP
+    v_lang := member_lang(r.member_id);
+
+    IF v_lang = 'en' THEN
+      v_title := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Monthly fee overdue' ELSE 'Monthly fee due soon' END;
+      v_body  := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Your monthly fee of ' || fmt_tzs(r.total_with_penalty) ||
+                           ' is overdue. Pay in the app to stop the penalty growing.'
+                      ELSE 'Your monthly fee of ' || fmt_tzs(r.total_with_penalty) ||
+                           ' is due on ' || fmt_day(r.due_date) || '.' END;
+    ELSE
+      v_title := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Ada ya mwezi imechelewa'
+                      ELSE 'Ada ya mwezi inakaribia kuisha muda' END;
+      v_body  := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Ada yako ya mwezi ya ' || fmt_tzs(r.total_with_penalty) ||
+                           ' imechelewa. Lipa kwenye programu ili faini isiongezeke.'
+                      ELSE 'Ada yako ya mwezi ya ' || fmt_tzs(r.total_with_penalty) ||
+                           ' inatakiwa kulipwa tarehe ' || fmt_day(r.due_date) || '.' END;
+    END IF;
+
+    PERFORM enqueue_delivery(r.member_id, v_title, v_body, NULL,
+                             'fee:' || r.id || ':' || v_week);
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Loan installments: same rule.
+  FOR r IN
+    SELECT l.member_id, i.id, i.due_date, i.total_with_penalty, i.computed_status
+      FROM v_installment_status_money i
+      JOIN loans l ON l.id = i.loan_id
+     WHERE i.computed_status NOT IN ('paid', 'cancelled')
+       AND i.remaining > 0
+       AND l.status = 'active'
+       AND i.due_date <= today_eat() + 3
+  LOOP
+    v_lang := member_lang(r.member_id);
+
+    IF v_lang = 'en' THEN
+      v_title := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Loan repayment overdue' ELSE 'Loan repayment due soon' END;
+      v_body  := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Your loan repayment of ' || fmt_tzs(r.total_with_penalty) ||
+                           ' is overdue. Pay in the app to stop the penalty growing.'
+                      ELSE 'Your loan repayment of ' || fmt_tzs(r.total_with_penalty) ||
+                           ' is due on ' || fmt_day(r.due_date) || '.' END;
+    ELSE
+      v_title := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Marejesho ya mkopo yamechelewa'
+                      ELSE 'Marejesho ya mkopo yanakaribia' END;
+      v_body  := CASE WHEN r.computed_status = 'overdue'
+                      THEN 'Marejesho yako ya mkopo ya ' || fmt_tzs(r.total_with_penalty) ||
+                           ' yamechelewa. Lipa kwenye programu ili faini isiongezeke.'
+                      ELSE 'Marejesho yako ya mkopo ya ' || fmt_tzs(r.total_with_penalty) ||
+                           ' yanatakiwa kulipwa tarehe ' || fmt_day(r.due_date) || '.' END;
+    END IF;
+
+    PERFORM enqueue_delivery(r.member_id, v_title, v_body, NULL,
+                             'inst:' || r.id || ':' || v_week);
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Share-outs waiting to be collected.
+  FOR r IN
+    SELECT d.member_id, d.id, d.total_payout_tzs
+      FROM distributions d
+     WHERE d.status = 'pending'
+  LOOP
+    v_lang := member_lang(r.member_id);
+
+    IF v_lang = 'en' THEN
+      v_title := 'Your share-out is waiting';
+      v_body  := fmt_tzs(r.total_payout_tzs) || ' is ready for you from the last cycle.';
+    ELSE
+      v_title := 'Mgao wako unakusubiri';
+      v_body  := fmt_tzs(r.total_payout_tzs) || ' iko tayari kwako kutoka mzunguko uliopita.';
+    END IF;
+
+    PERFORM enqueue_delivery(r.member_id, v_title, v_body, NULL,
+                             'dist:' || r.id || ':' || v_week);
+    v_n := v_n + 1;
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (NULL, 'send_due_reminders', 'system', NULL,
+          jsonb_build_object('reminders', v_n, 'week', v_week));
+
+  RETURN v_n;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 034_admin_mandate_lockdown.sql
+-- ---------------------------------------------------------------------------
+
+-- 034_admin_mandate_lockdown.sql — admins hold the mandate; members only read.
+--
+-- Two halves, and the second is the one that matters.
+--
+-- HALF ONE: members file nothing. The two INSERT policies that let a member write
+-- (`loans`, `payment_submissions`) are dropped. From here every transaction is
+-- keyed by an admin — see 036.
+--
+-- HALF TWO: make the admin gate actually hold. The gate was not merely permissive,
+-- it was open. This schema contains exactly TWO `REVOKE` statements, so every other
+-- function keeps Postgres' default EXECUTE TO PUBLIC — and ten SECURITY DEFINER
+-- functions have no authorization check in their body at all. `execute_role_change`
+-- checks only `status = 'pending'` before running `UPDATE profiles SET role`. Three
+-- of the ten have their request ids handed to members by `USING (auth.uid() IS NOT
+-- NULL)` SELECT policies, which closes the loop into a self-serve exploit: read a
+-- pending id, apply it. A member could promote themselves to admin. A borrower
+-- could write off their own loan. None of that needed a bug — just the documented
+-- default privilege nobody revoked.
+--
+-- The `execute_*` family was always meant to be internal; every one of them carries
+-- a comment saying "never call directly from the client" (setup.sql:1188, 2469,
+-- 2250, 1923). Comments are not privileges. This migration writes the REVOKEs those
+-- comments assumed.
+--
+-- Requires 033.
+
+-- --------------------------------------------------------------------------
+-- 1. The gate itself.
+--
+--    is_admin() was the only SECURITY DEFINER function in the schema without a
+--    pinned search_path, and the only admin-counting query that did not check
+--    is_active — required_approvals() and execute_role_change both do. So a
+--    deactivated admin, or one mid-removal, still passed every RLS policy and
+--    every RPC guard in the app.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+     WHERE id = auth.uid() AND role = 'admin' AND is_active = true
+  );
+$$;
+
+-- Companion for the member-read policies below. "Signed in" is not the same as
+-- "a member of this group": a pending or removed profile still holds a valid JWT.
+CREATE OR REPLACE FUNCTION is_active_member()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND is_active = true
+  );
+$$;
+
+-- --------------------------------------------------------------------------
+-- 2. Revoke the ten unguarded SECURITY DEFINER functions.
+--
+--    No function body changes. Each is reached only via PERFORM from inside its
+--    matching approve_* (which is SECURITY DEFINER and runs as owner) or, for
+--    send_due_reminders, from pg_cron as superuser. Both callers are unaffected by
+--    a revoke — only the direct client path dies, which is the whole point.
+--
+--    REVOKING FROM `PUBLIC` ALONE IS NOT ENOUGH ON SUPABASE, and this is the trap
+--    the existing code fell into. Supabase ships
+--        ALTER DEFAULT PRIVILEGES IN SCHEMA public
+--          GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+--    so every function these migrations create is granted to `authenticated`
+--    EXPLICITLY, on top of the implicit PUBLIC grant. Dropping PUBLIC leaves the
+--    explicit grant standing and the function still reachable through PostgREST.
+--    032's `REVOKE ALL ON FUNCTION schedule_notification_drain FROM public` and its
+--    comment ("`authenticated` is never granted EXECUTE") are wrong for exactly
+--    this reason; it is corrected below.
+--
+--    Naming all three is the only form that actually closes the door. The SQL test
+--    harness reproduces Supabase's grants faithfully (fixtures.sql), which is what
+--    caught this.
+-- --------------------------------------------------------------------------
+
+REVOKE ALL ON FUNCTION execute_member_deletion(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_savings_edit(uuid)    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_pool_edit(uuid)       FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_role_change(uuid)     FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_setting_change(uuid)  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_loan_action(uuid)     FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_cycle_close(uuid)     FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION execute_social_grant(uuid)    FROM PUBLIC, anon, authenticated;
+
+-- Not an execute_* but the same shape of hole: arbitrary title/body to any
+-- recipient on the sms channel — metered spend, and a phishing channel that
+-- arrives looking like a trusted group message.
+REVOKE ALL ON FUNCTION enqueue_delivery(uuid, text, text, uuid, text)
+  FROM PUBLIC, anon, authenticated;
+
+-- Fans a full reminder sweep out to the whole group on demand. pg_cron still
+-- calls it; a member no longer can.
+REVOKE ALL ON FUNCTION send_due_reminders() FROM PUBLIC, anon, authenticated;
+
+-- 032 intended this one to be unreachable and said so in a comment. Make it true.
+REVOKE ALL ON FUNCTION schedule_notification_drain(text, text, text)
+  FROM PUBLIC, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Close the 2-of-N bypass on roles.
+--
+--    `CREATE POLICY "Admin can update any profile" ON profiles FOR UPDATE
+--     USING (is_admin())` has no WITH CHECK, so Postgres reuses USING as the
+--    check — which is caller-scoped, not row-scoped. Any single admin could
+--    `update profiles set role='admin'` straight from the browser client and skip
+--    request_role_change -> approve_role_change entirely. The whole 2-of-N
+--    apparatus for role changes was bypassable by exactly the population it exists
+--    to constrain.
+--
+--    A WITH CHECK cannot fix this: RLS check expressions cannot see OLD, so the
+--    policy has no way to say "role must not change". The privilege system can.
+--    No client code writes profiles directly — every `.from('profiles')` in src/ is
+--    a .select(), and all seven SQL writers are SECURITY DEFINER functions running
+--    as owner (update_own_profile, update_own_phone, update_notification_prefs,
+--    execute_role_change, approve_member, request_member_exit, the 026 backfill).
+--    So revoking UPDATE from `authenticated` outright costs nothing and closes it.
+-- --------------------------------------------------------------------------
+
+REVOKE UPDATE ON profiles FROM authenticated;
+
+-- The policy is deliberately left in place. It is now unreachable — the missing
+-- GRANT is the real gate, not the policy — but if a future feature grants column
+-- level UPDATE back (say admins editing member KYC in the UI), RLS must already be
+-- correct underneath it. Do NOT grant role or is_active: those belong to the voted
+-- RPCs alone.
+COMMENT ON TABLE profiles IS
+  'UPDATE is revoked from `authenticated` (034). All writes go through SECURITY DEFINER RPCs. Never grant UPDATE on role or is_active — they are governed by request_role_change / approve_role_change (2-of-N) and approve_member.';
+
+-- --------------------------------------------------------------------------
+-- 4. Members file nothing.
+--
+--    These were the only two INSERT policies a member had on a money table, and
+--    both were loose beyond the member-scoping: the loans policy constrained only
+--    member_id and status, so any principal was insertable (the cap lives in
+--    approve_loan) and the one-open-loan rule was client-side only. The
+--    payment_submissions policy never bound related_id to member_id, so a member
+--    could file a pending submission against ANOTHER member's fee and block their
+--    real payment with "already under review".
+--
+--    Both problems disappear with the policies.
+-- --------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS "Member inserts loan request"   ON loans;
+DROP POLICY IF EXISTS "Member inserts own submission" ON payment_submissions;
+
+-- SELECT policies stay: members still see their own loans and submissions.
+
+-- --------------------------------------------------------------------------
+-- 5. "Signed in" is not "a member".
+--
+--    Thirteen tables were readable by anyone holding a JWT, including a pending
+--    or deactivated profile — group settings, cycles, distributions, every
+--    withdrawal request, meeting minutes, the social fund. Self-registration is
+--    being removed in this same release, but is_active=false also covers exited
+--    and suspended members, so the scoping matters regardless.
+--
+--    Group transparency is deliberate and preserved: an ACTIVE member still reads
+--    all of this, plus the member directory, income statement and balance sheet.
+-- --------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS "Everyone reads group settings" ON group_settings;
+CREATE POLICY "Active members read group settings" ON group_settings
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads setting changes" ON setting_changes;
+CREATE POLICY "Active members read setting changes" ON setting_changes
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads earnings" ON earnings_ledger;
+CREATE POLICY "Active members read earnings" ON earnings_ledger
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads cycles" ON cycles;
+CREATE POLICY "Active members read cycles" ON cycles
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads distributions" ON distributions;
+CREATE POLICY "Active members read distributions" ON distributions
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads cycle closures" ON cycle_closures;
+CREATE POLICY "Active members read cycle closures" ON cycle_closures
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads withdrawals" ON withdrawal_requests;
+CREATE POLICY "Active members read withdrawals" ON withdrawal_requests
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads meetings" ON meetings;
+CREATE POLICY "Active members read meetings" ON meetings
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads attendance" ON meeting_attendance;
+CREATE POLICY "Active members read attendance" ON meeting_attendance
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads social fund" ON social_fund_entries;
+CREATE POLICY "Active members read social fund" ON social_fund_entries
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Everyone reads grant requests" ON social_fund_grant_requests;
+CREATE POLICY "Active members read grant requests" ON social_fund_grant_requests
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+DROP POLICY IF EXISTS "Anyone signed in reads templates" ON notification_templates;
+CREATE POLICY "Active members read templates" ON notification_templates
+  FOR SELECT USING (is_active_member() OR is_admin());
+
+-- loan_guarantors is intentionally not re-scoped here; 035 drops the table.
+
+-- --------------------------------------------------------------------------
+-- 6. The read RPCs and views that leaked past the base-table RLS.
+--
+--    Every read RPC is SECURITY DEFINER, so the caller's RLS never applies; the
+--    in-body check IS the scope. Only member_ledger (029) ever had one. The rest
+--    returned whole-group per-member financials to anybody signed in.
+--
+--    What stays open to members is a deliberate choice, not an oversight:
+--    group_member_directory (savings + loan per member), group_income_statement
+--    and group_balance_sheet. This group runs on transparency; losing the ability
+--    to file a transaction is not the same as losing sight of the books.
+--
+--    What closes is per-member operational detail with no transparency purpose:
+--    another member's withdrawable balance, the per-member cycle basis, the
+--    share-out preview, and the whole-group member report.
+-- --------------------------------------------------------------------------
+
+-- cycle_earnings, preview_cycle_close and group_member_report are deliberately
+-- LEFT OPEN to members. They are read-only, carry no PII, and sit inside the
+-- transparency envelope this group has chosen: if the income statement and balance
+-- sheet are open, a cycle's earnings and the share-out preview that follows from
+-- them are not a secret. They are also called straight from the browser
+-- (src/lib/cycles.js:28,36, src/lib/reports.js:24), so a REVOKE here would break
+-- /admin/cycles and /admin/reports rather than protect anything.
+--
+-- member_withdrawable is the exception — one member's withdrawable balance is
+-- operational detail about them, not group transparency. It gets a self-or-admin
+-- guard in 035, which has to rewrite its body anyway to drop the guarantor term.
+
+-- Per-member views that ran as owner (RLS-bypassing) and were granted to every
+-- authenticated user. 027 set security_invoker on four member-scoped views and
+-- missed these two — same class of bug, same fix.
+ALTER VIEW v_member_capital_events SET (security_invoker = true);
+ALTER VIEW v_loan_risk             SET (security_invoker = true);
+
+-- --------------------------------------------------------------------------
+-- 7. Retire whatever is still in flight.
+--
+--    Members can no longer file, so anything already pending would sit in the
+--    admin queue forever with no way for its author to withdraw or amend it.
+--    Reject it explicitly and tell each member why, rather than leaving rows
+--    stranded in a queue that no longer has an intake.
+--
+--    Admins re-key any of these that were genuine, through the new flows in 036.
+-- --------------------------------------------------------------------------
+
+INSERT INTO notification_templates (kind, lang, title, body) VALUES
+  ('intake_superseded', 'sw', 'Ombi lako limefungwa',
+   'Malipo na maombi sasa yanaandikwa na msimamizi. Wasiliana na msimamizi wako.'),
+  ('intake_superseded', 'en', 'Your request was closed',
+   'Payments and requests are now recorded by an admin. Please speak to your admin.')
+ON CONFLICT (kind, lang) DO UPDATE
+  SET title = EXCLUDED.title, body = EXCLUDED.body;
+
+DO $$
+DECLARE
+  v_reason text := 'Superseded — payments are now recorded by admins.';
+  v_subs   int;
+  v_loans  int;
+  v_wdr    int;
+BEGIN
+  -- Notify first, off the rows we are about to change, so each member gets one
+  -- message per stranded item. 033's BEFORE INSERT trigger renders it in their
+  -- own language from the templates above.
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT member_id, 'intake_superseded', 'Your request was closed', NULL,
+         jsonb_build_object('source', 'payment_submission', 'id', id)
+    FROM payment_submissions WHERE status = 'pending';
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT member_id, 'intake_superseded', 'Your request was closed', NULL,
+         jsonb_build_object('source', 'loan', 'id', id)
+    FROM loans WHERE status = 'pending';
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT member_id, 'intake_superseded', 'Your request was closed', NULL,
+         jsonb_build_object('source', 'withdrawal_request', 'id', id)
+    FROM withdrawal_requests WHERE status = 'pending';
+
+  UPDATE payment_submissions
+     SET status = 'rejected', reviewed_at = now(), rejection_reason = v_reason
+   WHERE status = 'pending';
+  GET DIAGNOSTICS v_subs = ROW_COUNT;
+
+  UPDATE loans
+     SET status = 'rejected', rejection_reason = v_reason
+   WHERE status = 'pending';
+  GET DIAGNOSTICS v_loans = ROW_COUNT;
+
+  UPDATE withdrawal_requests
+     SET status = 'rejected', rejection_reason = v_reason
+   WHERE status = 'pending';
+  GET DIAGNOSTICS v_wdr = ROW_COUNT;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (NULL, 'admin_mandate_lockdown', 'migration', NULL,
+          jsonb_build_object('submissions_rejected', v_subs,
+                             'loans_rejected',       v_loans,
+                             'withdrawals_rejected', v_wdr));
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 035_drop_guarantors.sql
+-- ---------------------------------------------------------------------------
+
+-- 035_drop_guarantors.sql — remove guarantees entirely.
+--
+-- Guarantees were the one member-to-member mechanism in the app: a borrower
+-- nominated, a nominee accepted, and accepting locked part of the NOMINEE's savings
+-- against somebody else's debt. Under the admin mandate there is no member action
+-- left to give that consent with, and an admin assigning a lock over another
+-- member's savings without their tap is a different and worse thing than what 028
+-- built. So the feature goes rather than being quietly converted.
+--
+-- DESTRUCTIVE. `loan_guarantors` is dropped, not archived — pledge history does not
+-- survive this. Take a backup first. Money that guarantees actually moved is NOT in
+-- this table and is untouched: called guarantees wrote `savings_adjustments` +
+-- `loan_recoveries` rows in 022's format, and those stay exactly where they are, so
+-- the pool arithmetic is unaffected.
+--
+-- Locks release automatically. Nothing stores "locked" as a value; it was computed
+-- inside member_withdrawable() by summing accepted pledges. Once the table is gone
+-- the term is gone, and every guarantor's savings are free — which is why the
+-- notification below goes out BEFORE the drop, while there is still something to
+-- read.
+--
+-- Requires 034.
+
+-- --------------------------------------------------------------------------
+-- 1. Tell anyone whose savings are about to come unlocked.
+-- --------------------------------------------------------------------------
+
+INSERT INTO notification_templates (kind, lang, title, body) VALUES
+  ('guarantee_ended', 'sw', 'Dhamana yako imefungwa',
+   'Akiba yako iliyokuwa imezuiliwa kwa dhamana sasa ipo huru.'),
+  ('guarantee_ended', 'en', 'Your guarantee has ended',
+   'The savings that were locked against a guarantee are now free.')
+ON CONFLICT (kind, lang) DO UPDATE
+  SET title = EXCLUDED.title, body = EXCLUDED.body;
+
+DO $$
+DECLARE
+  v_freed int;
+BEGIN
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT DISTINCT g.guarantor_id, 'guarantee_ended', 'Your guarantee has ended', NULL,
+         jsonb_build_object('loan_id', g.loan_id)
+    FROM loan_guarantors g
+    JOIN loans l ON l.id = g.loan_id
+   WHERE g.status IN ('pending', 'accepted')
+     AND l.status IN ('pending', 'active');
+  GET DIAGNOSTICS v_freed = ROW_COUNT;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (NULL, 'drop_guarantors', 'migration', NULL,
+          jsonb_build_object(
+            'guarantors_notified', v_freed,
+            'pledges_dropped', (SELECT count(*) FROM loan_guarantors)));
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 2. member_withdrawable — without the pledge term, and scoped.
+--
+--    Two changes in one rewrite because a plpgsql function has to be replaced
+--    whole either way.
+--
+--    (a) The pledge subtraction goes with the table.
+--    (b) It gains the self-or-admin guard that 034 flagged. Every read RPC in this
+--        schema is SECURITY DEFINER, so the caller's RLS never applies and the
+--        in-body check IS the scope; member_ledger (029) was the only one that had
+--        one. A member's withdrawable balance and how much of it is locked behind
+--        their own loan is operational detail about them, not the group
+--        transparency the directory and the income statement provide.
+--
+--    All three surviving callers are safe under the guard: request_withdrawal
+--    passes auth.uid(), and approve_withdrawal and request_member_exit are both
+--    admin-guarded already.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_withdrawable(p_member_id uuid)
+RETURNS TABLE (
+  savings_tzs      numeric,
+  outstanding_tzs  numeric,
+  locked_tzs       numeric,
+  pool_tzs         numeric,
+  withdrawable_tzs numeric
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF p_member_id <> auth.uid() AND NOT is_admin() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  RETURN QUERY
+  WITH s AS (
+    SELECT
+        COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                   WHERE member_id = p_member_id
+                     AND submission_type = 'savings_deposit'
+                     AND status = 'approved'), 0)
+      + COALESCE((SELECT SUM(amount_paid) FROM monthly_fees
+                   WHERE member_id = p_member_id), 0)
+      + COALESCE((SELECT SUM(delta) FROM savings_adjustments
+                   WHERE target_member_id = p_member_id AND status = 'approved'), 0)
+      - COALESCE((SELECT SUM(amount) FROM withdrawal_requests
+                   WHERE member_id = p_member_id AND status IN ('pending', 'approved')), 0)
+        AS savings,
+      COALESCE((SELECT SUM(COALESCE(outstanding_principal, principal))
+                  FROM loans WHERE member_id = p_member_id AND status = 'active'), 0)
+        AS outstanding,
+      (SELECT pool_balance_tzs FROM v_group_pool) AS pool
+  ),
+  l AS (
+    SELECT s.*,
+      CASE WHEN s.outstanding > 0
+           THEN ceil(s.outstanding / greatest(setting('contribution_multiplier'), 1))
+           ELSE 0 END AS locked
+    FROM s
+  )
+  SELECT
+    l.savings,
+    l.outstanding,
+    l.locked,
+    l.pool,
+    greatest(least(l.savings - l.locked, l.pool), 0)
+  FROM l;
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 3. approve_loan — without guarantees, and without the self-approval block.
+--
+--    Same reasoning as above: one function, one rewrite. Three changes, all
+--    belonging to this release.
+--
+--    (a) The unanswered-nomination check goes with the feature.
+--    (b) The `guarantors` count in the audit payload goes with the table.
+--    (c) `IF v_loan.member_id = auth.uid() THEN RAISE 'Cannot approve your own
+--        loan'` is REMOVED. It was correct while members filed their own requests:
+--        an admin who submitted a loan could not also wave it through. Now that
+--        loans are filed BY admins (036), that same line means an admin can never
+--        borrow at all — the group's own rule is that an admin is a contributing
+--        member like anyone else (Decision #1). 2-of-N still applies, and
+--        loan_approvals has a UNIQUE (loan_id, admin_id), so the borrower-admin
+--        still cannot supply both signatures. A second admin must sign.
+--
+--    Everything else is the 028 body verbatim, including the rule that not all
+--    admins may hold loans at once.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_loan              loans%ROWTYPE;
+  v_int               numeric(12,2);
+  v_pool              numeric(14,2);
+  v_contribution      numeric(14,2);
+  v_required          int;
+  v_approvals         int;
+  v_final_proof       text;
+  v_other_admin_loans int;
+  v_total_admins      int;
+  v_fraction          numeric := setting('pool_loan_fraction');
+  v_multiplier        numeric := setting('contribution_multiplier');
+  v_rate              numeric := setting('loan_interest_rate');
+  v_months            int     := setting('default_loan_months')::int;
+  v_n                 int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';      END IF;
+  IF v_loan.status <> 'pending' THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_loan.principal > floor(v_fraction * COALESCE(v_pool, 0)) THEN
+    RAISE EXCEPTION 'Loan exceeds % of the group pool (max %).',
+      round(v_fraction * 100) || '%', floor(v_fraction * COALESCE(v_pool, 0));
+  END IF;
+
+  SELECT
+      COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                WHERE member_id = v_loan.member_id
+                  AND submission_type = 'savings_deposit'
+                  AND status = 'approved'), 0)
+    + COALESCE((SELECT SUM(amount) FROM monthly_fees
+                WHERE member_id = v_loan.member_id AND status = 'paid'), 0)
+  INTO v_contribution;
+  IF v_loan.principal > floor(v_multiplier * v_contribution) THEN
+    RAISE EXCEPTION 'Loan exceeds %x member contribution (max %).',
+      v_multiplier, floor(v_multiplier * v_contribution);
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_approvals (loan_id, admin_id, proof_url)
+    VALUES (p_loan_id, auth.uid(), p_proof_url);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this loan';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM loan_approvals WHERE loan_id = p_loan_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan', 'loan', p_loan_id,
+            jsonb_build_object(
+              'member_id', v_loan.member_id,
+              'principal', v_loan.principal,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  IF (SELECT role FROM profiles WHERE id = v_loan.member_id) = 'admin' THEN
+    SELECT count(*) INTO v_total_admins
+      FROM profiles WHERE role = 'admin' AND is_active = true;
+    SELECT count(*) INTO v_other_admin_loans
+      FROM loans
+      WHERE status = 'active'
+        AND member_id IN (SELECT id FROM profiles WHERE role = 'admin' AND is_active = true)
+        AND member_id <> v_loan.member_id;
+    IF v_other_admin_loans >= v_total_admins - 1 THEN
+      RAISE EXCEPTION 'Not all admins may hold loans simultaneously; one admin must remain loan-free.';
+    END IF;
+  END IF;
+
+  SELECT proof_url INTO v_final_proof
+  FROM loan_approvals WHERE loan_id = p_loan_id
+  ORDER BY approved_at ASC LIMIT 1;
+
+  v_int := round(v_loan.principal * v_rate);
+
+  UPDATE loans
+    SET status = 'active',
+        approved_at = now(),
+        approved_by = auth.uid(),
+        disbursed_at = now(),
+        disbursement_proof_url = v_final_proof,
+        outstanding_principal = v_loan.principal,
+        interest_rate = v_rate
+    WHERE id = p_loan_id;
+
+  FOR v_n IN 1..v_months LOOP
+    INSERT INTO loan_installments
+      (loan_id, installment_number, due_date, principal_due, interest_due, penalty_rate)
+    VALUES (
+      p_loan_id,
+      v_n,
+      (today_eat() + (v_n || ' month')::interval)::date,
+      CASE WHEN v_n = v_months THEN v_loan.principal ELSE 0 END,
+      v_int,
+      setting('penalty_rate')
+    );
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_loan', 'loan', p_loan_id,
+          jsonb_build_object(
+            'member_id',     v_loan.member_id,
+            'principal',     v_loan.principal,
+            'approvals',     v_approvals,
+            'interest_rate', v_rate,
+            'months',        v_months
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. Drop the feature.
+-- --------------------------------------------------------------------------
+
+DROP TRIGGER IF EXISTS on_loan_close_release_guarantees ON loans;
+DROP FUNCTION IF EXISTS release_guarantees_on_loan_close();
+
+DROP FUNCTION IF EXISTS nominate_guarantor(uuid, uuid, numeric);
+DROP FUNCTION IF EXISTS respond_to_guarantee(uuid, boolean);
+DROP FUNCTION IF EXISTS cancel_guarantee(uuid);
+DROP FUNCTION IF EXISTS call_guarantees(uuid, text);
+
+DROP TABLE IF EXISTS loan_guarantors;
+
+-- ---------------------------------------------------------------------------
+-- 036_admin_recording.sql
+-- ---------------------------------------------------------------------------
+
+-- 036_admin_recording.sql — admins key every transaction.
+--
+-- 034 removed the member's ability to file. This puts the intake back on the admin
+-- side, without reimplementing a single line of the money logic.
+--
+-- THE ONE IDEA HERE: `approve_submission` was two things welded together — a 2-of-N
+-- signature tally, and the settlement waterfall (penalty -> interest -> principal,
+-- fee part-payment, early-principal retirement, loan closing, re-pricing the
+-- remaining installments, the earnings ledger). Only the first half is about who
+-- may act. This migration splits the second half out as `settle_submission()` and
+-- has all three intake paths call it, so there is exactly one implementation of the
+-- waterfall in the schema and the new paths cannot drift from the tested one.
+--
+-- WHO SIGNS WHAT (the group's decisions, not defaults):
+--   monthly fee, another member      -> ONE admin. It is a fixed, predictable
+--                                      amount; batching 15 of them behind a second
+--                                      signature every month is friction with no
+--                                      information in it.
+--   savings deposit, loan repayment  -> TWO admins. The amount varies, so a second
+--                                      pair of eyes is worth the delay.
+--   an admin's OWN money, any type   -> TWO admins, always. The recorder cannot be
+--                                      the only signature on their own account.
+--
+-- Requires 035.
+
+-- --------------------------------------------------------------------------
+-- 1. Schema: an admin-keyed row is not a member-uploaded proof.
+--
+--    proof_url was NOT NULL because the row's whole purpose was to carry a
+--    screenshot a member had uploaded. An admin recording from the M-Pesa SMS on
+--    their own phone often has nothing to attach, and inventing a placeholder
+--    string to satisfy a constraint would put junk in the audit trail.
+--
+--    recorded_by keeps the two eras distinguishable forever: NULL means a member
+--    filed it themselves, before this release.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE payment_submissions ALTER COLUMN proof_url DROP NOT NULL;
+ALTER TABLE payment_submissions
+  ADD COLUMN IF NOT EXISTS recorded_by uuid REFERENCES profiles(id);
+
+COMMENT ON COLUMN payment_submissions.recorded_by IS
+  'The admin who keyed this entry (036). NULL for rows a member filed themselves, which is every row created before the admin mandate.';
+
+-- --------------------------------------------------------------------------
+-- 2. settle_submission — the waterfall, lifted verbatim out of approve_submission.
+--
+--    Body is byte-for-byte the settlement half of the 021 version: same ordering,
+--    same ceilings, same earnings_ledger entries, same loan-closing and re-pricing
+--    rules. What is NOT here is the authorization check, the signature tally and
+--    the audit row — those belong to the caller, which is the point of the split.
+--
+--    Private. It moves money with no permission check of its own, so it must never
+--    be reachable from PostgREST. This is exactly the shape of the eight functions
+--    034 had to revoke; the REVOKE ships in the same breath as the definition this
+--    time, and names anon/authenticated as well as PUBLIC because Supabase's
+--    default privileges grant to those roles explicitly.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION settle_submission(p_submission_id uuid, p_amount numeric)
+RETURNS void AS $$
+DECLARE
+  s                 payment_submissions%ROWTYPE;
+  v_left            numeric(12,2);
+  v_penalty         numeric(12,2);
+  v_pay             numeric(12,2);
+  v_fee             monthly_fees%ROWTYPE;
+  v_fee_remaining   numeric(12,2);
+  v_inst            loan_installments%ROWTYPE;
+  v_loan_id         uuid;
+  v_int_remaining   numeric(12,2);
+  v_prin_remaining  numeric(12,2);
+  v_interest_pay    numeric(12,2);
+  v_principal_pay   numeric(12,2);
+  v_extra_principal numeric(12,2);
+  v_outstanding     numeric(12,2);
+  v_rate            numeric;
+  v_new_int         numeric(12,2);
+  v_last            int;
+  v_interest_open   int;
+BEGIN
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL THEN RAISE EXCEPTION 'Submission not found'; END IF;
+
+  UPDATE payment_submissions
+    SET status = 'approved', reviewed_at = now(), reviewed_by = auth.uid()
+    WHERE id = p_submission_id;
+
+  v_left := p_amount;
+
+  -- ---------------------------------------------------------------- monthly fee
+  IF s.submission_type = 'monthly_fee' THEN
+    SELECT * INTO v_fee FROM monthly_fees WHERE id = s.related_id FOR UPDATE;
+    IF v_fee.id IS NULL THEN RAISE EXCEPTION 'Monthly fee not found'; END IF;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_fee_status_money WHERE id = v_fee.id;
+    v_fee_remaining := greatest(v_fee.amount - v_fee.amount_paid, 0);
+
+    IF v_left > v_penalty + v_fee_remaining THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds the % still owed on this fee (% base + % penalty). Record the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_fee_remaining, v_fee_remaining, v_penalty;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);          -- penalty first
+    v_left := v_left - v_pay;
+    UPDATE monthly_fees
+       SET penalty_collected = penalty_collected + v_pay,
+           amount_paid       = amount_paid + least(v_left, v_fee_remaining),
+           reviewed_by       = auth.uid()
+     WHERE id = v_fee.id;
+
+    UPDATE monthly_fees
+       SET status  = CASE WHEN amount_paid >= amount THEN 'paid' ELSE 'partial' END,
+           paid_at = CASE WHEN amount_paid >= amount THEN now() ELSE paid_at END
+     WHERE id = v_fee.id;
+
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'monthly_fee', v_fee.id);
+    END IF;
+
+  -- ----------------------------------------------------------- loan installment
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT * INTO v_inst FROM loan_installments WHERE id = s.related_id FOR UPDATE;
+    IF v_inst.id IS NULL THEN RAISE EXCEPTION 'Installment not found'; END IF;
+    v_loan_id := v_inst.loan_id;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_installment_status_money WHERE id = v_inst.id;
+
+    v_int_remaining  := greatest(v_inst.interest_due  - v_inst.interest_paid,  0);
+    v_prin_remaining := greatest(v_inst.principal_due - v_inst.principal_paid, 0);
+
+    SELECT outstanding_principal, interest_rate INTO v_outstanding, v_rate
+      FROM loans WHERE id = v_loan_id FOR UPDATE;
+
+    IF v_left > v_penalty + v_int_remaining + v_outstanding THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds everything outstanding on this loan (%). Record the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_int_remaining + v_outstanding;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);               -- 1. penalty
+    v_left := v_left - v_pay;
+
+    v_interest_pay := least(v_left, v_int_remaining); -- 2. interest
+    v_left := v_left - v_interest_pay;
+
+    v_principal_pay := least(v_left, v_prin_remaining); -- 3. contracted principal
+    v_left := v_left - v_principal_pay;
+
+    -- 4. anything still left retires principal early
+    v_extra_principal := least(v_left, greatest(v_outstanding - v_principal_pay, 0));
+
+    UPDATE loan_installments
+       SET penalty_collected = penalty_collected + v_pay,
+           interest_paid     = interest_paid + v_interest_pay,
+           principal_paid    = principal_paid + v_principal_pay + v_extra_principal,
+           reviewed_by       = auth.uid()
+     WHERE id = v_inst.id;
+
+    UPDATE loan_installments
+       SET status  = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN 'paid' ELSE 'partial'
+                     END,
+           paid_at = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN now() ELSE paid_at
+                     END
+     WHERE id = v_inst.id;
+
+    v_outstanding := v_outstanding - v_principal_pay - v_extra_principal;
+    UPDATE loans SET outstanding_principal = v_outstanding WHERE id = v_loan_id;
+
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+    IF v_interest_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'interest', v_interest_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+
+    SELECT count(*) INTO v_interest_open
+      FROM loan_installments
+     WHERE loan_id = v_loan_id
+       AND status <> 'cancelled'
+       AND interest_paid < interest_due;
+
+    IF v_outstanding <= 0 AND v_interest_open = 0 THEN
+      UPDATE loans SET status = 'closed' WHERE id = v_loan_id;
+      UPDATE loan_installments
+         SET status = 'cancelled'
+       WHERE loan_id = v_loan_id AND status = 'pending';
+    ELSE
+      v_new_int := round(v_outstanding * COALESCE(v_rate, 0.05));
+      SELECT max(installment_number) INTO v_last
+        FROM loan_installments WHERE loan_id = v_loan_id AND status <> 'cancelled';
+
+      UPDATE loan_installments
+         SET interest_due  = v_new_int,
+             principal_due = CASE WHEN installment_number = v_last THEN v_outstanding ELSE 0 END
+       WHERE loan_id = v_loan_id
+         AND status = 'pending';
+    END IF;
+
+  -- --------------------------------------------------------------------- savings
+  ELSE
+    UPDATE payment_submissions SET amount_claimed = p_amount
+      WHERE id = p_submission_id;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION settle_submission(uuid, numeric) FROM PUBLIC, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. approve_submission — now just the tally, delegating the money.
+--
+--    Identical behaviour to the 021 version. The self-approval block stays: it is
+--    what stops the admin who recorded their own payment from also being its
+--    second signature.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_submission(p_submission_id uuid, p_amount_received numeric)
+RETURNS void AS $$
+DECLARE
+  s              payment_submissions%ROWTYPE;
+  v_required     int;
+  v_approvals    int;
+  v_final_amount numeric(12,2);
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount_received IS NULL OR p_amount_received <= 0 THEN
+    RAISE EXCEPTION 'Invalid amount received';
+  END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL             THEN RAISE EXCEPTION 'Submission not found'; END IF;
+  IF s.status <> 'pending'    THEN RAISE EXCEPTION 'Already reviewed';    END IF;
+  IF s.member_id = auth.uid() THEN RAISE EXCEPTION 'Cannot approve your own submission'; END IF;
+
+  BEGIN
+    INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+    VALUES (p_submission_id, auth.uid(), p_amount_received);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this submission';
+  END;
+
+  v_required := submission_threshold(p_submission_id);
+  SELECT count(*) INTO v_approvals FROM submission_approvals WHERE submission_id = p_submission_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_submission', 'submission', p_submission_id,
+            jsonb_build_object(
+              'submission_type', s.submission_type,
+              'member_id',       s.member_id,
+              'amount_received', p_amount_received,
+              'approvals',       v_approvals,
+              'required',        v_required
+            ));
+    RETURN;
+  END IF;
+
+  -- The first signature's figure is the one that settles (Decision #11).
+  SELECT amount_received INTO v_final_amount
+  FROM submission_approvals
+  WHERE submission_id = p_submission_id
+  ORDER BY approved_at ASC
+  LIMIT 1;
+
+  PERFORM settle_submission(p_submission_id, v_final_amount);
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_submission', 'submission', p_submission_id,
+          jsonb_build_object(
+            'submission_type', s.submission_type,
+            'member_id',       s.member_id,
+            'amount_received', v_final_amount,
+            'approvals',       v_approvals
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. How many signatures does THIS submission need?
+--
+--    required_approvals() answers for the group (least(2, active admins)). This
+--    answers for one row, because the group decided the threshold varies by what
+--    is being recorded — and because an admin's own money is never a one-signature
+--    matter regardless of how few admins there are.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION submission_threshold(p_submission_id uuid)
+RETURNS int AS $$
+DECLARE
+  s payment_submissions%ROWTYPE;
+BEGIN
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id;
+  IF s.id IS NULL THEN RETURN required_approvals(); END IF;
+
+  -- An admin's own money: two signatures, always. greatest(...,2) rather than
+  -- required_approvals() so a one-admin group cannot degrade this to a single
+  -- signature the way every other flow does.
+  IF s.recorded_by IS NOT NULL AND s.recorded_by = s.member_id THEN
+    RETURN greatest(required_approvals(), 2);
+  END IF;
+
+  -- A monthly fee recorded by an admin for someone else: one signature. Fixed
+  -- amount, fixed due date, nothing to second-guess.
+  IF s.recorded_by IS NOT NULL AND s.submission_type = 'monthly_fee' THEN
+    RETURN 1;
+  END IF;
+
+  RETURN required_approvals();
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. record_payment — one entry, any type.
+--
+--    Creates the row AND casts the recording admin's signature in one call, then
+--    settles if that already meets the row's threshold. A second admin, when one is
+--    needed, completes it through the ordinary approve_submission queue.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION record_payment(
+  p_member_id  uuid,
+  p_type       text,
+  p_related_id uuid,
+  p_amount     numeric,
+  p_proof_url  text DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id        uuid;
+  v_self      boolean;
+  v_admins    int;
+  v_required  int;
+  v_approvals int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Enter an amount greater than zero';
+  END IF;
+  IF p_type NOT IN ('savings_deposit', 'monthly_fee', 'loan_installment') THEN
+    RAISE EXCEPTION 'Unknown payment type: %', p_type;
+  END IF;
+  IF p_type IN ('monthly_fee', 'loan_installment') AND p_related_id IS NULL THEN
+    RAISE EXCEPTION 'Choose which fee or installment this payment settles';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_member_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+
+  v_self := (p_member_id = auth.uid());
+
+  -- Fail here, not silently later. Without a second admin this row could never
+  -- reach its threshold and would sit pending forever with no way to finish it.
+  IF v_self THEN
+    SELECT count(*) INTO v_admins FROM profiles WHERE role = 'admin' AND is_active = true;
+    IF v_admins < 2 THEN
+      RAISE EXCEPTION 'A second admin is required to record your own payment. Promote another admin first.';
+    END IF;
+  END IF;
+
+  INSERT INTO payment_submissions
+    (member_id, submission_type, related_id, amount_claimed, proof_url, recorded_by)
+  VALUES (p_member_id, p_type, p_related_id, p_amount, p_proof_url, auth.uid())
+  RETURNING id INTO v_id;
+
+  INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+  VALUES (v_id, auth.uid(), p_amount);
+
+  v_required := submission_threshold(v_id);
+  SELECT count(*) INTO v_approvals FROM submission_approvals WHERE submission_id = v_id;
+
+  IF v_approvals >= v_required THEN
+    PERFORM settle_submission(v_id, p_amount);
+  ELSE
+    INSERT INTO notifications (recipient_id, kind, title, body, data)
+    SELECT p.id, 'payment_awaiting_signature',
+           'A payment needs your signature',
+           NULL,
+           jsonb_build_object('submission_id', v_id)
+      FROM profiles p
+     WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+  END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'record_payment', 'submission', v_id,
+          jsonb_build_object(
+            'submission_type', p_type,
+            'member_id',       p_member_id,
+            'amount',          p_amount,
+            'self_recorded',   v_self,
+            'approvals',       v_approvals,
+            'required',        v_required,
+            'settled',         v_approvals >= v_required
+          ));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 6. record_fee_payments — the monthly batch.
+--
+--    One call posts the whole sheet. Fees are the predictable half of the month's
+--    work: ~15 identical amounts against rows the system generated itself, so
+--    keying them one at a time behind a second signature is friction with no
+--    information in it.
+--
+--    Entries are `[{"fee_id": uuid, "amount": numeric, "proof_url": text}]`.
+--    The member is derived from the fee rather than passed, so a mistyped member
+--    cannot be paired with someone else's fee.
+--
+--    All-or-nothing: one bad entry raises and the whole batch rolls back, so the
+--    admin never has to work out which half of a sheet posted.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION record_fee_payments(p_entries jsonb)
+RETURNS int AS $$
+DECLARE
+  v_entry    jsonb;
+  v_fee      monthly_fees%ROWTYPE;
+  v_amount   numeric(12,2);
+  v_sub_id   uuid;
+  v_count    int := 0;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_entries IS NULL OR jsonb_typeof(p_entries) <> 'array' THEN
+    RAISE EXCEPTION 'Expected an array of fee payments';
+  END IF;
+
+  FOR v_entry IN SELECT * FROM jsonb_array_elements(p_entries) LOOP
+    SELECT * INTO v_fee FROM monthly_fees
+     WHERE id = (v_entry->>'fee_id')::uuid FOR UPDATE;
+    IF v_fee.id IS NULL THEN
+      RAISE EXCEPTION 'Monthly fee % not found', v_entry->>'fee_id';
+    END IF;
+
+    v_amount := (v_entry->>'amount')::numeric;
+    IF v_amount IS NULL OR v_amount <= 0 THEN
+      RAISE EXCEPTION 'Enter an amount greater than zero for every member you have ticked';
+    END IF;
+
+    -- An admin's own fee is never a one-signature matter. Send it to
+    -- record_payment, which collects the second signature properly.
+    IF v_fee.member_id = auth.uid() THEN
+      RAISE EXCEPTION 'Record your own fee separately — it needs a second admin''s signature.';
+    END IF;
+
+    INSERT INTO payment_submissions
+      (member_id, submission_type, related_id, amount_claimed, proof_url, recorded_by)
+    VALUES (v_fee.member_id, 'monthly_fee', v_fee.id, v_amount,
+            NULLIF(v_entry->>'proof_url', ''), auth.uid())
+    RETURNING id INTO v_sub_id;
+
+    INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+    VALUES (v_sub_id, auth.uid(), v_amount);
+
+    PERFORM settle_submission(v_sub_id, v_amount);
+    v_count := v_count + 1;
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'record_fee_payments', 'submission', NULL,
+          jsonb_build_object('entries', v_count));
+
+  RETURN v_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 7. file_loan — the admin raises the request the member used to.
+--
+--    approve_loan (035) still does the disbursing, still needs 2-of-N, still
+--    applies both ceilings. This only creates the pending row.
+--
+--    The one-open-loan rule (Decision #4) is enforced HERE, in SQL, for the first
+--    time. It has only ever lived in the client (`submitLoanRequest`), with a
+--    comment on the loans table admitting as much — so it was never a rule, just a
+--    disabled button. Now that there is exactly one way in, it can be real.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION file_loan(p_member_id uuid, p_principal numeric)
+RETURNS uuid AS $$
+DECLARE
+  v_id   uuid;
+  v_name text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_principal IS NULL OR p_principal <= 0 THEN
+    RAISE EXCEPTION 'Enter a loan amount greater than zero';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_member_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+  IF EXISTS (SELECT 1 FROM loans
+              WHERE member_id = p_member_id AND status IN ('pending', 'active')) THEN
+    RAISE EXCEPTION 'That member already has a loan in progress';
+  END IF;
+
+  INSERT INTO loans (member_id, principal, status)
+  VALUES (p_member_id, p_principal, 'pending')
+  RETURNING id INTO v_id;
+
+  SELECT full_name INTO v_name FROM profiles WHERE id = p_member_id;
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'loan_filed', 'A loan is waiting for approval',
+         COALESCE(v_name, 'A member') || ' — ' || fmt_tzs(p_principal),
+         jsonb_build_object('loan_id', v_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'file_loan', 'loan', v_id,
+          jsonb_build_object('member_id', p_member_id, 'principal', p_principal));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 8. Withdrawals move to the admin side.
+--
+--    Same validation as 025's request_withdrawal, including the member_withdrawable
+--    ceiling; only the caller changes. approve_withdrawal (2-of-N) and
+--    mark_withdrawal_paid are untouched.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION admin_request_withdrawal(
+  p_member_id uuid, p_amount numeric, p_reason text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id   uuid;
+  v_max  numeric(14,2);
+  v_name text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_member_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Enter an amount greater than zero';
+  END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every withdrawal';
+  END IF;
+  IF EXISTS (SELECT 1 FROM withdrawal_requests
+              WHERE member_id = p_member_id AND status IN ('pending', 'approved')) THEN
+    RAISE EXCEPTION 'That member already has a withdrawal in progress';
+  END IF;
+
+  SELECT withdrawable_tzs INTO v_max FROM member_withdrawable(p_member_id);
+  IF p_amount > v_max THEN
+    RAISE EXCEPTION 'They can withdraw at most % right now', v_max;
+  END IF;
+
+  INSERT INTO withdrawal_requests (member_id, amount, reason)
+  VALUES (p_member_id, p_amount, trim(p_reason))
+  RETURNING id INTO v_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'admin_request_withdrawal', 'withdrawal', v_id,
+          jsonb_build_object('member_id', p_member_id, 'amount', p_amount, 'reason', p_reason));
+
+  SELECT full_name INTO v_name FROM profiles WHERE id = p_member_id;
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'withdrawal_requested', 'Withdrawal requested',
+         COALESCE(v_name, 'A member') || ' — ' || fmt_tzs(p_amount),
+         jsonb_build_object('request_id', v_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- The member-facing entry point is gone.
+DROP FUNCTION IF EXISTS request_withdrawal(numeric, text);
+
+-- --------------------------------------------------------------------------
+-- 9. Messages for the two new notification kinds.
+-- --------------------------------------------------------------------------
+
+INSERT INTO notification_templates (kind, lang, title, body) VALUES
+  ('payment_awaiting_signature', 'sw', 'Malipo yanasubiri saini yako', NULL),
+  ('payment_awaiting_signature', 'en', 'A payment needs your signature', NULL),
+  ('loan_filed', 'sw', 'Mkopo unasubiri idhini', NULL),
+  ('loan_filed', 'en', 'A loan is waiting for approval', NULL)
+ON CONFLICT (kind, lang) DO UPDATE
+  SET title = EXCLUDED.title, body = EXCLUDED.body;
+
+-- ---------------------------------------------------------------------------
+-- 037_payment_void.sql
+-- ---------------------------------------------------------------------------
+
+-- 037_payment_void.sql — undoing an admin's typo.
+--
+-- Until 036 a wrong figure was a member's wrong figure: they uploaded a screenshot,
+-- an admin read it, and if the two disagreed the admin rejected it and the member
+-- filed again. Nothing was ever posted by mistake because nothing was posted
+-- without being read off a proof.
+--
+-- Now the admin keys the amount from an M-Pesa SMS, so a mistyped 50,000 for 5,000
+-- posts, settles, moves the pool and closes a fee. The old answer — the 2-of-N
+-- savings adjustment — patches the member's balance but leaves the wrong entry
+-- standing in their history and does nothing about the penalty or interest the
+-- waterfall booked. There was no reversal in this schema at all (v1 said so
+-- explicitly: "no un-approve flow"). There has to be one now.
+--
+-- HOW IT REVERSES. Not by recomputing. 036's settle_submission is told to record
+-- what it actually allocated — base, penalty, interest, principal — on the
+-- submission row, so a void subtracts the exact four numbers that were added.
+-- Recomputing a penalty at void time would use today's date and quietly return a
+-- different figure from the one that was banked.
+--
+-- WHAT IT REFUSES. A void is only safe while its effects are still the last thing
+-- that happened. If the loan has since closed, been written off or restructured, or
+-- another payment has landed on the same fee or loan, the re-pricing has moved on
+-- and unwinding one payment underneath it would corrupt the schedule. In those
+-- cases it refuses and says to use the 2-of-N savings or pool adjustment instead —
+-- a correction that does not pretend to be a reversal.
+--
+-- THE IDENTITY HOLDS. v_pool_reconciliation asserts assets = claims. Every void
+-- moves both sides: the negative earnings_ledger entry is what keeps retained
+-- earnings in step with the penalty and interest coming back out of the pool.
+--
+-- Requires 036.
+
+-- --------------------------------------------------------------------------
+-- 1. Schema.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE payment_submissions DROP CONSTRAINT IF EXISTS payment_submissions_status_check;
+ALTER TABLE payment_submissions
+  ADD CONSTRAINT payment_submissions_status_check
+  CHECK (status IN ('pending', 'approved', 'rejected', 'voided'));
+
+-- What the waterfall actually did with this payment. Written by settle_submission,
+-- read by execute_payment_void. Also makes the allocation visible in the audit
+-- trail for the first time — until now it could only be inferred by replaying the
+-- waterfall by hand.
+ALTER TABLE payment_submissions
+  ADD COLUMN IF NOT EXISTS applied_base      numeric(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS applied_penalty   numeric(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS applied_interest  numeric(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS applied_principal numeric(12,2) NOT NULL DEFAULT 0;
+
+COMMENT ON COLUMN payment_submissions.applied_base IS
+  'What settle_submission allocated (037). Zero on rows settled before this migration; those cannot be voided and must be corrected with a savings adjustment.';
+
+CREATE TABLE IF NOT EXISTS payment_voids (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  submission_id uuid NOT NULL REFERENCES payment_submissions(id) ON DELETE CASCADE,
+  reason        text NOT NULL,
+  status        text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'approved', 'cancelled')),
+  requested_by  uuid REFERENCES profiles(id),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  applied_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS payment_voids_status_idx ON payment_voids (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payment_void_approvals (
+  void_id     uuid NOT NULL REFERENCES payment_voids(id) ON DELETE CASCADE,
+  admin_id    uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (void_id, admin_id)
+);
+
+ALTER TABLE payment_voids          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_void_approvals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins read voids" ON payment_voids;
+CREATE POLICY "Admins read voids" ON payment_voids FOR SELECT USING (is_admin());
+
+DROP POLICY IF EXISTS "Admins read void approvals" ON payment_void_approvals;
+CREATE POLICY "Admins read void approvals" ON payment_void_approvals
+  FOR SELECT USING (is_admin());
+
+GRANT SELECT ON payment_voids, payment_void_approvals TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 2. settle_submission — same waterfall, now recording what it allocated.
+--
+--    Byte-for-byte the 036 body with four assignments added at the end of each
+--    branch. Nothing about the arithmetic changes; 11_admin_recording's parity
+--    assertions still hold.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION settle_submission(p_submission_id uuid, p_amount numeric)
+RETURNS void AS $$
+DECLARE
+  s                 payment_submissions%ROWTYPE;
+  v_left            numeric(12,2);
+  v_penalty         numeric(12,2);
+  v_pay             numeric(12,2);
+  v_base            numeric(12,2);
+  v_fee             monthly_fees%ROWTYPE;
+  v_fee_remaining   numeric(12,2);
+  v_inst            loan_installments%ROWTYPE;
+  v_loan_id         uuid;
+  v_int_remaining   numeric(12,2);
+  v_prin_remaining  numeric(12,2);
+  v_interest_pay    numeric(12,2);
+  v_principal_pay   numeric(12,2);
+  v_extra_principal numeric(12,2);
+  v_outstanding     numeric(12,2);
+  v_rate            numeric;
+  v_new_int         numeric(12,2);
+  v_last            int;
+  v_interest_open   int;
+BEGIN
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL THEN RAISE EXCEPTION 'Submission not found'; END IF;
+
+  -- clock_timestamp(), not now(). now() is the TRANSACTION start time, so two
+  -- payments settled in one transaction land on the identical reviewed_at and
+  -- become unorderable — and "is this the most recent payment on this loan" is
+  -- exactly the question a void has to answer before it is safe to apply.
+  -- clock_timestamp() is also simply the truer value: when this settled.
+  UPDATE payment_submissions
+    SET status = 'approved', reviewed_at = clock_timestamp(), reviewed_by = auth.uid()
+    WHERE id = p_submission_id;
+
+  v_left := p_amount;
+
+  -- ---------------------------------------------------------------- monthly fee
+  IF s.submission_type = 'monthly_fee' THEN
+    SELECT * INTO v_fee FROM monthly_fees WHERE id = s.related_id FOR UPDATE;
+    IF v_fee.id IS NULL THEN RAISE EXCEPTION 'Monthly fee not found'; END IF;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_fee_status_money WHERE id = v_fee.id;
+    v_fee_remaining := greatest(v_fee.amount - v_fee.amount_paid, 0);
+
+    IF v_left > v_penalty + v_fee_remaining THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds the % still owed on this fee (% base + % penalty). Record the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_fee_remaining, v_fee_remaining, v_penalty;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);          -- penalty first
+    v_left := v_left - v_pay;
+    v_base := least(v_left, v_fee_remaining);
+
+    UPDATE monthly_fees
+       SET penalty_collected = penalty_collected + v_pay,
+           amount_paid       = amount_paid + v_base,
+           reviewed_by       = auth.uid()
+     WHERE id = v_fee.id;
+
+    UPDATE monthly_fees
+       SET status  = CASE WHEN amount_paid >= amount THEN 'paid' ELSE 'partial' END,
+           paid_at = CASE WHEN amount_paid >= amount THEN now() ELSE paid_at END
+     WHERE id = v_fee.id;
+
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'monthly_fee', v_fee.id);
+    END IF;
+
+    UPDATE payment_submissions
+       SET applied_penalty = v_pay, applied_base = v_base
+     WHERE id = p_submission_id;
+
+  -- ----------------------------------------------------------- loan installment
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT * INTO v_inst FROM loan_installments WHERE id = s.related_id FOR UPDATE;
+    IF v_inst.id IS NULL THEN RAISE EXCEPTION 'Installment not found'; END IF;
+    v_loan_id := v_inst.loan_id;
+
+    SELECT COALESCE(penalty_due, 0) INTO v_penalty
+      FROM v_installment_status_money WHERE id = v_inst.id;
+
+    v_int_remaining  := greatest(v_inst.interest_due  - v_inst.interest_paid,  0);
+    v_prin_remaining := greatest(v_inst.principal_due - v_inst.principal_paid, 0);
+
+    SELECT outstanding_principal, interest_rate INTO v_outstanding, v_rate
+      FROM loans WHERE id = v_loan_id FOR UPDATE;
+
+    IF v_left > v_penalty + v_int_remaining + v_outstanding THEN
+      RAISE EXCEPTION
+        'Payment of % exceeds everything outstanding on this loan (%). Record the exact amount and log any surplus as a savings deposit.',
+        v_left, v_penalty + v_int_remaining + v_outstanding;
+    END IF;
+
+    v_pay  := least(v_left, v_penalty);               -- 1. penalty
+    v_left := v_left - v_pay;
+
+    v_interest_pay := least(v_left, v_int_remaining); -- 2. interest
+    v_left := v_left - v_interest_pay;
+
+    v_principal_pay := least(v_left, v_prin_remaining); -- 3. contracted principal
+    v_left := v_left - v_principal_pay;
+
+    -- 4. anything still left retires principal early
+    v_extra_principal := least(v_left, greatest(v_outstanding - v_principal_pay, 0));
+
+    UPDATE loan_installments
+       SET penalty_collected = penalty_collected + v_pay,
+           interest_paid     = interest_paid + v_interest_pay,
+           principal_paid    = principal_paid + v_principal_pay + v_extra_principal,
+           reviewed_by       = auth.uid()
+     WHERE id = v_inst.id;
+
+    UPDATE loan_installments
+       SET status  = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN 'paid' ELSE 'partial'
+                     END,
+           paid_at = CASE
+                       WHEN interest_paid >= interest_due AND principal_paid >= principal_due
+                       THEN now() ELSE paid_at
+                     END
+     WHERE id = v_inst.id;
+
+    v_outstanding := v_outstanding - v_principal_pay - v_extra_principal;
+    UPDATE loans SET outstanding_principal = v_outstanding WHERE id = v_loan_id;
+
+    IF v_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'penalty', v_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+    IF v_interest_pay > 0 THEN
+      INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+      VALUES (s.member_id, 'interest', v_interest_pay, p_submission_id, 'loan_installment', v_inst.id);
+    END IF;
+
+    UPDATE payment_submissions
+       SET applied_penalty   = v_pay,
+           applied_interest  = v_interest_pay,
+           applied_principal = v_principal_pay + v_extra_principal
+     WHERE id = p_submission_id;
+
+    SELECT count(*) INTO v_interest_open
+      FROM loan_installments
+     WHERE loan_id = v_loan_id
+       AND status <> 'cancelled'
+       AND interest_paid < interest_due;
+
+    IF v_outstanding <= 0 AND v_interest_open = 0 THEN
+      UPDATE loans SET status = 'closed' WHERE id = v_loan_id;
+      UPDATE loan_installments
+         SET status = 'cancelled'
+       WHERE loan_id = v_loan_id AND status = 'pending';
+    ELSE
+      v_new_int := round(v_outstanding * COALESCE(v_rate, 0.05));
+      SELECT max(installment_number) INTO v_last
+        FROM loan_installments WHERE loan_id = v_loan_id AND status <> 'cancelled';
+
+      UPDATE loan_installments
+         SET interest_due  = v_new_int,
+             principal_due = CASE WHEN installment_number = v_last THEN v_outstanding ELSE 0 END
+       WHERE loan_id = v_loan_id
+         AND status = 'pending';
+    END IF;
+
+  -- --------------------------------------------------------------------- savings
+  ELSE
+    UPDATE payment_submissions
+       SET amount_claimed = p_amount, applied_base = p_amount
+     WHERE id = p_submission_id;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION settle_submission(uuid, numeric) FROM PUBLIC, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Can this row be voided at all?
+--
+--    Split out so the UI can grey out the button with the real reason instead of
+--    letting an admin discover it at the end of a two-signature round trip.
+--    Returns NULL when the void is safe, otherwise the reason it is not.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION payment_void_blocker(p_submission_id uuid)
+RETURNS text AS $$
+DECLARE
+  s       payment_submissions%ROWTYPE;
+  v_inst  loan_installments%ROWTYPE;
+  v_loan  loans%ROWTYPE;
+BEGIN
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id;
+  IF s.id IS NULL          THEN RETURN 'That payment does not exist.'; END IF;
+  IF s.status = 'voided'   THEN RETURN 'That payment is already voided.'; END IF;
+  IF s.status <> 'approved' THEN RETURN 'Only a settled payment can be voided.'; END IF;
+
+  -- Rows settled before this migration have no allocation recorded, so there is
+  -- nothing exact to reverse.
+  IF s.applied_base + s.applied_penalty + s.applied_interest + s.applied_principal = 0 THEN
+    RETURN 'This payment predates void support. Correct it with a savings adjustment.';
+  END IF;
+
+  -- Deliberately NOT checked here: whether a void request is already pending on
+  -- this row. This function answers "is the reversal still safe to apply", and it
+  -- is re-called by execute_payment_void at the moment of applying — where a
+  -- pending void is the void being applied. The duplicate-request check belongs to
+  -- request_payment_void, and lives there.
+
+  -- Only the MOST RECENT settled payment is reversible, expressed as "is this that
+  -- payment" rather than "does a later one exist". Same rule, but it cannot be
+  -- fooled by two payments sharing a timestamp.
+  IF s.submission_type = 'monthly_fee' THEN
+    IF s.id <> (
+      SELECT ps.id FROM payment_submissions ps
+       WHERE ps.related_id = s.related_id
+         AND ps.submission_type = 'monthly_fee'
+         AND ps.status = 'approved'
+       ORDER BY ps.reviewed_at DESC LIMIT 1
+    ) THEN
+      RETURN 'A later payment has already settled against this fee. Correct it with a savings adjustment.';
+    END IF;
+
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT * INTO v_inst FROM loan_installments WHERE id = s.related_id;
+    IF v_inst.id IS NULL THEN RETURN 'That installment no longer exists.'; END IF;
+
+    SELECT * INTO v_loan FROM loans WHERE id = v_inst.loan_id;
+    IF v_loan.status <> 'active' THEN
+      RETURN 'This loan is no longer active, so the schedule cannot be unwound. Correct it with a savings adjustment.';
+    END IF;
+
+    -- Scoped to the whole LOAN, not just this installment: the waterfall re-prices
+    -- every untouched installment off the outstanding balance, so a later payment
+    -- anywhere on the loan has already moved what this one set.
+    IF s.id <> (
+      SELECT ps.id
+        FROM payment_submissions ps
+        JOIN loan_installments li ON li.id = ps.related_id
+       WHERE ps.submission_type = 'loan_installment'
+         AND li.loan_id = v_inst.loan_id
+         AND ps.status = 'approved'
+       ORDER BY ps.reviewed_at DESC LIMIT 1
+    ) THEN
+      RETURN 'A later repayment has landed on this loan. Correct it with a savings adjustment.';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM loan_actions
+                WHERE loan_id = v_inst.loan_id AND status = 'approved'
+                  AND applied_at > s.reviewed_at) THEN
+      RETURN 'This loan has been restructured since. Correct it with a savings adjustment.';
+    END IF;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 4. request / approve / cancel — 2-of-N, modelled on savings_adjustments (013).
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION request_payment_void(p_submission_id uuid, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_id      uuid;
+  v_blocker text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'Say why this entry is being voided';
+  END IF;
+
+  v_blocker := payment_void_blocker(p_submission_id);
+  IF v_blocker IS NOT NULL THEN RAISE EXCEPTION '%', v_blocker; END IF;
+
+  IF EXISTS (SELECT 1 FROM payment_voids
+              WHERE submission_id = p_submission_id AND status = 'pending') THEN
+    RAISE EXCEPTION 'A void is already waiting for a second signature.';
+  END IF;
+
+  INSERT INTO payment_voids (submission_id, reason, requested_by)
+  VALUES (p_submission_id, trim(p_reason), auth.uid())
+  RETURNING id INTO v_id;
+
+  INSERT INTO payment_void_approvals (void_id, admin_id) VALUES (v_id, auth.uid());
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_payment_void', 'submission', p_submission_id,
+          jsonb_build_object('void_id', v_id, 'reason', trim(p_reason)));
+
+  -- One admin is enough only in a group that has one admin, which is the same
+  -- degradation every other 2-of-N flow has.
+  IF (SELECT count(*) FROM payment_void_approvals WHERE void_id = v_id) >= required_approvals() THEN
+    PERFORM execute_payment_void(v_id);
+  ELSE
+    INSERT INTO notifications (recipient_id, kind, title, body, data)
+    SELECT p.id, 'void_awaiting_signature', 'A correction needs your signature', NULL,
+           jsonb_build_object('void_id', v_id)
+      FROM profiles p
+     WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+  END IF;
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION approve_payment_void(p_void_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_void      payment_voids%ROWTYPE;
+  v_approvals int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_void FROM payment_voids WHERE id = p_void_id FOR UPDATE;
+  IF v_void.id IS NULL          THEN RAISE EXCEPTION 'Void request not found'; END IF;
+  IF v_void.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';      END IF;
+
+  BEGIN
+    INSERT INTO payment_void_approvals (void_id, admin_id) VALUES (p_void_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this correction';
+  END;
+
+  SELECT count(*) INTO v_approvals FROM payment_void_approvals WHERE void_id = p_void_id;
+
+  IF v_approvals >= required_approvals() THEN
+    PERFORM execute_payment_void(p_void_id);
+  ELSE
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_payment_void', 'submission', v_void.submission_id,
+            jsonb_build_object('void_id', p_void_id, 'approvals', v_approvals));
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION cancel_payment_void(p_void_id uuid)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  UPDATE payment_voids SET status = 'cancelled'
+   WHERE id = p_void_id AND status = 'pending';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Void request not found or already processed'; END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'cancel_payment_void', 'submission', NULL,
+          jsonb_build_object('void_id', p_void_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. execute_payment_void — the reversal itself.
+--
+--    Private, and REVOKED in the same breath as its definition. The eight
+--    functions 034 had to retrofit REVOKEs onto are the reason this line is here
+--    and not in a later migration.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION execute_payment_void(p_void_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_void        payment_voids%ROWTYPE;
+  s             payment_submissions%ROWTYPE;
+  v_blocker     text;
+  v_inst        loan_installments%ROWTYPE;
+  v_loan_id     uuid;
+  v_outstanding numeric(12,2);
+  v_rate        numeric;
+  v_new_int     numeric(12,2);
+  v_last        int;
+BEGIN
+  SELECT * INTO v_void FROM payment_voids WHERE id = p_void_id FOR UPDATE;
+  IF v_void.id IS NULL          THEN RAISE EXCEPTION 'Void request not found'; END IF;
+  IF v_void.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';      END IF;
+
+  -- Re-check at execution time, not just at request time: the second signature can
+  -- arrive days later, by which point another payment may have landed.
+  v_blocker := payment_void_blocker(v_void.submission_id);
+  IF v_blocker IS NOT NULL THEN RAISE EXCEPTION '%', v_blocker; END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = v_void.submission_id FOR UPDATE;
+
+  IF s.submission_type = 'monthly_fee' THEN
+    UPDATE monthly_fees
+       SET amount_paid       = amount_paid - s.applied_base,
+           penalty_collected = penalty_collected - s.applied_penalty
+     WHERE id = s.related_id;
+
+    UPDATE monthly_fees
+       SET status  = CASE WHEN amount_paid >= amount THEN 'paid'
+                          WHEN amount_paid > 0      THEN 'partial'
+                          ELSE 'pending' END,
+           paid_at = CASE WHEN amount_paid >= amount THEN paid_at ELSE NULL END
+     WHERE id = s.related_id;
+
+  ELSIF s.submission_type = 'loan_installment' THEN
+    SELECT * INTO v_inst FROM loan_installments WHERE id = s.related_id FOR UPDATE;
+    v_loan_id := v_inst.loan_id;
+
+    UPDATE loan_installments
+       SET penalty_collected = penalty_collected - s.applied_penalty,
+           interest_paid     = interest_paid     - s.applied_interest,
+           principal_paid    = principal_paid    - s.applied_principal
+     WHERE id = v_inst.id;
+
+    UPDATE loan_installments
+       SET status  = CASE
+                       WHEN interest_paid = 0 AND principal_paid = 0
+                            AND penalty_collected = 0            THEN 'pending'
+                       WHEN interest_paid >= interest_due
+                            AND principal_paid >= principal_due  THEN 'paid'
+                       ELSE 'partial'
+                     END,
+           paid_at = CASE
+                       WHEN interest_paid >= interest_due
+                            AND principal_paid >= principal_due  THEN paid_at
+                       ELSE NULL
+                     END
+     WHERE id = v_inst.id;
+
+    -- The principal goes back out on loan.
+    UPDATE loans
+       SET outstanding_principal = outstanding_principal + s.applied_principal
+     WHERE id = v_loan_id
+    RETURNING outstanding_principal, interest_rate INTO v_outstanding, v_rate;
+
+    -- And the untouched installments are re-priced off the restored balance, by
+    -- the same rule settle_submission uses, so the schedule matches what it would
+    -- have been had the payment never happened.
+    v_new_int := round(v_outstanding * COALESCE(v_rate, 0.05));
+    SELECT max(installment_number) INTO v_last
+      FROM loan_installments WHERE loan_id = v_loan_id AND status <> 'cancelled';
+
+    UPDATE loan_installments
+       SET interest_due  = v_new_int,
+           principal_due = CASE WHEN installment_number = v_last THEN v_outstanding ELSE 0 END
+     WHERE loan_id = v_loan_id AND status = 'pending';
+  END IF;
+
+  -- Penalty and interest booked by this payment come back out of retained
+  -- earnings. Negative entries rather than deletes: the ledger is a dated record
+  -- of what happened, and the mistake happened.
+  IF s.applied_penalty > 0 THEN
+    INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+    VALUES (s.member_id, 'penalty', -s.applied_penalty, s.id, 'void', p_void_id);
+  END IF;
+  IF s.applied_interest > 0 THEN
+    INSERT INTO earnings_ledger (member_id, kind, amount, submission_id, source_type, source_id)
+    VALUES (s.member_id, 'interest', -s.applied_interest, s.id, 'void', p_void_id);
+  END IF;
+
+  -- For a savings deposit this single flag is the whole reversal: both v_group_pool
+  -- and v_pool_reconciliation count only status = 'approved'.
+  UPDATE payment_submissions SET status = 'voided' WHERE id = s.id;
+
+  UPDATE payment_voids SET status = 'approved', applied_at = now() WHERE id = p_void_id;
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (s.member_id, 'payment_voided', 'An entry was corrected',
+          fmt_tzs(s.amount_claimed) || ' — ' || v_void.reason,
+          jsonb_build_object('submission_id', s.id));
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'execute_payment_void', 'submission', s.id,
+          jsonb_build_object(
+            'void_id',           p_void_id,
+            'member_id',         s.member_id,
+            'submission_type',   s.submission_type,
+            'amount',            s.amount_claimed,
+            'applied_base',      s.applied_base,
+            'applied_penalty',   s.applied_penalty,
+            'applied_interest',  s.applied_interest,
+            'applied_principal', s.applied_principal,
+            'reason',            v_void.reason
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION execute_payment_void(uuid) FROM PUBLIC, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 6. Messages.
+-- --------------------------------------------------------------------------
+
+INSERT INTO notification_templates (kind, lang, title, body) VALUES
+  ('void_awaiting_signature', 'sw', 'Marekebisho yanasubiri saini yako', NULL),
+  ('void_awaiting_signature', 'en', 'A correction needs your signature', NULL),
+  ('payment_voided', 'sw', 'Muamala umerekebishwa', NULL),
+  ('payment_voided', 'en', 'An entry was corrected', NULL)
+ON CONFLICT (kind, lang) DO UPDATE
+  SET title = EXCLUDED.title, body = EXCLUDED.body;

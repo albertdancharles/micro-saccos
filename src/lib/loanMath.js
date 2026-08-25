@@ -8,12 +8,12 @@
 // it (see hooks/useGroupSettings), fall back to the default where you don't.
 
 // Loan ceilings (whole TZS, floored so we never round above the cap):
-//   - 3x the member's contribution (approved savings + paid monthly fees) at the
+//   - 5x the member's contribution (approved savings + paid monthly fees) at the
 //     time of request, so a borrower is anchored to what they've put in.
 //   - 25% of the current group pool, so one member can't drain it.
 // Effective max = the lower of the two; both must hold.
 export const POOL_LOAN_FRACTION = 0.25
-export const CONTRIBUTION_LOAN_MULTIPLIER = 3
+export const CONTRIBUTION_LOAN_MULTIPLIER = 5
 export const LOAN_INTEREST_RATE = 0.05
 export const PENALTY_RATE = 0.05
 

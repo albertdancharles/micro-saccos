@@ -31,8 +31,13 @@ import ActiveLoansPanel from '../components/admin/ActiveLoansPanel'
 import WithdrawalQueue from '../components/admin/WithdrawalQueue'
 import RequestMemberExitModal from '../components/admin/RequestMemberExitModal'
 import ReconciliationBanner from '../components/admin/ReconciliationBanner'
-import CallGuaranteesPanel from '../components/admin/CallGuaranteesPanel'
+import MessagingBanner from '../components/admin/MessagingBanner'
 import PoolChart from '../components/admin/PoolChart'
+import RecordFeeSheet from '../components/admin/RecordFeeSheet'
+import RecordPaymentModal from '../components/admin/RecordPaymentModal'
+import FileLoanModal from '../components/admin/FileLoanModal'
+import AdminWithdrawalModal from '../components/admin/AdminWithdrawalModal'
+import CorrectionsPanel from '../components/admin/CorrectionsPanel'
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth()
@@ -46,6 +51,12 @@ export default function AdminDashboard() {
   const [roleChangeTarget, setRoleChangeTarget] = useState(null)
   const [exitTarget, setExitTarget] = useState(null)
   const [poolEditOpen, setPoolEditOpen] = useState(false)
+  const [recordOpen, setRecordOpen] = useState(false)
+  const [fileLoanOpen, setFileLoanOpen] = useState(false)
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false)
+
+  // The modals want { id, full_name }; the grid speaks { id, name }.
+  const members = admin.gridRows.map((r) => ({ id: r.id, full_name: r.name }))
 
   useEffect(() => {
     if (!supabase) return
@@ -88,11 +99,41 @@ export default function AdminDashboard() {
             {/* Above everything: if the books don't balance, nothing else on this
                 page can be trusted. Renders nothing when they do. */}
             <ReconciliationBanner reconciliation={admin.reconciliation} />
+            {/* Also silent unless something is wrong: reminders piling up unsent. */}
+            <MessagingBanner messaging={admin.messaging} />
             <AdminSummaryCards
               stats={admin.stats}
               onEditTotalAssets={() => setPoolEditOpen(true)}
             />
             <PoolChart />
+
+            {/* The intake. Members file nothing now (migration 034), so every
+                shilling that enters the system starts on one of these three
+                controls. They sit above the approval queues because recording is
+                the daily work; approving is what happens to what was recorded. */}
+            <RecordFeeSheet onActioned={refresh} />
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setRecordOpen(true)}
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-emerald-700 text-sm font-medium px-4 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50 hover:ring-emerald-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Record a payment')}
+              </button>
+              <button
+                onClick={() => setFileLoanOpen(true)}
+                className="inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-emerald-700 text-sm font-medium px-4 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50 hover:ring-emerald-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('File a loan')}
+              </button>
+              <button
+                onClick={() => setWithdrawalOpen(true)}
+                className="col-span-2 inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-slate-600 text-sm font-medium px-4 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 active:scale-[0.99] transition-all duration-150"
+              >
+                {t('Open a withdrawal')}
+              </button>
+            </div>
+            <CorrectionsPanel onActioned={refresh} />
+
             <PendingMembersQueue pendingMembers={admin.pendingMembers} onActioned={refresh} />
             <ApprovalsQueue
               pendingLoans={admin.pendingLoans}
@@ -129,7 +170,6 @@ export default function AdminDashboard() {
               onActioned={refresh}
             />
             <ActiveLoansPanel activeLoans={admin.activeLoans} onActioned={refresh} />
-            <CallGuaranteesPanel callableLoans={admin.callableLoans} onActioned={refresh} />
             {/* Audit log has no tab of its own, and the header link that used to
                 reach it is desktop-only — so it gets a first-class entry point
                 here, where mobile admins can actually find it. */}
@@ -178,6 +218,24 @@ export default function AdminDashboard() {
         )}
       </main>
 
+      <RecordPaymentModal
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        members={members}
+        onSubmitted={refresh}
+      />
+      <FileLoanModal
+        open={fileLoanOpen}
+        onClose={() => setFileLoanOpen(false)}
+        members={members}
+        onSubmitted={refresh}
+      />
+      <AdminWithdrawalModal
+        open={withdrawalOpen}
+        onClose={() => setWithdrawalOpen(false)}
+        members={members}
+        onSubmitted={refresh}
+      />
       <AddMemberModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={refresh} />
       <RequestDeletionModal
         open={!!deleteTarget}

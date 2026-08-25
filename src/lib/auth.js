@@ -1,6 +1,16 @@
-// Auth helpers (build plan §3, §9; v3 self-registration). Thin wrappers over
-// Supabase Auth so pages don't touch the client directly. v1 methods: email +
-// password and Google OAuth (phone-OTP deferred).
+// Auth helpers. Thin wrappers over Supabase Auth so pages don't touch the client
+// directly. Email + password only.
+//
+// signUp, signInWithGoogle, updateOwnProfile, REQUIRED_PROFILE_FIELDS and
+// isProfileComplete are GONE, with the self-registration flow they served. Accounts
+// are created by an admin through the admin-create-member Edge Function, already
+// complete and already active, so there is no signup, no Google entry point, and no
+// "finish your profile" state to detect. Deleting them rather than leaving them
+// unused matters here: a live signUp() helper is a working way into a flow the
+// group has decided not to have.
+//
+// Turning off the pages is only half of it — email signups must also be disabled in
+// the Supabase Auth dashboard, or the endpoint stays open with nothing pointing at it.
 import { supabase } from '../supabaseClient'
 
 function client() {
@@ -12,65 +22,6 @@ export async function signIn(email, password) {
   const { data, error } = await client().auth.signInWithPassword({ email, password })
   if (error) throw error
   return data
-}
-
-// Self-service registration. Profile fields ride along in user_metadata; the
-// handle_new_user trigger creates a PENDING profile (is_active=false) from them.
-// With "Confirm email" ON in Supabase, no session is returned until the user
-// confirms — callers should show a "check your email" notice.
-export async function signUp(email, password, profileFields = {}) {
-  const emailRedirectTo = `${window.location.origin}/login`
-  const { data, error } = await client().auth.signUp({
-    email,
-    password,
-    options: { data: profileFields, emailRedirectTo },
-  })
-  if (error) throw error
-  return data
-}
-
-// Google OAuth. Redirects to Google and back to the app root, where the route
-// gate sends the user to /complete-profile (new) or /pending.
-export async function signInWithGoogle() {
-  const redirectTo = `${window.location.origin}/`
-  const { data, error } = await client().auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo },
-  })
-  if (error) throw error
-  return data
-}
-
-// Member edits their own profile (KYC) via the SECURITY DEFINER RPC, which can
-// never change role/is_active. Used by /complete-profile and the Profile page.
-export async function updateOwnProfile(fields) {
-  const { error } = await client().rpc('update_own_profile', {
-    p_full_name: fields.full_name ?? '',
-    p_phone_number: fields.phone_number ?? '',
-    p_secondary_phone: fields.secondary_phone ?? '',
-    p_residence: fields.residence ?? '',
-    p_national_id: fields.national_id ?? '',
-    p_next_of_kin_name: fields.next_of_kin_name ?? '',
-    p_next_of_kin_phone: fields.next_of_kin_phone ?? '',
-  })
-  if (error) throw error
-}
-
-// The fields a member must supply before they can use the app. Google sign-ups
-// arrive with only name + email, so they're routed to /complete-profile until
-// these are filled. (secondary_phone, national_id and next_of_kin are optional.)
-export const REQUIRED_PROFILE_FIELDS = [
-  'full_name',
-  'phone_number',
-  'residence',
-]
-
-export function isProfileComplete(profile) {
-  if (!profile) return false
-  return REQUIRED_PROFILE_FIELDS.every((f) => {
-    const v = profile[f]
-    return typeof v === 'string' ? v.trim() !== '' : Boolean(v)
-  })
 }
 
 export async function signOut() {

@@ -16,9 +16,6 @@ import RoleHome from './routes/RoleHome'
 import Login from './pages/Login'
 
 const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
-const SignUp = lazy(() => import('./pages/SignUp'))
-const CompleteProfile = lazy(() => import('./pages/CompleteProfile'))
-const PendingApproval = lazy(() => import('./pages/PendingApproval'))
 const MemberDashboard = lazy(() => import('./pages/MemberDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const Profile = lazy(() => import('./pages/Profile'))
@@ -49,15 +46,14 @@ export default function App() {
         <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
           <Route path="/update-password" element={<UpdatePassword />} />
 
-          {/* Onboarding: needs only a session (no completeness/active gate), so a
-              signed-in-but-not-yet-member user can finish these without bouncing. */}
-          <Route element={<ProtectedRoute requireComplete={false} requireActive={false} />}>
-            <Route path="/complete-profile" element={<CompleteProfile />} />
-            <Route path="/pending" element={<PendingApproval />} />
-          </Route>
+          {/* No /signup, /complete-profile or /pending. Membership is not something
+              you apply for any more: an admin creates the account (and the KYC with
+              it) through the admin-create-member Edge Function and hands over a
+              temporary password. Removing the pages is only half of it — email
+              signups must also be turned off in the Supabase Auth dashboard, or the
+              endpoint is still open even with no UI pointing at it. */}
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<RoleHome />} />

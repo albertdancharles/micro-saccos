@@ -30,8 +30,13 @@ export async function getWithdrawals(supabase, { memberId = null, openOnly = fal
   return data
 }
 
-export async function requestWithdrawal(supabase, amount, reason) {
-  const { data, error } = await supabase.rpc('request_withdrawal', {
+// Raised by an admin on the member's behalf (036). request_withdrawal, the
+// member-facing entry point, was dropped in the same migration. The ceiling,
+// the reason requirement and the one-in-flight rule are unchanged — only the
+// caller moved.
+export async function adminRequestWithdrawal(supabase, memberId, amount, reason) {
+  const { data, error } = await supabase.rpc('admin_request_withdrawal', {
+    p_member_id: memberId,
     p_amount: amount,
     p_reason: reason,
   })

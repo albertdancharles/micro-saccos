@@ -30,7 +30,6 @@ const EMPTY = {
   pendingWithdrawals: [],
   pendingMembers: [],
   activeLoans: [],
-  callableLoans: [],
   reconciliation: null,
   settings: SETTING_DEFAULTS,
   settingRows: [],
@@ -90,7 +89,6 @@ export function useAdminData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_action_approvals' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_guarantors' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
       .subscribe()
     return () => {

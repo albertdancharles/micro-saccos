@@ -157,7 +157,20 @@ export default function PaymentQueueItem({ submission, onActioned }) {
         </p>
       )}
 
-      {proofUrl ? (
+      {/* proof_url became nullable in 036. An admin recording a payment from the
+          M-Pesa SMS on their own phone usually has nothing to attach, so offering
+          a "View screenshot" button here would hand the second signer a control
+          that can only fail. Say what the row actually is instead. */}
+      {!submission.proof_url ? (
+        <p className="text-xs px-3 py-2 rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-200 text-slate-600">
+          {submission.recordedByName
+            ? t('No screenshot — recorded by {name}.').replace(
+                '{name}',
+                submission.recordedByName,
+              )
+            : t('No screenshot attached.')}
+        </p>
+      ) : proofUrl ? (
         <a href={proofUrl} target="_blank" rel="noreferrer">
           <img
             src={proofUrl}

@@ -20,7 +20,7 @@ BEGIN
   PERFORM tests.eq(setting('loan_interest_rate'),       0.05, 'seeded interest rate');
   PERFORM tests.eq(setting('penalty_rate'),             0.05, 'seeded penalty rate');
   PERFORM tests.eq(setting('pool_loan_fraction'),       0.25, 'seeded pool fraction');
-  PERFORM tests.eq(setting('contribution_multiplier'),     3, 'seeded multiplier');
+  PERFORM tests.eq(setting('contribution_multiplier'),     5, 'seeded multiplier');
 
   -- An unknown key must not raise: setting() is called inside live RPCs and a
   -- missing row has to degrade to the old hardcoded behaviour, never a 500.

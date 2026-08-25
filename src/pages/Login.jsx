@@ -2,11 +2,10 @@
 // §8 forms: visible labels, large touch targets, helpful focus states, single
 // primary CTA, subtle background tint so the card lifts off the page.
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { signIn, sendPasswordReset } from '../lib/auth'
-import GoogleButton from '../components/auth/GoogleButton'
 import LangToggle from '../components/ui/LangToggle'
 
 function BrandMark() {
@@ -142,21 +141,12 @@ export default function Login() {
             <button type="submit" disabled={busy} className="btn-primary w-full">
               {busy ? t('Signing in…') : t('Sign in')}
             </button>
-
-            <div className="flex items-center gap-3 text-xs text-slate-400">
-              <span className="h-px flex-1 bg-slate-200" />
-              {t('or')}
-              <span className="h-px flex-1 bg-slate-200" />
-            </div>
-
-            <GoogleButton />
           </form>
 
+          {/* No sign-up link: accounts are created by an admin, who hands over a
+              temporary password. There is nothing here for a stranger to start. */}
           <p className="mt-6 text-center text-sm text-slate-500">
-            {t('New here?')}{' '}
-            <Link to="/signup" className="font-medium text-emerald-700 hover:text-emerald-800">
-              {t('Create an account')}
-            </Link>
+            {t('Accounts are created by your group admin. Speak to them to get access.')}
           </p>
 
           <p className="mt-3 text-center text-xs text-slate-400">

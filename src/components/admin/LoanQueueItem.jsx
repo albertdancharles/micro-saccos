@@ -12,14 +12,6 @@ import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
 
-const GUARANTEE_LABEL = {
-  pending: 'awaiting answer',
-  accepted: 'accepted',
-  declined: 'declined',
-  released: 'released',
-  called: 'called',
-}
-
 function Row({ label, value, danger }) {
   return (
     <div className="flex justify-between">
@@ -112,7 +104,9 @@ export default function LoanQueueItem({ loan, onActioned }) {
 
   let approvalNote = null
   if (loan.isSelf) {
-    approvalNote = t("You can't approve your own loan.")
+    // Not a block any more (035) — an admin is a contributing member and may
+    // borrow. It still needs a second admin, which is what the note now says.
+    approvalNote = t('This is your own loan. Another admin must also approve it.')
   } else if (loan.iApproved) {
     approvalNote = t("You've already approved ({a}/{r}). Awaiting another admin.")
       .replace('{a}', loan.approvalsCount)
@@ -165,38 +159,6 @@ export default function LoanQueueItem({ loan, onActioned }) {
           </p>
         )}
       </div>
-
-      {/* Guarantors (migration 028). The RPC refuses to approve while a nomination
-          is unanswered, so an admin should see that here, not in an error. */}
-      {loan.guarantees?.length > 0 && (
-        <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
-          <p className="text-xs font-medium text-slate-700">{t('Guarantors')}</p>
-          {loan.guarantees.map((g) => (
-            <div key={g.id} className="flex justify-between">
-              <span
-                className={
-                  g.status === 'accepted'
-                    ? 'text-emerald-700'
-                    : g.status === 'declined'
-                      ? 'text-red-600'
-                      : 'text-amber-700'
-                }
-              >
-                {g.guarantorName} · {t(GUARANTEE_LABEL[g.status] || g.status)}
-              </span>
-              <span className="tabular-nums text-slate-700">
-                {formatTZS(g.pledged_amount)}
-              </span>
-            </div>
-          ))}
-          {loan.unansweredGuarantees > 0 && (
-            <p className="text-xs text-amber-700 pt-1">
-              {t('{n} guarantor(s) have not answered — approval is blocked until they do.')
-                .replace('{n}', loan.unansweredGuarantees)}
-            </p>
-          )}
-        </div>
-      )}
 
       {rejecting ? (
         <div className="space-y-2">

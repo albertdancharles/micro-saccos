@@ -19,9 +19,10 @@ penalty someone has already been charged.
 | **Partial payments** | Pay what you have. Money is applied penalty → interest → principal, and the row is marked *part paid* until it's clear. Penalties then accrue on the balance still owed, not the original total. |
 | **Loans that go bad** | Reschedule, write off, or settle against the borrower's own savings — each 2-of-N. `v_loan_risk` flags non-performance from the record rather than a flag someone has to remember to set. |
 | **Cycles & share-out** | Close a cycle and split what the group earned. Shares are **time-weighted** (member-months), so a late joiner doesn't take an equal cut, and largest-remainder rounding means the shares sum exactly to the pot. Earnings-only or full share-out. |
-| **Withdrawals & exit** | Members withdraw mid-cycle, capped by pool liquidity and by the savings held as security behind any active loan. Exit settles a member and deactivates them — *keeping* their history, unlike deletion. |
-| **Reminders** | Notifications fan out to SMS (Africa's Talking) and Web Push, deduped per week so an overdue member is nudged, not spammed. A daily pg_cron sweep raises what's due. |
-| **Guarantors** | Members co-sign each other's loans. An accepted pledge locks that much of the guarantor's savings; if the loan is written off the group can call the pledges pro-rata, capped at what each promised. |
+| **Withdrawals & exit** | An admin opens a withdrawal on a member's behalf, capped by pool liquidity and by the savings held as security behind any active loan. Exit settles a member and deactivates them — *keeping* their history, unlike deletion. |
+| **Reminders** | Notifications fan out to SMS (Beem Africa) and Web Push, deduped per week so an overdue member is nudged, not spammed. A daily pg_cron sweep raises what's due. |
+| **Admin mandate** | Members are read-only: every transaction is keyed by an admin, enforced in the database rather than by hiding buttons. A monthly batch sheet posts the whole group's fees at once. |
+| **Corrections** | Because the admin now keys the amount, the typo is theirs. A 2-of-N void reverses the *exact* figures the waterfall allocated — recomputing a penalty later would use today's date and give a different answer — and refuses once the schedule has moved on. |
 | **Group accounts** | Income statement, balance sheet and a per-member ledger — the pack a co-operative reads at its AGM, exportable as CSV. |
 | **Meetings** | Register, minutes, and attendance fines that are *deducted* from savings rather than invoiced. Plus a social fund (*bima ya jamii*) kept deliberately outside the loan pool. |
 
@@ -96,69 +97,72 @@ Edge Function, passed via shell env at run time.
 See [`supabase/README.md`](supabase/README.md) for migration details and the local-CLI
 alternative.
 
-## Self-service registration & member approval (v3)
+## Accounts and access (the admin mandate)
 
-Members register themselves at **`/signup`** (email + password, or **Continue with
-Google**) and supply their details — full name, primary & secondary phone, residence,
-National ID (NIDA), and next of kin. New sign-ups are created **pending**
-(`is_active = false`): they see an *Awaiting approval* screen and **cannot enter the
-savings pool until an admin approves them** from the **Pending registrations** panel on
-the admin dashboard. Google sign-ups (who arrive with only a name + email) are routed to
-**`/complete-profile`** to fill the rest before approval.
+Members are **read-only**. They see their own dashboard, the member directory, the group
+pool, the income statement and the balance sheet, and they can change their own password,
+phone, language and notification preferences. They cannot file a payment, request a loan,
+open a withdrawal, or register an account. This is enforced in the database — migration
+`034` dropped the member INSERT policies on `loans` and `payment_submissions`, so it holds
+even against a direct PostgREST call, not just a hidden button.
 
-Members can only ever edit their *own* details (via the `update_own_profile` RPC); a
-member can never change their own `role` or `is_active`.
+**Admins create every account.** There is no `/signup`, no `/complete-profile` and no
+`/pending`; self-registration and Google sign-in were removed along with the flow they
+served. Use **+ Add member** on the admin dashboard, which calls the `admin-create-member`
+Edge Function (service role, admin-gated) and returns a temporary password to hand over.
 
-### Enable Google sign-in (one-time, dashboard)
+### One-time dashboard settings
 
-1. **Auth → Providers → Google**: enable it and paste a Google OAuth **client ID** and
-   **secret** (create them in the Google Cloud console; no per-use cost).
-2. **Auth → URL Configuration**: set the **Site URL** to your deployed origin and add
-   `…/` and `…/complete-profile` (plus `…/update-password`) to **Redirect URLs**.
-3. **Auth → Providers → Email**: keep **Confirm email** ON so email/password sign-ups
-   verify their address (membership still also needs admin approval).
+1. **Auth → Providers → Email**: **turn Enable Sign Up OFF.** Deleting the `/signup` page
+   removed the UI, not the endpoint. Until this is off, anyone can still create an account.
+   They land inactive — the `handle_new_user` trigger defaults `is_active = false` and `034`
+   scoped every group-wide read policy to `is_active_member()`, so they can read nothing —
+   but the account exists and you have to clean it up.
+2. **Auth → URL Configuration**: **Site URL** = your deployed origin; **Redirect URLs** need
+   only `…/` and `…/update-password`. (`…/complete-profile` is gone.)
+3. Keep **Confirm email** ON — it still matters for password resets.
+4. Redeploy `admin-create-member` and set its `ALLOWED_ORIGINS` secret. It is now the only
+   way a member can come into existence, so it is worth confirming it works end to end.
 
-### Cutover runbook — fresh start (DESTRUCTIVE)
+### Who signs what
 
-> Deleting users **cascades** to all savings, loans, fees, installments, submissions,
-> and history. There is no undo. **Back up first.** Order matters because deleting users
-> removes the only admin.
+| Recording | Signatures |
+|---|---|
+| Another member's monthly fee (incl. the batch sheet) | 1 admin |
+| Savings deposit, loan repayment | 2 admins |
+| **An admin's own money, any type** | **2 admins, always** |
+| Loan (file → approve + disburse) | 2 admins |
+| Withdrawal (open → approve → pay out) | 2 admins |
+| Void a posted entry | 2 admins |
 
-1. **Back up** the database (Dashboard → Database → Backups, or `pg_dump`).
-2. Apply migration **018** (`supabase/migrations/018_self_registration.sql`), or re-paste
-   the updated [`supabase/setup.sql`](supabase/setup.sql) on a fresh project.
-3. Redeploy the `admin-create-member` Edge Function and set the `ALLOWED_ORIGINS` secret.
-4. **Delete all users** in the SQL editor (cascades to `profiles` and all financial data):
+`required_approvals()` is `least(2, active admins)`, so in a **one-admin group** everything
+degrades to a single signature — except an admin's own money, which is hard-coded to need
+two. That means **a lone admin cannot record their own fees, savings or repayments at all**;
+`record_payment` says so rather than creating a row that can never settle. Promote a second
+admin and it works.
 
-   ```sql
-   -- Sanity check first:
-   select count(*) as users_before from auth.users;
-   delete from auth.users;
-   select count(*) as users_after from auth.users;  -- expect 0
-   ```
-
-5. Deploy the new frontend, open **`/signup`**, and register
-   `albertdancharles@gmail.com` with a password (and the profile fields).
-6. **Promote + activate** that account (one statement):
-
-   ```sql
-   update profiles set role = 'admin', is_active = true
-    where email = 'albertdancharles@gmail.com';
-   ```
-
-7. Sign in as that admin. Every later self-registration now appears under **Pending
-   registrations** for you to approve or reject.
+Members can still edit their *own* details via the `update_own_profile` / `update_own_phone`
+RPCs, and can never change their own `role` or `is_active` — `034` revoked `UPDATE` on
+`profiles` from `authenticated` outright, so those columns are unreachable from the browser
+and move only through the voted RPCs.
 
 ## Monthly fees
 
-Fees are generated for all active members on the 1st of each month. `ensure_current_fees()`
-runs on every dashboard load, so the current month self-heals even if a scheduler is
-skipped — no cron is strictly required. To also automate it, enable **pg_cron** and run:
+Fees are generated for all active members on the 1st of each month by a **pg_cron job**,
+registered by migration `017` and named `generate-monthly-fees`:
 
 ```sql
-select cron.schedule('micro-saccos-monthly-fees', '1 0 1 * *',
-  $$ select ensure_current_fees(); $$);
+select jobid, jobname, schedule, command, active from cron.job;
 ```
+
+`ensure_current_fees()` also runs when an **admin** opens the dashboard, as a safety net. It
+no longer runs when a member opens theirs — that was a member-triggered write, which the
+admin mandate does not allow — so unlike previous versions, **the cron job is not optional**.
+Without it, fee generation waits for an admin to log in.
+
+Do not schedule it by hand under another name; see the note in
+[`supabase/README.md`](supabase/README.md#L45) about the duplicate
+`micro-saccos-monthly-fees` job that earlier instructions produced.
 
 ## Scripts
 

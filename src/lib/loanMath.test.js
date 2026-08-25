@@ -16,17 +16,17 @@ describe('poolCeiling', () => {
 })
 
 describe('contributionCeiling', () => {
-  it('is 3x the member contribution, floored to whole TZS', () => {
-    expect(contributionCeiling(10000)).toBe(30000)
+  it('is 5x the member contribution, floored to whole TZS', () => {
+    expect(contributionCeiling(10000)).toBe(50000)
     expect(contributionCeiling(0)).toBe(0)
   })
 })
 
 describe('maxLoan', () => {
-  it('is the lower of 3x contribution and 25% pool', () => {
-    // contribution binds: 3*5000=15,000 < 25% of 1,000,000=250,000
-    expect(maxLoan(5000, 1000000)).toBe(15000)
-    // pool binds: 25% of 200,000=50,000 < 3*50,000=150,000
+  it('is the lower of 5x contribution and 25% pool', () => {
+    // contribution binds: 5*5000=25,000 < 25% of 1,000,000=250,000
+    expect(maxLoan(5000, 1000000)).toBe(25000)
+    // pool binds: 25% of 200,000=50,000 < 5*50,000=250,000
     expect(maxLoan(50000, 200000)).toBe(50000)
     expect(maxLoan(0, 1000000)).toBe(0) // no contribution → no loan
     expect(maxLoan(100000, 0)).toBe(0)  // empty pool → no loan

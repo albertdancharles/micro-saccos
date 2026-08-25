@@ -1,5 +1,5 @@
 // Status badge (build plan §9). Covers obligation statuses (paid/pending/overdue/
-// upcoming/cancelled/na) and submission statuses (approved/pending/rejected).
+// upcoming/cancelled/na) and submission statuses (approved/pending/rejected/voided).
 // Uses an inset ring instead of a solid background so badges read as pills on
 // any background (cards, table rows, modals) — UI/UX Pro Max §6 semantic color
 // + state clarity. Tone-paired text/ring keeps contrast >= 4.5:1.
@@ -15,7 +15,12 @@ const STYLES = {
   rejected:  'bg-red-50 text-red-700 ring-red-200',
   upcoming:  'bg-slate-50 text-slate-600 ring-slate-200',
   cancelled: 'bg-slate-50 text-slate-400 ring-slate-200 line-through',
+  // Struck through like `cancelled`: the entry happened and is retained, but it
+  // no longer counts toward anything.
+  voided:    'bg-slate-50 text-slate-400 ring-slate-200 line-through',
   na:        'bg-slate-50 text-slate-400 ring-slate-200',
+  queued:    'bg-slate-50 text-slate-600 ring-slate-200',
+  sent:      'bg-emerald-50 text-emerald-700 ring-emerald-200',
 }
 
 // Dot rendering of the same statuses, for places that already carry one pill and
@@ -31,7 +36,10 @@ const DOTS = {
   rejected:  'bg-red-500 ring-red-500/15',
   upcoming:  'bg-slate-300 ring-slate-300/20',
   cancelled: 'bg-slate-300 ring-slate-300/20',
+  voided:    'bg-slate-300 ring-slate-300/20',
   na:        'bg-slate-200 ring-slate-200/20',
+  queued:    'bg-slate-300 ring-slate-300/20',
+  sent:      'bg-emerald-500 ring-emerald-500/15',
 }
 
 // Decorative by contract: every caller pairs it with the status in words, so

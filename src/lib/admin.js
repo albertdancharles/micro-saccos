@@ -37,8 +37,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     withdrawalsRes,
     withdrawalApprovalsRes,
     reconciliationRes,
-    guarantorsRes,
-    writeOffsRes,
+    messagingRes,
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     // Pending self-registrations awaiting approval — full KYC for the admin to review.
@@ -134,15 +133,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
     supabase.from('withdrawal_approvals').select('*').order('approved_at', { ascending: true }),
     // Migration 027 — the books-balance check. Also outside the throw loop.
     supabase.from('v_pool_reconciliation').select('*').single(),
-    // Migration 028 — guarantees.
-    supabase.from('loan_guarantors').select('*').order('created_at'),
-    // Write-off entries carry the actual loss per loan. `loans.outstanding_principal`
-    // is zeroed when a loan is written off, so it cannot be used for this.
-    supabase
-      .from('earnings_ledger')
-      .select('source_id, amount')
-      .eq('kind', 'write_off')
-      .eq('source_type', 'loan'),
+    // Migration 032 — is the reminder outbox actually draining? Outside the throw
+    // loop too: an unapplied 032 must not take the whole dashboard down.
+    supabase.from('v_notification_health').select('*').single(),
   ])
   for (const r of [
     profilesRes,
@@ -286,44 +279,6 @@ export async function getAdminData(supabase, currentAdminId = null) {
     requiredApprovals,
   }
 
-  // Guarantees by loan (migration 028), with names resolved for display.
-  const guaranteesByLoan = {}
-  for (const g of guarantorsRes.error ? [] : guarantorsRes.data) {
-    ;(guaranteesByLoan[g.loan_id] ||= []).push({
-      ...g,
-      guarantorName: profileName[g.guarantor_id] || 'Unknown',
-    })
-  }
-
-  // Net loss still carried per written-off loan. Summed rather than taken as a
-  // single row because calling a guarantee writes a positive reversal against the
-  // same loan, so the remaining loss is the running total.
-  const lossByLoan = {}
-  for (const r of writeOffsRes.error ? [] : writeOffsRes.data) {
-    lossByLoan[r.source_id] = (lossByLoan[r.source_id] || 0) + Number(r.amount)
-  }
-
-  // Written-off loans still backed by an uncalled pledge — the group can recover
-  // part of the loss from the people who guaranteed it.
-  const callableLoans = loans
-    .filter(
-      (l) =>
-        l.status === 'written_off' &&
-        (guaranteesByLoan[l.id] || []).some((g) => g.status === 'accepted'),
-    )
-    .map((l) => {
-      const accepted = guaranteesByLoan[l.id].filter((g) => g.status === 'accepted')
-      return {
-        ...l,
-        memberName: profileName[l.member_id] || 'Unknown',
-        guarantees: accepted,
-        pledgedTotal: accepted.reduce((s, g) => s + Number(g.pledged_amount), 0),
-        // Ledger entries are negative for a loss; report it as a positive figure.
-        lossTzs: Math.max(-(lossByLoan[l.id] || 0), 0),
-        canCall: currentAdminId !== l.member_id,
-      }
-    })
-
   // Has the member ever held a loan that proceeded past 'pending'? Drives the
   // queue's first-time-borrower priority (members without prior loans appear first).
   const everBorrowed = new Set(
@@ -350,18 +305,16 @@ export async function getAdminData(supabase, currentAdminId = null) {
           multiplier: settings.contribution_multiplier,
         }),
         hasPriorLoan: everBorrowed.has(l.member_id),
-        guarantees: guaranteesByLoan[l.id] || [],
-        // The RPC refuses while a nomination is unanswered, so the queue says why
-        // the approve button will fail rather than letting the admin find out.
-        unansweredGuarantees: (guaranteesByLoan[l.id] || []).filter(
-          (g) => g.status === 'pending',
-        ).length,
         approvalsCount: approvals.length,
         requiredApprovals,
         approverNames,
         iApproved,
         isSelf,
-        canApprove: !iApproved && !isSelf,
+        // 035 dropped approve_loan's self-approval block: an admin is a
+        // contributing member (Decision #1) and could not otherwise borrow at all.
+        // 2-of-N still holds, and loan_approvals is UNIQUE (loan_id, admin_id), so
+        // a borrowing admin still cannot be both signatures on their own loan.
+        canApprove: !iApproved,
         firstProofUrl: approvals[0]?.proof_url ?? null,
       }
     })
@@ -410,6 +363,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
     return {
       ...s,
       memberName: profileName[s.member_id] || 'Unknown',
+      // Who keyed it (036). NULL on anything a member filed themselves, which is
+      // every row from before the admin mandate.
+      recordedByName: s.recorded_by ? profileName[s.recorded_by] || 'Unknown' : null,
       suggested,
       penalty,
       period,
@@ -668,9 +624,10 @@ export async function getAdminData(supabase, currentAdminId = null) {
     pendingWithdrawals,
     pendingMembers,
     activeLoans,
-    callableLoans,
     // null until 027 is applied; the banner renders nothing for a null.
     reconciliation: reconciliationRes.error ? null : reconciliationRes.data,
+    // null until 032 is applied; likewise silent.
+    messaging: messagingRes.error ? null : messagingRes.data,
     settings,
     settingRows,
     currentMonthKey,

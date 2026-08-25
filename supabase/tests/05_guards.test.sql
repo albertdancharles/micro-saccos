@@ -104,26 +104,34 @@ BEGIN
   PERFORM tests.eq((SELECT status FROM loans WHERE id = v_loan), 'active',
     'a loan also needs two signatures');
 
-  -- Savings are the security behind the loan: at a 3x cap, a 90,000 balance
-  -- outstanding locks 30,000 of the borrower's own money.
+  -- Savings are the security behind the loan: at a 5x cap, a 90,000 balance
+  -- outstanding locks 18,000 of the borrower's own money.
   SELECT * INTO v_limits FROM member_withdrawable(v_member);
   -- 100,000 deposited + the 10,000 fee settled at the top of this file. Paid fees
   -- ARE savings (migration 014), which is easy to forget when reading a balance.
   PERFORM tests.eq(v_limits.savings_tzs, 110000, 'paid fees count toward savings');
   PERFORM tests.eq(v_limits.outstanding_tzs, 90000, 'outstanding is reported');
-  PERFORM tests.eq(v_limits.locked_tzs, 30000, 'outstanding / multiplier is locked');
-  PERFORM tests.eq(v_limits.withdrawable_tzs, 80000, 'the rest is withdrawable');
+  PERFORM tests.eq(v_limits.locked_tzs, 18000, 'outstanding / multiplier is locked');
+  PERFORM tests.eq(v_limits.withdrawable_tzs, 92000, 'the rest is withdrawable');
 
+  -- Withdrawals are raised by an admin on the member's behalf (036). The ceiling
+  -- is the member's, not the admin's — that is the part worth pinning.
   PERFORM tests.as_user(v_member);
-  PERFORM tests.raises($q$ SELECT request_withdrawal(80001, 'too much') $q$,
-    'a borrower cannot withdraw the savings securing their loan');
-  v_wd := request_withdrawal(80000, 'right up to the cap');
+  PERFORM tests.raises(format($q$ SELECT admin_request_withdrawal(%L, 1, 'x') $q$, v_member),
+    'a member cannot raise their own withdrawal');
+  PERFORM tests.as_owner();
+
+  PERFORM tests.as_user(v_a1);
+  PERFORM tests.raises(format($q$ SELECT admin_request_withdrawal(%L, 92001, 'too much') $q$,
+      v_member),
+    'not even an admin can withdraw the savings securing a loan');
+  v_wd := admin_request_withdrawal(v_member, 92000, 'right up to the cap');
   PERFORM tests.as_owner();
 
   -- Committed-but-unpaid money is not available a second time.
-  PERFORM tests.as_user(v_member);
-  PERFORM tests.raises($q$ SELECT request_withdrawal(1, 'again') $q$,
-    'a member cannot open a second withdrawal while one is in flight');
+  PERFORM tests.as_user(v_a1);
+  PERFORM tests.raises(format($q$ SELECT admin_request_withdrawal(%L, 1, 'again') $q$, v_member),
+    'a member cannot have a second withdrawal while one is in flight');
   PERFORM tests.as_owner();
 
   -- ==================================================== withdrawal approvals

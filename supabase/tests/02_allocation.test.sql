@@ -63,7 +63,7 @@ BEGIN
 
   -- ======================================================== loan installments
   -- Pool of 1,000,000 so the 25% cap allows a 100,000 loan; the borrower's own
-  -- 100,000 clears the 3x contribution cap.
+  -- 100,000 clears the 5x contribution cap.
   PERFORM tests.give_savings(v_funder, 900000);
   PERFORM tests.give_savings(v_member, 100000);
 

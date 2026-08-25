@@ -24,9 +24,6 @@ const EMPTY = {
   currentMonthKey: '',
   amountDue: 0,
   penaltyDue: 0,
-  // Set of related_ids (fee or installment) that already have a pending
-  // submission, so the LogTransactionSheet can hide them.
-  pendingRelatedIds: new Set(),
 }
 
 // `overrideMemberId` lets an admin view another member's dashboard. When null,
@@ -42,7 +39,7 @@ export function useMemberSummary(overrideMemberId = null) {
   const load = useCallback(async () => {
     if (!supabase || !memberId) return
     try {
-      const [savings, loan, fees, assetsRes, pendingSubsRes] = await Promise.all([
+      const [savings, loan, fees, assetsRes] = await Promise.all([
         getApprovedSavings(supabase, memberId),
         getCurrentLoan(supabase, memberId),
         getMyFees(supabase, memberId),
@@ -50,19 +47,8 @@ export function useMemberSummary(overrideMemberId = null) {
           .from('v_group_assets')
           .select('pool_balance_tzs, outstanding_loans_tzs, total_assets_tzs')
           .single(),
-        supabase
-          .from('payment_submissions')
-          .select('related_id')
-          .eq('member_id', memberId)
-          .eq('status', 'pending')
-          .not('related_id', 'is', null),
       ])
       if (assetsRes.error) throw assetsRes.error
-      if (pendingSubsRes.error) throw pendingSubsRes.error
-
-      const pendingRelatedIds = new Set(
-        (pendingSubsRes.data || []).map((r) => r.related_id).filter(Boolean),
-      )
 
       const installments = loan?.status === 'active' ? await getInstallments(supabase, loan.id) : []
 
@@ -102,7 +88,6 @@ export function useMemberSummary(overrideMemberId = null) {
         currentMonthKey,
         amountDue,
         penaltyDue,
-        pendingRelatedIds,
       })
       setError(null)
     } catch (err) {

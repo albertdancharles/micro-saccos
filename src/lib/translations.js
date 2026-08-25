@@ -179,6 +179,18 @@ const sw = {
   'Requested role change': 'Mabadiliko ya jukumu yaliombwa',
   'Partially approved role change': 'Mabadiliko ya jukumu kwa sehemu',
   'Applied role change': 'Mabadiliko ya jukumu yalitekelezwa',
+
+  // Audit actions from the admin mandate (034–037).
+  'Recorded payment': 'Malipo yameingizwa',
+  'Recorded monthly fees': 'Ada za mwezi zimeingizwa',
+  'Filed loan': 'Mkopo umefunguliwa',
+  'Opened withdrawal': 'Utoaji umefunguliwa',
+  'Requested correction': 'Marekebisho yameombwa',
+  'Partially approved correction': 'Marekebisho yameidhinishwa kwa sehemu',
+  'Applied correction': 'Marekebisho yametekelezwa',
+  'Cancelled correction': 'Marekebisho yameghairiwa',
+  'Admin mandate applied': 'Mamlaka ya msimamizi yametekelezwa',
+  'Guarantees removed': 'Dhamana zimeondolewa',
   'Cancelled role change': 'Mabadiliko ya jukumu yalighairiwa',
 
   // Admin summary cards
@@ -460,59 +472,105 @@ const sw = {
   'Could not load the reports. Has migration 029 been applied?':
     'Haikuweza kupakia ripoti. Je, uhamishaji 029 umetekelezwa?',
 
-  // Loan guarantors (migration 028)
-  'Guarantors': 'Wadhamini',
-  'Loans you are backing': 'Mikopo unayodhamini',
-  'A member': 'Mwanachama',
-  'asked you to guarantee their {total} loan': 'amekuomba udhamini mkopo wake wa {total}',
-  'If you accept, {amount} of your savings is locked until the loan is repaid — and the group can take it if the loan is never repaid.':
-    'Ukikubali, {amount} ya akiba yako itafungwa hadi mkopo ulipwe — na kikundi kinaweza kuichukua ikiwa mkopo hautalipwa.',
-  'Accept': 'Kubali',
-  'Decline': 'Kataa',
-  'Currently guaranteeing': 'Unadhamini sasa',
-  'This much of your savings is locked while these loans are open.':
-    'Kiasi hiki cha akiba yako kimefungwa wakati mikopo hii iko wazi.',
-  'Could not save your answer.': 'Haikuweza kuhifadhi jibu lako.',
-  'Optional. Members who back your loan pledge part of their own savings against it.':
-    'Si lazima. Wanachama wanaodhamini mkopo wako huweka rehani sehemu ya akiba yao.',
-  'Your loan cannot be approved until all {n} nominated member(s) have answered.':
-    'Mkopo wako hauwezi kuidhinishwa hadi wanachama {n} walioteuliwa wajibu.',
-  'Ask a member to guarantee…': 'Mwombe mwanachama adhamini…',
+  // Guarantees were removed in migration 035. These three strings outlived that
+  // block because other screens still use them.
   'Choose a member': 'Chagua mwanachama',
   'Choose a member.': 'Chagua mwanachama.',
-  'Ask them': 'Waombe',
-  'Could not ask them.': 'Haikuweza kuwaomba.',
-  'Could not withdraw the request.': 'Haikuweza kuondoa ombi.',
-  'Withdraw': 'Ondoa',
-  'Awaiting their answer': 'Inasubiri jibu lao',
-  'Accepted': 'Amekubali',
-  'Declined': 'Amekataa',
-  'Released': 'Imeachiliwa',
-  'Called': 'Imedaiwa',
-  'awaiting answer': 'inasubiri jibu',
-  'accepted': 'amekubali',
-  'declined': 'amekataa',
-  'released': 'imeachiliwa',
-  'called': 'imedaiwa',
-  '{n} guarantor(s) have not answered — approval is blocked until they do.':
-    'Wadhamini {n} hawajajibu — idhini imezuiwa hadi wajibu.',
-  'You have been asked to guarantee a loan': 'Umeombwa kudhamini mkopo',
-  'Guarantee accepted': 'Udhamini umekubaliwa',
-  'Guarantee declined': 'Udhamini umekataliwa',
-  'Your guarantee has been called': 'Udhamini wako umedaiwa',
-  'Guarantees that can be called ({n})': 'Dhamana zinazoweza kudaiwa ({n})',
-  'These written-off loans were backed by other members.':
-    'Mikopo hii iliyofutwa ilidhaminiwa na wanachama wengine.',
-  'written off · {n} guarantor(s) pledged {amount}':
-    'imefutwa · wadhamini {n} waliweka rehani {amount}',
-  'Call': 'Dai',
-  'Call the guarantees': 'Dai dhamana',
-  'Recovered': 'Imerejeshwa',
-  'The group still absorbs {amount}. No cash moves — savings become loan recovery.':
-    'Kikundi bado kinabeba {amount}. Hakuna fedha inayohama — akiba inakuwa marejesho ya mkopo.',
-  'Why are the guarantees being called?': 'Kwa nini dhamana zinadaiwa?',
-  'A reason is required to call a guarantee.': 'Sababu inahitajika kudai dhamana.',
-  'Could not call the guarantees.': 'Haikuweza kudai dhamana.',
+  'A member': 'Mwanachama',
+
+  // Admin recording (migrations 036–037). Members file nothing; admins key it all.
+  'Record monthly fees': 'Ingiza ada za mwezi',
+  'Record a payment': 'Ingiza malipo',
+  'File a loan': 'Fungua mkopo',
+  'Open a withdrawal': 'Fungua utoaji',
+  'Close': 'Funga',
+  'Every fee is settled. Nothing to record.': 'Kila ada imelipwa. Hakuna cha kuingiza.',
+  'Could not load the fee sheet.': 'Haikuweza kupakia orodha ya ada.',
+  'Could not post the fee sheet.': 'Haikuweza kutuma orodha ya ada.',
+  'Tick at least one member.': 'Chagua angalau mwanachama mmoja.',
+  'Every ticked member needs an amount greater than zero.':
+    'Kila mwanachama uliyemchagua anahitaji kiasi zaidi ya sifuri.',
+  'Record fee for {name}': 'Ingiza ada ya {name}',
+  'Amount for {name}': 'Kiasi cha {name}',
+  'penalty {amount}': 'faini {amount}',
+  '{n} selected · {amount}': 'Wamechaguliwa {n} · {amount}',
+  'Post {n} payments': 'Tuma malipo {n}',
+  'Posting…': 'Inatuma…',
+  'Your own fee is not on this sheet. Record it with “Record a payment” — an admin’s own money always needs a second admin’s signature.':
+    'Ada yako haiko kwenye orodha hii. Itumie “Ingiza malipo” — fedha za msimamizi mwenyewe daima zinahitaji saini ya msimamizi wa pili.',
+
+  'Paying for': 'Malipo ya',
+  'Which fee': 'Ada ipi',
+  'Which installment': 'Awamu ipi',
+  'Choose a member first': 'Kwanza chagua mwanachama',
+  'Nothing outstanding': 'Hakuna deni',
+  'Choose…': 'Chagua…',
+  'you': 'wewe',
+  'Enter what actually arrived, not what was owed.':
+    'Weka kilichopokelewa kweli, si kilichodaiwa.',
+  'Could not load what this member owes.': 'Haikuweza kupakia madeni ya mwanachama huyu.',
+  'Could not record the payment.': 'Haikuweza kuingiza malipo.',
+  'Recording…': 'Inaingiza…',
+  'This is your own money, so a second admin must sign it — even for a monthly fee.':
+    'Hizi ni fedha zako mwenyewe, hivyo msimamizi wa pili lazima asaini — hata kwa ada ya mwezi.',
+  'A second admin must approve this before it posts.':
+    'Msimamizi wa pili lazima aidhinishe kabla haijaingia.',
+  'This posts immediately on your signature.': 'Hii inaingia mara moja kwa saini yako.',
+
+  'Their savings': 'Akiba yao',
+  'Loan amount (TSh)': 'Kiasi cha mkopo (TSh)',
+  'Above the {amount} ceiling — the database will refuse to approve it.':
+    'Zaidi ya kikomo cha {amount} — mfumo utakataa kuidhinisha.',
+  'This only raises the request. Two admins must approve it, and the M-Pesa proof is attached at approval.':
+    'Hii inafungua ombi tu. Wasimamizi wawili lazima waidhinishe, na uthibitisho wa M-Pesa unaambatishwa wakati wa idhini.',
+  'Filing…': 'Inafungua…',
+  'File loan': 'Fungua mkopo',
+  'Could not file the loan.': 'Haikuweza kufungua mkopo.',
+  'This is your own loan. Another admin must also approve it.':
+    'Huu ni mkopo wako mwenyewe. Msimamizi mwingine lazima pia aidhinishe.',
+
+  'Locked behind their loan': 'Imefungwa kwa mkopo wao',
+  'Can withdraw': 'Anaweza kuondoa',
+  'They can withdraw at most {amount} right now.':
+    'Kwa sasa anaweza kuondoa hadi {amount}.',
+  'A reason is required for every withdrawal.': 'Sababu inahitajika kwa kila utoaji.',
+  'e.g. school fees': 'mfano ada ya shule',
+  'Two admins must approve this, and the savings only move when the payout proof is recorded.':
+    'Wasimamizi wawili lazima waidhinishe, na akiba inahama tu pale uthibitisho wa malipo unapoingizwa.',
+  'Opening…': 'Inafungua…',
+  'Could not open the withdrawal.': 'Haikuweza kufungua utoaji.',
+
+  'Voided': 'Imebatilishwa',
+  'No screenshot — recorded by {name}.': 'Hakuna picha — imeingizwa na {name}.',
+  'No screenshot attached.': 'Hakuna picha iliyoambatishwa.',
+
+  'Corrections': 'Marekebisho',
+  'Waiting for a second signature': 'Inasubiri saini ya pili',
+  'Recently recorded': 'Zilizoingizwa karibuni',
+  'Void': 'Batilisha',
+  'Request void': 'Omba kubatilisha',
+  'Approve correction': 'Idhinisha marekebisho',
+  'Awaiting another admin': 'Inasubiri msimamizi mwingine',
+  'Why is this being voided?': 'Kwa nini hii inabatilishwa?',
+  'Say why this entry is being voided.': 'Eleza kwa nini muamala huu unabatilishwa.',
+  'A second admin must approve the correction before it applies.':
+    'Msimamizi wa pili lazima aidhinishe marekebisho kabla hayajatekelezwa.',
+  'Raised by {name}': 'Imefunguliwa na {name}',
+  'Could not load corrections.': 'Haikuweza kupakia marekebisho.',
+  'That did not work.': 'Hilo halikufanya kazi.',
+
+  'Your membership is not active.': 'Uanachama wako haupo hai.',
+  'Speak to your group admin if you think this is a mistake.':
+    'Zungumza na msimamizi wa kikundi chako ikiwa unadhani kuna kosa.',
+
+  // Member dashboard, now read-only
+  'Payments are recorded by your admin. Speak to them to pay in, request a loan, or withdraw.':
+    'Malipo yanaingizwa na msimamizi wako. Zungumza naye ili kuweka fedha, kuomba mkopo, au kuondoa.',
+  'Read-only view. Use the admin dashboard to record a payment, file a loan, or correct an entry for this member.':
+    'Mwonekano wa kusoma tu. Tumia dashibodi ya msimamizi kuingiza malipo, kufungua mkopo, au kurekebisha muamala wa mwanachama huyu.',
+  'Accounts are created by your group admin. Speak to them to get access.':
+    'Akaunti zinafunguliwa na msimamizi wa kikundi chako. Zungumza naye ili upate nafasi.',
+
   '{n}× savings': 'Mara {n} ya akiba',
   '{n}% of pool': '{n}% ya hazina',
 
@@ -612,7 +670,6 @@ const sw = {
   'Request withdrawal': 'Omba kutoa',
   'You can withdraw at most {amount} right now.':
     'Unaweza kutoa kiwango cha juu cha {amount} kwa sasa.',
-  'A reason is required for every withdrawal.': 'Sababu inahitajika kwa kila utoaji.',
   'Could not submit your withdrawal request.': 'Haikuweza kutuma ombi lako la kutoa.',
   'Approved — the admins will pay this out and attach the proof.':
     'Imeidhinishwa — wasimamizi watalipa na kuambatanisha uthibitisho.',
@@ -674,7 +731,6 @@ const sw = {
   'Loan action': 'Hatua ya mkopo',
   'Borrower': 'Mkopaji',
   'Outstanding': 'Deni lililobaki',
-  'Their savings': 'Akiba yao',
   'Overdue installments': 'Awamu zilizochelewa',
   'Reschedule the loan': 'Panga upya mkopo',
   'Recover from their savings': 'Rejesha kutoka akiba yao',
@@ -851,6 +907,8 @@ const sw = {
   'Not due': 'Haijafika wakati',
   'Cancelled': 'Imeghairiwa',
   'N/A': 'H/M',
+  'Queued': 'Foleni',
+  'Sent': 'Imetumwa',
 
   // Upload zone
   'Tap to upload screenshot': 'Gonga ili kupakia picha ya skrini',
@@ -875,7 +933,6 @@ const sw = {
   'Could not load members.': 'Haikuweza kupakia wanachama.',
 
   // Modal
-  'Close': 'Funga',
 
   // Mobile tab bar. Kept short — the labels sit under a 22px icon in a quarter
   // of the screen width, so anything longer than ~10 characters truncates.
@@ -883,6 +940,29 @@ const sw = {
   'Admin': 'Msimamizi',
   'Main navigation': 'Urambazaji mkuu',
   'No members yet.': 'Bado hakuna wanachama.',
+
+  // Messaging (026/032) — the audit log and the delivery warning
+  'Queued due reminders': 'Vikumbusho vimepangwa',
+  'Sent reminders': 'Vikumbusho vimetumwa',
+  'Scheduled reminder delivery': 'Ratiba ya kutuma vikumbusho',
+  'queued for delivery': 'vimepangwa kutumwa',
+  'week': 'wiki',
+  'sent': 'vimetumwa',
+  'failed': 'vimeshindikana',
+  'skipped': 'vimerukwa',
+  'expired unsent': 'vimepitwa na wakati',
+  'every': 'kila',
+  'Reminders are not reaching members': 'Vikumbusho havifiki kwa wanachama',
+  'Some reminders could not be delivered': 'Baadhi ya vikumbusho havikutumwa',
+  '{n} message(s) have been waiting more than two hours. Members are not being reminded.':
+    'Jumbe {n} zimesubiri zaidi ya saa mbili. Wanachama hawapati vikumbusho.',
+  '{n} message(s) failed in the last 7 days.':
+    'Jumbe {n} zimeshindikana katika siku 7 zilizopita.',
+  'The SMS account is out of credit. Top it up and the queue will clear itself.':
+    'Akaunti ya SMS imeishiwa salio. Ongeza salio na foleni itajisafisha yenyewe.',
+  'Last error': 'Hitilafu ya mwisho',
+  'Nothing is lost — members still see everything in the app.':
+    'Hakuna kilichopotea — wanachama bado wanaona kila kitu kwenye programu.',
 }
 
 export function createTranslator(lang) {
