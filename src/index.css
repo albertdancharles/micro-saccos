@@ -226,133 +226,161 @@ body {
    Used via plain class names so JSX stays light.
    ---------------------------------------------------------------------------- */
 
-/* Base mixin extracted via CSS — kept outside @layer so each variant can apply
-   directly via Tailwind utilities and our shared base via composition. */
+/* These MUST stay inside @layer components.
+ *
+ * `@import "tailwindcss"` declares the order `theme, base, components,
+ * utilities`, and unlayered CSS beats every layer no matter what it contains.
+ * So while these rules sat outside a layer they silently outranked every
+ * Tailwind utility that touched the same property — `.input-field`'s
+ * `width: 100%` swallowed `w-24`, its `background-color` swallowed
+ * `disabled:bg-slate-50`, and the button base's `font-size` swallowed
+ * `text-xs`. Nothing errored; the utilities just did nothing, and the fee
+ * sheet's amount column grew to the full row width and pushed the member
+ * name out of the card.
+ *
+ * Inside `components` they rank below `utilities`, which is what "our shared
+ * base, overridable per instance" needs in order to actually be true. */
+@layer components {
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    line-height: 1;
+    min-height: 44px;
+    padding: 0 1rem;
+    transition: all 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    -webkit-user-select: none;
+    user-select: none;
+    white-space: nowrap;
+    /* Opts out of the browser's 300ms double-tap-to-zoom wait, so taps register
+       immediately instead of feeling laggy. */
+    touch-action: manipulation;
+  }
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled,
+  .btn-info:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-.btn-primary,
-.btn-secondary,
-.btn-ghost,
-.btn-danger,
-.btn-info {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 0.75rem;
-  font-weight: 500;
-  font-size: 0.875rem;
-  line-height: 1;
-  min-height: 44px;
-  padding: 0 1rem;
-  transition: all 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  -webkit-user-select: none;
-  user-select: none;
-  white-space: nowrap;
-  /* Opts out of the browser's 300ms double-tap-to-zoom wait, so taps register
-     immediately instead of feeling laggy. */
-  touch-action: manipulation;
-}
-.btn-primary:disabled,
-.btn-secondary:disabled,
-.btn-ghost:disabled,
-.btn-danger:disabled,
-.btn-info:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  .btn-primary {
+    background-color: #059669;
+    color: #fff;
+    box-shadow: 0 1px 2px -1px rgba(5, 150, 105, 0.5);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #047857;
+  }
+  .btn-primary:active:not(:disabled) {
+    background-color: #065f46;
+    transform: scale(0.99);
+  }
 
-.btn-primary {
-  background-color: #059669;
-  color: #fff;
-  box-shadow: 0 1px 2px -1px rgba(5, 150, 105, 0.5);
-}
-.btn-primary:hover:not(:disabled) {
-  background-color: #047857;
-}
-.btn-primary:active:not(:disabled) {
-  background-color: #065f46;
-  transform: scale(0.99);
-}
+  .btn-secondary {
+    background-color: #fff;
+    color: #334155;
+    box-shadow: inset 0 0 0 1px #e2e8f0;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #f8fafc;
+    box-shadow: inset 0 0 0 1px #cbd5e1;
+  }
+  .btn-secondary:active:not(:disabled) {
+    transform: scale(0.99);
+  }
 
-.btn-secondary {
-  background-color: #fff;
-  color: #334155;
-  box-shadow: inset 0 0 0 1px #e2e8f0;
-}
-.btn-secondary:hover:not(:disabled) {
-  background-color: #f8fafc;
-  box-shadow: inset 0 0 0 1px #cbd5e1;
-}
-.btn-secondary:active:not(:disabled) {
-  transform: scale(0.99);
-}
+  .btn-ghost {
+    color: #475569;
+    background: transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: #f1f5f9;
+  }
+  .btn-ghost:active:not(:disabled) {
+    transform: scale(0.99);
+  }
 
-.btn-ghost {
-  color: #475569;
-  background: transparent;
-}
-.btn-ghost:hover:not(:disabled) {
-  background-color: #f1f5f9;
-}
-.btn-ghost:active:not(:disabled) {
-  transform: scale(0.99);
-}
+  .btn-danger {
+    background-color: #dc2626;
+    color: #fff;
+    box-shadow: 0 1px 2px -1px rgba(220, 38, 38, 0.5);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background-color: #b91c1c;
+  }
+  .btn-danger:active:not(:disabled) {
+    background-color: #991b1b;
+    transform: scale(0.99);
+  }
 
-.btn-danger {
-  background-color: #dc2626;
-  color: #fff;
-  box-shadow: 0 1px 2px -1px rgba(220, 38, 38, 0.5);
-}
-.btn-danger:hover:not(:disabled) {
-  background-color: #b91c1c;
-}
-.btn-danger:active:not(:disabled) {
-  background-color: #991b1b;
-  transform: scale(0.99);
-}
+  /* Informational CTA (sky) — used for pool / total-assets edits, which are
+     neither the primary emerald action nor destructive. */
+  .btn-info {
+    background-color: #0284c7;
+    color: #fff;
+    box-shadow: 0 1px 2px -1px rgba(2, 132, 199, 0.5);
+  }
+  .btn-info:hover:not(:disabled) {
+    background-color: #0369a1;
+  }
+  .btn-info:active:not(:disabled) {
+    background-color: #075985;
+    transform: scale(0.99);
+  }
 
-/* Informational CTA (sky) — used for pool / total-assets edits, which are
-   neither the primary emerald action nor destructive. */
-.btn-info {
-  background-color: #0284c7;
-  color: #fff;
-  box-shadow: 0 1px 2px -1px rgba(2, 132, 199, 0.5);
-}
-.btn-info:hover:not(:disabled) {
-  background-color: #0369a1;
-}
-.btn-info:active:not(:disabled) {
-  background-color: #075985;
-  transform: scale(0.99);
-}
+  .input-field {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    background-color: #fff;
+    color: #0f172a;
+    box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.02);
+    transition: border-color 150ms, box-shadow 150ms;
+  }
+  .input-field::placeholder {
+    color: #94a3b8;
+  }
+  .input-field:hover {
+    border-color: #cbd5e1;
+  }
+  .input-field:focus {
+    border-color: #10b981;
+    outline: none;
+    box-shadow: 0 0 0 4px #d1fae5;
+  }
+  .input-field:disabled {
+    background-color: #f8fafc;
+    color: #94a3b8;
+    cursor: not-allowed;
+  }
 
-.input-field {
-  display: block;
-  width: 100%;
-  min-height: 44px;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  background-color: #fff;
-  color: #0f172a;
-  box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.02);
-  transition: border-color 150ms, box-shadow 150ms;
-}
-.input-field::placeholder {
-  color: #94a3b8;
-}
-.input-field:hover {
-  border-color: #cbd5e1;
-}
-.input-field:focus {
-  border-color: #10b981;
-  outline: none;
-  box-shadow: 0 0 0 4px #d1fae5;
-}
-.input-field:disabled {
-  background-color: #f8fafc;
-  color: #94a3b8;
-  cursor: not-allowed;
+  /* Drop the native number spinners. They are pure cost here: they overlay the
+     right-hand ~16px of the field, which is exactly where a `text-right` money
+     value sits, and the fee sheet's amount column is only 96px wide to begin
+     with. Every one of these inputs already sets inputMode="numeric", so phones
+     still get the numeric keypad. */
+  .input-field[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .input-field[type='number']::-webkit-outer-spin-button,
+  .input-field[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }
 
 /* Skeleton shimmer for loading states (UI/UX rule §3 progressive-loading).
