@@ -138,7 +138,7 @@ export default function CorrectionsPanel({ onActioned }) {
   if (pending.length === 0 && recent.length === 0) return null
 
   return (
-    <section className="card space-y-3">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3">
       <h2 className="text-sm font-semibold text-slate-900">{t('Corrections')}</h2>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -163,18 +163,20 @@ export default function CorrectionsPanel({ onActioned }) {
               <p className="text-xs text-slate-500">
                 {t('Raised by {name}').replace('{name}', v.requesterName)}
               </p>
-              <div className="flex gap-2">
+              {/* Stacked below sm: buttons carry white-space: nowrap, so
+                  "Awaiting another admin" next to "Cancel" overflows 375px. */}
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <button
                   onClick={() => act(() => approvePaymentVoid(supabase, v.id), v.id)}
                   disabled={busyId === v.id || v.iRequested}
-                  className="btn-primary flex-1 !min-h-10 disabled:opacity-40"
+                  className="btn-primary sm:flex-1 disabled:opacity-40"
                 >
                   {v.iRequested ? t('Awaiting another admin') : t('Approve correction')}
                 </button>
                 <button
                   onClick={() => act(() => cancelPaymentVoid(supabase, v.id), v.id)}
                   disabled={busyId === v.id}
-                  className="btn-secondary !min-h-10"
+                  className="btn-secondary"
                 >
                   {t('Cancel')}
                 </button>
@@ -209,7 +211,7 @@ export default function CorrectionsPanel({ onActioned }) {
                         setReason('')
                         setError('')
                       }}
-                      className="text-xs font-medium text-red-600 hover:text-red-700"
+                      className="-mr-2 inline-flex min-h-11 items-center rounded-lg px-3 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 active:bg-red-100"
                     >
                       {t('Void')}
                     </button>
@@ -225,17 +227,17 @@ export default function CorrectionsPanel({ onActioned }) {
                       placeholder={t('Why is this being voided?')}
                       className="input-field"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <button
                         onClick={submitVoid}
                         disabled={busyId === s.id}
-                        className="btn-primary flex-1 !min-h-10"
+                        className="btn-primary sm:flex-1"
                       >
                         {t('Request void')}
                       </button>
                       <button
                         onClick={() => setVoidTarget(null)}
-                        className="btn-secondary !min-h-10"
+                        className="btn-secondary"
                       >
                         {t('Cancel')}
                       </button>

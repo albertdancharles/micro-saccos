@@ -117,7 +117,7 @@ export default function RecordFeeSheet({ onActioned }) {
   }
 
   return (
-    <section className="card space-y-3">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">{t('Record monthly fees')}</h2>
         <button onClick={() => setOpen(false)} className="text-sm text-slate-500 hover:text-slate-700">
@@ -137,26 +137,30 @@ export default function RecordFeeSheet({ onActioned }) {
             {others.map((r) => {
               const on = ticked[r.id] !== undefined
               return (
-                <div key={r.id} className="flex items-center gap-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggle(r)}
-                    aria-label={t('Record fee for {name}').replace('{name}', r.name)}
-                    className="size-5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-slate-900">{r.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {formatDate(r.period)}
-                      {Number(r.penalty_due) > 0 && (
-                        <span className="text-amber-700">
-                          {' · '}
-                          {t('penalty {amount}').replace('{amount}', formatTZS(r.penalty_due))}
-                        </span>
-                      )}
-                    </p>
-                  </div>
+                <div key={r.id} className="flex items-center gap-2 py-1">
+                  <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(r)}
+                      className="size-5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-slate-900">{r.name}</span>
+                      <span className="block truncate text-xs text-slate-500">
+                        {formatDate(r.period)}
+                        {Number(r.penalty_due) > 0 && (
+                          <span className="text-amber-700">
+                            {' · '}
+                            {t('penalty {amount}').replace('{amount}', formatTZS(r.penalty_due))}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                  {/* w-24, not w-28: at 375px the row is ~311px inside the card, and
+                      the name needs the difference more than the amount does. Seven
+                      tabular digits still fit. */}
                   <input
                     type="number"
                     min="0"
@@ -167,7 +171,7 @@ export default function RecordFeeSheet({ onActioned }) {
                       setTicked((prev) => ({ ...prev, [r.id]: e.target.value }))
                     }
                     aria-label={t('Amount for {name}').replace('{name}', r.name)}
-                    className="input-field w-28 shrink-0 tabular-nums text-right disabled:bg-slate-50 disabled:text-slate-400"
+                    className="input-field w-24 shrink-0 tabular-nums text-right disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
               )
@@ -182,8 +186,12 @@ export default function RecordFeeSheet({ onActioned }) {
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <p className="text-sm text-slate-600 tabular-nums">
+          {/* bottom-0 would park this UNDER the fixed tab bar (.bottom-nav is
+                  position:fixed, bottom:0, z-40), hiding the Post button on mobile.
+                  Offset by the nav height plus the home-indicator inset, and drop
+                  back to 0 at sm where the nav is replaced by the header. */}
+          <div className="sticky bottom-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom,0px))] -mx-4 flex flex-col gap-2 border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:bottom-0 sm:-mx-5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-sm tabular-nums text-slate-600">
               {t('{n} selected · {amount}')
                 .replace('{n}', selected.length)
                 .replace('{amount}', formatTZS(total))}
@@ -191,7 +199,7 @@ export default function RecordFeeSheet({ onActioned }) {
             <button
               onClick={handlePost}
               disabled={busy || selected.length === 0}
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
             >
               {busy
                 ? t('Posting…')
