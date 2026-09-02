@@ -26,6 +26,20 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  functions:
+    name: edge function typecheck
+    runs-on: ubuntu-latest
+    # eslint only matches **/*.{js,jsx}, so the Deno function was covered by
+    # nothing at all — it could be pushed with a type error and only fail once
+    # it was deployed and a cron job called it. It is the one piece of this
+    # system that spends money per row, which is a poor place to find out.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/dispatch-notifications/index.ts
+
   database:
     name: sql tests
     runs-on: ubuntu-latest

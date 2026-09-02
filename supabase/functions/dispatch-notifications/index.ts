@@ -137,15 +137,33 @@ async function sendWhatsApp(to: string, text: string): Promise<void> {
 Deno.serve(async (req) => {
   // The outbox holds phone numbers and this endpoint spends money, so it is closed
   // unless a secret is configured AND matches. Missing secret = closed, not open.
-  const secret = Deno.env.get('DISPATCH_SECRET')
+  // Trimmed on both sides. A secret pasted into a dashboard field very often
+  // carries a trailing newline, and `!==` treats "s\n" and "s" as different with
+  // nothing to see in the UI — a silent, unfalsifiable 403. Trimming surrounding
+  // whitespace costs no security: nobody guesses a secret by padding it.
+  const secret = Deno.env.get('DISPATCH_SECRET')?.trim()
   if (!secret) {
     return new Response(JSON.stringify({ error: 'DISPATCH_SECRET is not set; refusing to run' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (req.headers.get('x-dispatch-secret') !== secret) {
-    return new Response('Forbidden', { status: 403 })
+  const offered = req.headers.get('x-dispatch-secret')?.trim()
+  if (offered !== secret) {
+    // "Never arrived" and "arrived wrong" need opposite fixes — the first is a
+    // transport problem (a caller not sending it, a proxy stripping it), the
+    // second is a value mismatch — and a bare "Forbidden" cannot tell an
+    // operator which they have. Reporting only PRESENCE discloses nothing
+    // useful to an attacker, who already knows whether they sent a header.
+    return new Response(
+      JSON.stringify({
+        error:
+          offered === undefined
+            ? 'no x-dispatch-secret header was received — the caller is not sending it, or something stripped it in transit'
+            : 'x-dispatch-secret did not match DISPATCH_SECRET',
+      }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    )
   }
 
   let opts: { check?: boolean; dry_run?: boolean; limit?: number } = {}
