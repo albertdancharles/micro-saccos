@@ -25,21 +25,32 @@ export default function MessagingBanner({ messaging }) {
   // queue that suddenly stops moving, and it has an obvious fix worth naming.
   const outOfCredit = /balance/i.test(lastError)
 
+  // Migration 038. "Never delivered anything" and "used to work, stopped" are
+  // different faults needing different actions, and they looked identical here:
+  // both just said reminders were not arriving. Undefined on a database still on
+  // 037, which reads as false — the pre-038 wording, which is the safe default.
+  const neverSent = messaging.never_sent === true
+
   return (
     <section
       role="alert"
       className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]"
     >
       <h2 className="text-[13px] font-semibold tracking-tight text-amber-900">
-        {stuck
-          ? t('Reminders are not reaching members')
-          : t('Some reminders could not be delivered')}
+        {stuck && neverSent
+          ? t('Reminders have never been sent')
+          : stuck
+            ? t('Reminders are not reaching members')
+            : t('Some reminders could not be delivered')}
       </h2>
 
       {stuck > 0 && (
         <p className="mt-1 text-sm text-amber-800">
-          {t('{n} message(s) have been waiting more than two hours. Members are not being reminded.')
-            .replace('{n}', stuck)}
+          {neverSent
+            ? t('{n} message(s) are waiting and not one has ever been delivered. SMS sending is most likely not connected yet.')
+                .replace('{n}', stuck)
+            : t('{n} message(s) have been waiting more than two hours. Members are not being reminded.')
+                .replace('{n}', stuck)}
         </p>
       )}
 

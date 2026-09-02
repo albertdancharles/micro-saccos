@@ -953,9 +953,12 @@ const sw = {
   'expired unsent': 'vimepitwa na wakati',
   'every': 'kila',
   'Reminders are not reaching members': 'Vikumbusho havifiki kwa wanachama',
+  'Reminders have never been sent': 'Vikumbusho havijawahi kutumwa',
   'Some reminders could not be delivered': 'Baadhi ya vikumbusho havikutumwa',
   '{n} message(s) have been waiting more than two hours. Members are not being reminded.':
     'Jumbe {n} zimesubiri zaidi ya saa mbili. Wanachama hawapati vikumbusho.',
+  '{n} message(s) are waiting and not one has ever been delivered. SMS sending is most likely not connected yet.':
+    'Jumbe {n} zinasubiri na hakuna hata moja iliyowahi kufika. Huduma ya kutuma SMS bado haijaunganishwa.',
   '{n} message(s) failed in the last 7 days.':
     'Jumbe {n} zimeshindikana katika siku 7 zilizopita.',
   'The SMS account is out of credit. Top it up and the queue will clear itself.':

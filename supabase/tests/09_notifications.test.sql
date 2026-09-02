@@ -156,6 +156,41 @@ BEGIN
   SELECT * INTO v_health FROM v_notification_health;
   PERFORM tests.eq(v_health.stuck, 1, 'a row queued for hours means the drain is not running');
 
+  -- ==================================================== health names the real cause (038)
+  -- The banner reads last_error aloud to an admin, so a stale reason is worse
+  -- than no reason: it describes a batch that is already retired as though it
+  -- were the live fault, and the honest reading of it is "nothing to do".
+  PERFORM tests.eq(v_health.last_error, NULL::text,
+    'a queue nothing has attempted reports no reason, because there is none');
+  PERFORM tests.eq(v_health.never_sent::text, 'true',
+    'never_sent marks a drain that has delivered nothing, ever');
+
+  -- Exactly the row 032's backfill leaves behind. However recent it is, it is
+  -- retired by design and is not why the queue is stuck now.
+  UPDATE notification_deliveries
+     SET status = 'skipped',
+         last_error = 'expired unsent — queued before dispatch was connected';
+  SELECT * INTO v_health FROM v_notification_health;
+  PERFORM tests.eq(v_health.last_error, NULL::text,
+    'a skipped row never becomes the reported cause');
+
+  -- A blocked batch is different: the dispatcher leaves the reason on a row it
+  -- deliberately keeps queued, so queued rows must stay in scope.
+  UPDATE notification_deliveries
+     SET status = 'queued',
+         last_error = 'Beem: insufficient balance — top up to resume reminders';
+  SELECT * INTO v_health FROM v_notification_health;
+  PERFORM tests.eq(v_health.last_error,
+    'Beem: insufficient balance — top up to resume reminders',
+    'a blocking reason on a queued row is what the admin is shown');
+
+  -- One success is the whole difference between "never connected" and "stopped".
+  UPDATE notification_deliveries
+     SET status = 'sent', sent_at = now(), last_error = NULL;
+  SELECT * INTO v_health FROM v_notification_health;
+  PERFORM tests.eq(v_health.never_sent::text, 'false',
+    'a single delivery proves the drain was connected at least once');
+
   -- ==================================================== the drain job guard
   -- Scheduling without a secret would only ever collect 503s from an endpoint
   -- that fails closed, so it is refused outright.
