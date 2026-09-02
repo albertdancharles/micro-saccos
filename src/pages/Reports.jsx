@@ -23,7 +23,7 @@ import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
 
 const CARD =
-  'rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
+  'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
 
 function Line({ label, value, tone, strong, indent }) {
   const color =

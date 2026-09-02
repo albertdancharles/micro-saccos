@@ -66,7 +66,7 @@ export default function ActiveLoansPanel({ activeLoans, onActioned }) {
   const atRiskCount = activeLoans.filter((l) => l.risk).length
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-baseline justify-between mb-1">
         <h2 className="text-[13px] font-semibold tracking-tight text-slate-700">
           {t('Active loans ({n})').replace('{n}', activeLoans.length)}

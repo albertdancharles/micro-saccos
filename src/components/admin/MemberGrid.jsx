@@ -260,7 +260,7 @@ export default function MemberGrid({
   const overdue = rows.filter((r) => r.overall === 'overdue').length
 
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-card">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-baseline gap-2">
           <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">{t('Members')}</h2>

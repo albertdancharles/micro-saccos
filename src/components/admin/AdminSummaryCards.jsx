@@ -12,7 +12,7 @@ export default function AdminSummaryCards({ stats }) {
 
   return (
     <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-50 to-white p-5 ring-1 ring-sky-200/70 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-50 to-white p-4 sm:p-5 ring-1 ring-sky-200/70 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">
           {t('Total group assets')}
         </p>

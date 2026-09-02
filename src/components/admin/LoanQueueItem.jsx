@@ -220,11 +220,15 @@ export default function LoanQueueItem({ loan, onActioned }) {
             </div>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2 pt-1">
+          {/* Stacked below sm — see CorrectionsPanel. This card is p-4 nested in
+              the queue's own padding, so it has only ~279px at 375px, and
+              "Thibitisha & toa (1/2)" beside "Kataa" leaves under 20px spare —
+              inside the margin of error on label widths. */}
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row">
             <button
               onClick={handleApprove}
               disabled={busy || !loan.canApprove}
-              className="btn-primary flex-1"
+              className="btn-primary sm:flex-1"
             >
               {approveLabel}
             </button>

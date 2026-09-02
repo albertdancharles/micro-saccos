@@ -105,11 +105,17 @@ function ActionItem({ request, onActioned }) {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex gap-2">
+      {/* Stacked below sm: buttons carry white-space: nowrap and flex items will
+          not shrink below min-content, so the approval label next to "Cancel
+          request" overflows 375px — in Swahili "Idhinisha & tekeleza (1/2)"
+          beside "Ghairi ombi" needs ~331px of the ~311px a card leaves. */}
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={handleApprove}
           disabled={busy || !request.canApprove}
-          className={request.action === 'write_off' ? 'btn-danger flex-1' : 'btn-info flex-1'}
+          className={
+            request.action === 'write_off' ? 'btn-danger sm:flex-1' : 'btn-info sm:flex-1'
+          }
         >
           {approveLabel}
         </button>
@@ -126,7 +132,7 @@ export default function LoanActionQueue({ pendingLoanActions, onActioned }) {
   if (!pendingLoanActions || pendingLoanActions.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-amber-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-amber-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-amber-700 mb-3">
         {t('Pending loan actions ({n})').replace('{n}', pendingLoanActions.length)}
       </h2>

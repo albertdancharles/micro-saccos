@@ -28,7 +28,7 @@ import UploadZone from '../components/ui/UploadZone'
 import Badge from '../components/ui/Badge'
 
 const CARD =
-  'rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
+  'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
 
 function Row({ label, value, tone }) {
   const color =
@@ -236,7 +236,7 @@ function ClosureVote({ closure, currentAdminId, onDone }) {
   }
 
   return (
-    <section className="rounded-2xl border border-amber-200/70 bg-white p-5">
+    <section className="rounded-2xl border border-amber-200/70 bg-white p-4 sm:p-5">
       <h2 className="text-[13px] font-semibold tracking-tight text-amber-700 mb-2">
         {t('Cycle close awaiting approval')}
       </h2>

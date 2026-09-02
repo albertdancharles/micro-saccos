@@ -28,7 +28,7 @@ export default function MessagingBanner({ messaging }) {
   return (
     <section
       role="alert"
-      className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]"
+      className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]"
     >
       <h2 className="text-[13px] font-semibold tracking-tight text-amber-900">
         {stuck

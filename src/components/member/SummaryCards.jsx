@@ -28,7 +28,7 @@ function HeroCard({ label, value, sub, tone = 'sky' }) {
 
   return (
     <div
-      className={`relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br ${palette.bg} p-5 ring-1 ${palette.ring} shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]`}
+      className={`relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br ${palette.bg} p-4 sm:p-5 ring-1 ${palette.ring} shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]`}
     >
       <p className={`text-[11px] font-semibold uppercase tracking-wide ${palette.chip}`}>
         {label}

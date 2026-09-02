@@ -20,7 +20,7 @@ export default function ReconciliationBanner({ reconciliation }) {
   return (
     <section
       role="alert"
-      className="rounded-2xl border border-red-300 bg-red-50 p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]"
+      className="rounded-2xl border border-red-300 bg-red-50 p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]"
     >
       <h2 className="text-[13px] font-semibold tracking-tight text-red-800">
         {t('The group’s books do not balance')}

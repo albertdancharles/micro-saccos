@@ -146,11 +146,13 @@ function WithdrawalItem({ request, onActioned }) {
           </div>
         </div>
       ) : (
-        <div className="flex gap-2">
+        // Stacked below sm — see CorrectionsPanel. "Idhinisha & tekeleza (1/2)"
+        // beside "Kataa" fits only just, and nowrap buttons cannot shrink.
+        <div className="flex flex-col gap-2 sm:flex-row">
           <button
             onClick={() => run(() => approveWithdrawal(supabase, request.id))}
             disabled={busy || !request.canApprove}
-            className="btn-info flex-1"
+            className="btn-info sm:flex-1"
           >
             {approveLabel}
           </button>
@@ -168,7 +170,7 @@ export default function WithdrawalQueue({ pendingWithdrawals, onActioned }) {
   if (!pendingWithdrawals || pendingWithdrawals.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-sky-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-sky-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-sky-700 mb-3">
         {t('Withdrawals ({n})').replace('{n}', pendingWithdrawals.length)}
       </h2>

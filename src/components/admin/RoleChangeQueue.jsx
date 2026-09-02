@@ -100,11 +100,13 @@ function ChangeItem({ request, onActioned }) {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex gap-2">
+      {/* Stacked below sm — see CorrectionsPanel: nowrap approval labels beside
+          "Cancel request" overflow 375px. */}
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={handleApprove}
           disabled={busy || !request.canApprove}
-          className={`${isPromote ? 'btn-primary' : 'btn-danger'} flex-1`}
+          className={`${isPromote ? 'btn-primary' : 'btn-danger'} sm:flex-1`}
         >
           {approveLabel}
         </button>
@@ -121,7 +123,7 @@ export default function RoleChangeQueue({ pendingRoleChanges, onActioned }) {
   if (!pendingRoleChanges || pendingRoleChanges.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
       <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
         {t('Pending role changes ({n})').replace('{n}', pendingRoleChanges.length)}
       </h2>
