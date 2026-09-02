@@ -276,6 +276,17 @@ select schedule_notification_drain(
 );
 ```
 
+> **pg_net must be enabled first** — Dashboard → Database → Extensions → `pg_net`. 039 installs
+> it where the platform allows, but on a project where it is off the scheduled command
+> (`select net.http_post(...)`) fails with `schema "net" does not exist` on every run, inside
+> pg_cron where nothing surfaces it, while the queue keeps filling. Since 039
+> `schedule_notification_drain` refuses outright rather than creating that job, so if this
+> raises, enable the extension and run it again. Confirm both are present with:
+>
+> ```sql
+> select extname from pg_extension where extname in ('pg_cron', 'pg_net');
+> ```
+
 **Watch it.** `select * from v_notification_health;` — `stuck` is the number that matters
 (queued for over two hours means the drain is not running). The admin dashboard raises a
 banner on the same signal, and stays silent otherwise.

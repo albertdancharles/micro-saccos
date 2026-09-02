@@ -201,6 +201,14 @@ BEGIN
     $q$ SELECT schedule_notification_drain('', 'secret') $q$,
     'nor without a URL');
 
+  -- 039. The scheduled command is `select net.http_post(...)`, so without pg_net
+  -- the job fails every fifteen minutes inside pg_cron where nobody sees it,
+  -- while the queue fills. This harness is plain Postgres with no pg_net, which
+  -- is exactly the condition being asserted.
+  PERFORM tests.raises(
+    $q$ SELECT schedule_notification_drain('https://x.functions.supabase.co/f', 'secret') $q$,
+    'a drain job is refused when pg_net is missing, rather than scheduled and left to fail unseen');
+
   -- ==================================================== Swahili (033)
   -- The group reads Swahili and preferred_language has defaulted to 'sw' since
   -- 026, so the DEFAULT path must produce Swahili, not English.
