@@ -17,5 +17,19 @@ const dayFmt = new Intl.DateTimeFormat('en-GB', {
 })
 const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 
-export const formatDate = (s) => (s ? dayFmt.format(new Date(`${s}T00:00:00Z`)) : '') // "30 Jun 2026"
-export const formatMonth = (s) => (s ? monthFmt.format(new Date(`${s}T00:00:00Z`)) : '') // "Jun 2026"
+// Accepts either a 'YYYY-MM-DD' date column or a full timestamptz
+// ('2026-06-30T08:14:32.123456+00:00') — the DB hands us both, and appending the
+// time to a value that already carried one produced an Invalid Date. Intl throws
+// a RangeError on those, so a single bad row used to take the whole page down
+// via the error boundary rather than blanking one line. Unparseable input now
+// formats as ''; a date is a label, never a reason to lose the screen.
+const utcMidnight = (s) => new Date(`${String(s).slice(0, 10)}T00:00:00Z`)
+
+const formatUTC = (formatter, s) => {
+  if (!s) return ''
+  const d = utcMidnight(s)
+  return Number.isNaN(d.getTime()) ? '' : formatter.format(d)
+}
+
+export const formatDate = (s) => formatUTC(dayFmt, s) // "30 Jun 2026"
+export const formatMonth = (s) => formatUTC(monthFmt, s) // "Jun 2026"

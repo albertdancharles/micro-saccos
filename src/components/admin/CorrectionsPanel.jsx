@@ -208,7 +208,7 @@ export default function CorrectionsPanel({ onActioned }) {
                     <p className="text-xs text-slate-500">
                       {t(TYPE_LABEL[s.submission_type] || s.submission_type)}
                       {' · '}
-                      {formatDate(s.reviewed_at)}
+                      {formatDate(s.reviewed_at?.slice(0, 10))}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
