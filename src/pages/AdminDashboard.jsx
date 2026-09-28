@@ -15,7 +15,10 @@ import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
+import DashboardSkeleton from '../components/ui/DashboardSkeleton'
 import PendingMembersQueue from '../components/admin/PendingMembersQueue'
+import FormerMembersPanel from '../components/admin/FormerMembersPanel'
+import MemberPinsPanel from '../components/admin/MemberPinsPanel'
 import DeletionRequestsQueue from '../components/admin/DeletionRequestsQueue'
 import RequestDeletionModal from '../components/admin/RequestDeletionModal'
 import SavingsEditQueue from '../components/admin/SavingsEditQueue'
@@ -93,7 +96,7 @@ export default function AdminDashboard() {
         )}
 
         {admin.loading ? (
-          <p className="text-center text-slate-400 py-8">{t('Loading…')}</p>
+          <DashboardSkeleton label={t('Loading…')} wide />
         ) : (
           <>
             {/* Above everything: if the books don't balance, nothing else on this
@@ -213,6 +216,8 @@ export default function AdminDashboard() {
               onRequestRoleChange={setRoleChangeTarget}
               onRequestExit={setExitTarget}
             />
+            <FormerMembersPanel formerMembers={admin.formerMembers} />
+            <MemberPinsPanel />
             <SettingsPanel rows={admin.settingRows} onChanged={refresh} />
           </>
         )}

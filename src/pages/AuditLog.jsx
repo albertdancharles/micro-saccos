@@ -7,6 +7,7 @@ import { formatTZS } from '../lib/format'
 import { useLanguage } from '../hooks/useLanguage'
 import Badge from '../components/ui/Badge'
 import AppHeader from '../components/ui/AppHeader'
+import BottomNav from '../components/ui/BottomNav'
 
 const ACTION_LABEL = {
   approve_submission: 'Approved payment',
@@ -247,7 +248,7 @@ export default function AuditLog() {
         showControls={false}
       />
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-safe">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 pb-nav">
         {error && (
           <div className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
             {error}
@@ -259,7 +260,7 @@ export default function AuditLog() {
         ) : rows.length === 0 ? (
           <p className="text-center text-slate-400 py-8">{t('No audit entries yet.')}</p>
         ) : (
-          <section className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+          <section className="rounded-2xl border border-slate-200/70 bg-white shadow-card">
             <ul className="divide-y divide-slate-100">
               {rows.map((r) => (
                 <li
@@ -287,6 +288,12 @@ export default function AuditLog() {
           </section>
         )}
       </main>
+
+      {/* This was the one admin page without the tab bar, and it is reached from
+          a button on the dashboard added precisely because the header link to it
+          is desktop-only — so on a phone you arrived here and the app's whole
+          navigation disappeared, leaving one back arrow out. */}
+      <BottomNav isAdmin />
     </div>
   )
 }

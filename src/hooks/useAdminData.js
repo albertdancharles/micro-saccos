@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from './useAuth'
+import { useCoalesced } from './useCoalesced'
 import { getAdminData } from '../lib/admin'
 import { SETTING_DEFAULTS } from '../lib/settings'
 
@@ -29,8 +30,10 @@ const EMPTY = {
   pendingLoanActions: [],
   pendingWithdrawals: [],
   pendingMembers: [],
+  formerMembers: [],
   activeLoans: [],
   reconciliation: null,
+  messaging: null,
   settings: SETTING_DEFAULTS,
   settingRows: [],
   currentMonthKey: '',
@@ -62,39 +65,44 @@ export function useAdminData() {
     load()
   }, [load])
 
+  // A batch write lands as dozens of events at once (the fee sheet posts the whole
+  // group in one transaction), so the subscriptions below fire a coalesced reload
+  // rather than one full reload per row.
+  const reload = useCoalesced(load)
+
   // Realtime: refetch whenever a submission or loan changes (any admin's queue +
   // any member's status updates within a second of each other).
   useEffect(() => {
     if (!supabase) return
     const channel = supabase
       .channel('admin-data')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_requests' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustments' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustment_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pool_adjustments' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pool_adjustment_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_requests' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_changes' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_change_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_settings' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_actions' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_action_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_approvals' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_requests' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustments' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_adjustment_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pool_adjustments' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pool_adjustment_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_requests' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_change_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_changes' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'setting_change_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_settings' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_actions' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_action_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_approvals' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, reload)
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [load])
+  }, [reload])
 
   return { ...data, loading, error, refresh: load }
 }

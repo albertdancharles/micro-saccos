@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { updatePassword } from '../lib/auth'
 import { supabase } from '../supabaseClient'
 import { useLanguage } from '../hooks/useLanguage'
+import PasswordField from '../components/ui/PasswordField'
 
 export default function UpdatePassword() {
   const navigate = useNavigate()
@@ -65,7 +66,7 @@ export default function UpdatePassword() {
           {checking ? (
             <p className="text-center text-sm text-slate-400">{t('Checking your link…')}</p>
           ) : !hasSession ? (
-            <div className="rounded-2xl bg-white p-6 text-center shadow-[0_16px_48px_-24px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 space-y-3">
+            <div className="rounded-2xl bg-white p-6 text-center shadow-auth ring-1 ring-slate-200/70 space-y-3">
               <p className="text-sm text-slate-600">
                 {t('This reset link is invalid or has expired.')}
               </p>
@@ -79,39 +80,25 @@ export default function UpdatePassword() {
           ) : (
             <form
               onSubmit={handleSubmit}
-              className="rounded-2xl bg-white p-6 shadow-[0_16px_48px_-24px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/70 space-y-4"
+              className="rounded-2xl bg-white p-6 shadow-auth ring-1 ring-slate-200/70 space-y-4"
             >
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  {t('New password')}
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-field"
-                  placeholder={t('At least 8 characters')}
-                />
-              </div>
+              <PasswordField
+                id="password"
+                label={t('New password')}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t('At least 8 characters')}
+              />
 
-              <div>
-                <label htmlFor="confirm" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  {t('Confirm password')}
-                </label>
-                <input
-                  id="confirm"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  className="input-field"
-                  placeholder={t('Re-enter password')}
-                />
-              </div>
+              <PasswordField
+                id="confirm"
+                label={t('Confirm password')}
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder={t('Re-enter password')}
+              />
 
               {error && (
                 <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-inset ring-red-100">

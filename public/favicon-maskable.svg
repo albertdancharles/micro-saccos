@@ -1,0 +1,25 @@
+<!-- Maskable variant, for Android's adaptive icons.
+
+     A maskable icon is cropped to whatever shape the launcher uses — circle,
+     squircle, teardrop — and only the central 80% is guaranteed to survive. The
+     manifest used to declare ONE icon as `"purpose": "any maskable"`, which is a
+     promise the artwork did not keep: the same drawing cannot both sit in a square
+     with a margin and fill a circle edge to edge. Android took the square-margined
+     mark, cropped the corners it was relying on, and shrank what was left.
+
+     So: the tile bleeds to every edge (nothing is lost to the crop), and the star
+     is scaled to sit inside the 80% safe circle — radius 19.2 about centre 24,24.
+     Every launcher shape lands on emerald, with the mark whole. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Micro-SACCOS">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10b981" />
+      <stop offset="1" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" fill="url(#tile)" />
+  <path
+    d="M24 14.4l3.3 6.68 7.37 1.07-5.33 5.2 1.26 7.33L24 31.22l-6.6 3.46 1.26-7.33-5.33-5.2 7.37-1.07L24 14.4z"
+    fill="#ffffff"
+  />
+</svg>

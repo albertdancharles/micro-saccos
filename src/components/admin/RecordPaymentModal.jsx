@@ -20,7 +20,7 @@ const TYPES = [
 ]
 
 function Form({ members, onSubmitted, onClose }) {
-  const { user } = useAuth()
+  const { user, isOverseer } = useAuth()
   const { t } = useLanguage()
   const [memberId, setMemberId] = useState('')
   const [type, setType] = useState('savings_deposit')
@@ -31,7 +31,9 @@ function Form({ members, onSubmitted, onClose }) {
   const [error, setError] = useState('')
 
   const isSelf = memberId && memberId === user?.id
-  const needsTwo = isSelf || type !== 'monthly_fee'
+  // The overseer settles everything on one signature, their own money included
+  // (041), so promising a second admin here would be a lie the RPC then contradicts.
+  const needsTwo = !isOverseer && (isSelf || type !== 'monthly_fee')
 
   // What this member can actually pay against, for the two types that settle a
   // specific row. Refetched whenever the member or type changes so the picker can
@@ -223,7 +225,7 @@ function Form({ members, onSubmitted, onClose }) {
             : 'bg-emerald-50 ring-emerald-200/70 text-emerald-800'
         }`}
       >
-        {isSelf
+        {isSelf && needsTwo
           ? t('This is your own money, so a second admin must sign it — even for a monthly fee.')
           : needsTwo
             ? t('A second admin must approve this before it posts.')

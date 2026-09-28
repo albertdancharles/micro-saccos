@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from './useAuth'
+import { useCoalesced } from './useCoalesced'
 import { getApprovedSavings } from '../lib/savings'
 import { getCurrentLoan, getInstallments } from '../lib/loans'
 import { getMyFees } from '../lib/fees'
@@ -105,6 +106,10 @@ export function useMemberSummary(overrideMemberId = null) {
     load()
   }, [load])
 
+  // Coalesced for the same reason as the admin dashboard: approving a batch that
+  // touches this member arrives as several events, and one refetch answers them all.
+  const reload = useCoalesced(load)
+
   // Realtime: when this member's own submissions, fees, loans, or installments
   // change (e.g. admin approves), refetch the summary. Filtered so we only
   // listen for rows that touch this member.
@@ -113,17 +118,17 @@ export function useMemberSummary(overrideMemberId = null) {
     const memberFilter = `member_id=eq.${memberId}`
     const channel = supabase
       .channel(`member-summary-${memberId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions', filter: memberFilter }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees', filter: memberFilter }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans', filter: memberFilter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_submissions', filter: memberFilter }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monthly_fees', filter: memberFilter }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans', filter: memberFilter }, reload)
       // loan_installments has no member_id (only loan_id), so refetch on any change;
       // the queries are cheap and only an active borrower will see frequent updates.
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_installments' }, reload)
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [memberId, load])
+  }, [memberId, reload])
 
   return { ...data, loading, error, refresh: load }
 }

@@ -7,6 +7,32 @@ import { SETTING_DEFAULTS } from './settings'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
 
+// Split the inactive profiles into applicants and former members.
+//
+// Mirrors has_member_history() in migration 040 — the authoritative copy, since
+// the RPCs are reachable straight from PostgREST. Exported so the rule can be
+// tested on its own rather than through a 29-query fetch.
+export function splitInactiveProfiles(
+  inactive,
+  { subs = [], fees = [], loans = [], adjustments = [] } = {},
+) {
+  const hasHistory = new Set()
+  for (const s of subs) hasHistory.add(s.member_id)
+  for (const f of fees) hasHistory.add(f.member_id)
+  for (const l of loans) hasHistory.add(l.member_id)
+  for (const a of adjustments) hasHistory.add(a.target_member_id)
+
+  return {
+    pendingMembers: (inactive || []).filter((p) => !hasHistory.has(p.id)),
+    // Read-only, so an admin can still see who left rather than having them vanish
+    // from the dashboard entirely. Nothing acts on them here: reinstating or
+    // removing a past member is not an applicant decision.
+    formerMembers: (inactive || [])
+      .filter((p) => hasHistory.has(p.id))
+      .map((p) => ({ id: p.id, full_name: p.full_name, role: p.role })),
+  }
+}
+
 export async function getAdminData(supabase, currentAdminId = null) {
   const [
     profilesRes,
@@ -39,12 +65,18 @@ export async function getAdminData(supabase, currentAdminId = null) {
     reconciliationRes,
     messagingRes,
   ] = await Promise.all([
-    supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
-    // Pending self-registrations awaiting approval — full KYC for the admin to review.
+    supabase
+      .from('profiles')
+      .select('id, full_name, role, is_active, is_superadmin')
+      .eq('is_active', true)
+      .order('full_name'),
+    // Every inactive profile. Two very different people land in this set — a
+    // stray sign-up awaiting approval, and a member who has EXITED the group —
+    // so it is split by history below before either is shown to anyone.
     supabase
       .from('profiles')
       .select(
-        'id, full_name, email, phone_number, secondary_phone, residence, national_id, next_of_kin_name, next_of_kin_phone, created_at',
+        'id, full_name, role, email, phone_number, secondary_phone, residence, national_id, next_of_kin_name, next_of_kin_phone, created_at',
       )
       .eq('is_active', false)
       .order('created_at', { ascending: true }),
@@ -237,6 +269,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
       id: p.id,
       name: p.full_name,
       role: p.role,
+      isOverseer: p.is_superadmin === true,
       fee,
       installment,
       overall,
@@ -254,7 +287,11 @@ export async function getAdminData(supabase, currentAdminId = null) {
   // to single-admin approval; once a second admin is promoted, every approval needs
   // two signatures.
   const adminCount = profiles.filter((p) => p.role === 'admin').length
-  const requiredApprovals = Math.min(2, Math.max(1, adminCount))
+  // The overseer (041) is a quorum alone, so every threshold shown to THEM is 1.
+  // This only mirrors what the SQL will do — required_approvals() is the authority,
+  // and it keys off the caller, which is why this keys off the viewer.
+  const viewerIsOverseer = profiles.some((p) => p.id === currentAdminId && p.is_superadmin)
+  const requiredApprovals = viewerIsOverseer ? 1 : Math.min(2, Math.max(1, adminCount))
 
   // Group approvals by their target id, ordered oldest-first (the first approver's
   // amount/proof wins on finalization, mirroring the SQL).
@@ -423,7 +460,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     const isTarget = currentAdminId === r.target_member_id
     // Required approvals = min(2, count of admins OTHER than the requester).
     const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
-    const reqRequired = Math.min(2, otherAdmins)
+    const reqRequired = viewerIsOverseer ? 1 : Math.min(2, otherAdmins)
     return {
       ...r,
       requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
@@ -451,7 +488,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
     const isRequester = currentAdminId === r.requested_by
     const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
-    const reqRequired = Math.min(2, otherAdmins)
+    const reqRequired = viewerIsOverseer ? 1 : Math.min(2, otherAdmins)
     return {
       ...r,
       requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
@@ -477,7 +514,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     const isRequester = currentAdminId === r.requested_by
     const isTarget = currentAdminId === r.target_member_id
     const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
-    const reqRequired = Math.min(2, otherAdmins)
+    const reqRequired = viewerIsOverseer ? 1 : Math.min(2, otherAdmins)
     return {
       ...r,
       requesterName: r.requested_by ? profileName[r.requested_by] || 'unknown' : 'unknown',
@@ -505,7 +542,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
     const isRequester = currentAdminId === r.requested_by
     const otherAdmins = profiles.filter((p) => p.role === 'admin' && p.id !== r.requested_by).length
-    const reqRequired = Math.min(2, otherAdmins)
+    const reqRequired = viewerIsOverseer ? 1 : Math.min(2, otherAdmins)
     return {
       ...r,
       label: settingLabel[r.key] || r.key,
@@ -570,7 +607,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
       outstanding: Number(loan?.outstanding_principal ?? loan?.principal ?? 0),
       memberSavings: savingsByMember[borrowerId] || 0,
       approvalsCount: approvals.length,
-      requiredApprovals: Math.min(2, otherAdmins),
+      requiredApprovals: viewerIsOverseer ? 1 : Math.min(2, otherAdmins),
       approverNames,
       iApproved,
       isRequester,
@@ -596,7 +633,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
       ...r,
       memberName: profileName[r.member_id] || 'Unknown',
       approvalsCount: approvals.length,
-      requiredApprovals: Math.min(2, otherAdmins),
+      requiredApprovals: viewerIsOverseer ? 1 : Math.min(2, otherAdmins),
       approverNames,
       iApproved,
       isSelf,
@@ -606,9 +643,27 @@ export async function getAdminData(supabase, currentAdminId = null) {
     }
   })
 
-  // Pending self-registrations (migration 018): inactive profiles awaiting an
-  // admin's approve/reject. No approval-vote state — this is single-admin.
-  const pendingMembers = pendingProfilesRes.data.map((p) => ({ ...p }))
+  // Inactive profiles are not all the same thing, and treating them as one list
+  // was destructive.
+  //
+  // `is_active = false` means BOTH "a stray sign-up nobody has approved" (018)
+  // and "a member who was settled and exited" (025) — and exit deliberately KEEPS
+  // the member's history so past cycles still reconcile. Every inactive profile
+  // used to be fed to PendingMembersQueue as an applicant, which put a former
+  // member behind an "Approve member" button that silently reactivates them and a
+  // "Reject" button wired to reject_pending_member — a DELETE on auth.users that
+  // cascades to profiles and takes the whole history with it. One tap, on a row
+  // labelled "Applied <date>", erasing exactly what exit exists to preserve.
+  //
+  // Anyone who has ever transacted is a former member, not an applicant. An exit
+  // always books an approved savings_adjustment for the settlement, so the split
+  // holds even for someone who left without ever paying a fee.
+  const { pendingMembers, formerMembers } = splitInactiveProfiles(pendingProfilesRes.data, {
+    subs,
+    fees,
+    loans,
+    adjustments: approvedAdjustmentsRes.data,
+  })
 
   return {
     stats,
@@ -623,6 +678,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     pendingLoanActions,
     pendingWithdrawals,
     pendingMembers,
+    formerMembers,
     activeLoans,
     // null until 027 is applied; the banner renders nothing for a null.
     reconciliation: reconciliationRes.error ? null : reconciliationRes.data,

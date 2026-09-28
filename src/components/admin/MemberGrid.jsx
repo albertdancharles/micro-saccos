@@ -54,7 +54,10 @@ function Monogram({ name, isAdmin }) {
 // detail view wherever that view is permitted; where it isn't (another admin's
 // row) it stays plain text rather than a link that would only 403.
 function MemberIdentity({ row, isSelf, viewTo, t }) {
-  const caption = [row.role === 'admin' ? t('Admin') : null, isSelf ? t('You') : null]
+  const caption = [
+    row.isOverseer ? t('Overseer') : row.role === 'admin' ? t('Admin') : null,
+    isSelf ? t('You') : null,
+  ]
     .filter(Boolean)
     .join(' · ')
 
@@ -138,7 +141,11 @@ function buildActions({
     actions.push({ key: 'view', to: `/admin/member/${row.id}`, label: t('View') })
     actions.push({ key: 'savings', onClick: () => onRequestEditSavings?.(row), label: t('Edit savings') })
   }
-  if (!isSelf) {
+  // The overseer cannot be demoted, settled out or deleted — protect_overseer()
+  // (041) refuses all three in SQL, so offering them here would only produce an
+  // error message. Standing the overseer down is a service-role act:
+  // `npm run set-overseer -- --clear`.
+  if (!isSelf && !row.isOverseer) {
     actions.push({
       key: 'role',
       onClick: () => onRequestRoleChange?.(row),

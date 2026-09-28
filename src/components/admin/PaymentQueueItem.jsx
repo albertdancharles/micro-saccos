@@ -119,7 +119,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 transition-shadow hover:shadow-[0_1px_3px_rgba(15,23,42,0.04),0_4px_12px_-6px_rgba(15,23,42,0.08)]">
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 transition-shadow hover:shadow-lift">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium text-slate-900">{submission.memberName}</p>

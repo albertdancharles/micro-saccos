@@ -141,7 +141,7 @@ export default function SavingsEditQueue({ pendingSavingsEdits, onActioned }) {
   if (!pendingSavingsEdits || pendingSavingsEdits.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-emerald-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-emerald-200/70 bg-white p-4 sm:p-5 shadow-card">
       <h2 className="text-[13px] font-semibold tracking-tight text-emerald-700 mb-3">
         {t('Pending savings edits ({n})').replace('{n}', pendingSavingsEdits.length)}
       </h2>

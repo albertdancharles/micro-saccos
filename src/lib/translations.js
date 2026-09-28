@@ -819,7 +819,7 @@ const sw = {
   'Repaid {amount} of {total}': 'Imelipwa {amount} kati ya {total}',
   'Amount due': 'Kiasi kinachostahili',
   'Incl. {penalty} penalty': 'Ikiwa na faini ya {penalty}',
-  'Max loan you can request': 'Mkopo wa juu unaoeza kuomba',
+  'Max loan you qualify for': 'Mkopo wa juu unaostahili',
   'Make a savings deposit or pay your monthly fee to become eligible.':
     'Weka amana ya akiba au lipa ada yako ya kila mwezi ili kustahili.',
   'Group pool is currently too low to issue a loan.': 'Hazina ya kikundi iko chini sana kutoa mkopo kwa sasa.',
@@ -938,6 +938,9 @@ const sw = {
   // of the screen width, so anything longer than ~10 characters truncates.
   'Home': 'Nyumbani',
   'Admin': 'Msimamizi',
+  // The overseer (041): the one admin who signs alone. "Mkuu" marks the rank
+  // apart from an ordinary Msimamizi.
+  'Overseer': 'Mwangalizi Mkuu',
   'Main navigation': 'Urambazaji mkuu',
   'No members yet.': 'Bado hakuna wanachama.',
 
@@ -966,6 +969,126 @@ const sw = {
   'Last error': 'Hitilafu ya mwisho',
   'Nothing is lost — members still see everything in the app.':
     'Hakuna kilichopotea — wanachama bado wanaona kila kitu kwenye programu.',
+
+  // Sign-in / password fields
+  'Show password': 'Onyesha nywila',
+  'Hide password': 'Ficha nywila',
+
+  // Former members (040) — exit keeps the record, so they need wording that is
+  // plainly not "applicant".
+  'Former members': 'Wanachama wa zamani',
+  'Settled and no longer active. Their records are kept so past cycles still add up.':
+    'Wamelipwa na hawapo tena. Kumbukumbu zao zimehifadhiwa ili mizunguko iliyopita iendelee kulingana.',
+  'settled': 'amelipwa',
+
+  // Share-out preview, stacked for phones
+  'share': 'sehemu',
+  'earnings': 'mapato',
+  'capital': 'mtaji',
+
+  // Fee sheet — the admin's own fee is the only one left
+  'Every other fee is settled. Only your own is left — record it with “Record a payment”, since an admin’s own money always needs a second admin’s signature.':
+    'Ada nyingine zote zimelipwa. Yako pekee imebaki — itumie “Andika malipo”, kwa kuwa fedha za msimamizi mwenyewe huhitaji saini ya msimamizi wa pili.',
+
+  // Dashboard loading
+  'Loading your account…': 'Inapakia akaunti yako…',
+
+  // ---------------------------------------------------------------------------
+  // Phone + PIN login (042)
+  //
+  // The member-facing way in, so this is the block that matters most in Swahili:
+  // an admin reads the English out once at sign-up, but the member reads these
+  // strings every time they sign in. "PIN" is left as PIN — it is what the number
+  // is called in everyday Tanzanian use (mobile money uses the same word), and
+  // "namba ya siri" would invite confusion with the password.
+  // ---------------------------------------------------------------------------
+  'Phone & PIN': 'Simu na PIN',
+  'First name': 'Jina la kwanza',
+  'e.g. Jane': 'mf. Jane',
+  'PIN': 'PIN',
+  '0712…, +255712… and 255712… all work.': '0712…, +255712… na 255712… zote zinafanya kazi.',
+  'No PIN yet, or forgotten it? Your admin can set you a new one.':
+    'Hauna PIN, au umeisahau? Msimamizi wako anaweza kukupa mpya.',
+  'Could not sign you in.': 'Imeshindwa kukuingiza.',
+  'Enter your first name.': 'Weka jina lako la kwanza.',
+  'Enter your phone number.': 'Weka nambari yako ya simu.',
+  'That phone number looks too short.': 'Nambari hiyo ya simu ni fupi mno.',
+  'That phone number looks too long.': 'Nambari hiyo ya simu ni ndefu mno.',
+
+  // PIN rules. Repeated in the Edge Function in English; these cover both copies,
+  // since t() is applied to the server's message as well.
+  'A PIN must be 4 to 6 digits.': 'PIN inapaswa kuwa tarakimu 4 hadi 6.',
+  'That PIN is too easy to guess — not all the same digit.':
+    'PIN hiyo ni rahisi kubahatisha — isiwe tarakimu zinazofanana zote.',
+  'That PIN is too easy to guess — not digits in a row.':
+    'PIN hiyo ni rahisi kubahatisha — isiwe tarakimu zinazofuatana.',
+
+  // Choosing and changing a PIN
+  'Current PIN': 'PIN ya sasa',
+  'New PIN': 'PIN mpya',
+  'Confirm new PIN': 'Thibitisha PIN mpya',
+  'Save PIN': 'Hifadhi PIN',
+  'Change PIN': 'Badilisha PIN',
+  'Change your PIN': 'Badilisha PIN yako',
+  'Set a sign-in PIN': 'Weka PIN ya kuingia',
+  'Choose your own PIN': 'Chagua PIN yako mwenyewe',
+  'PIN saved.': 'PIN imehifadhiwa.',
+  'Could not save your PIN.': 'Imeshindwa kuhifadhi PIN yako.',
+  'Enter your current PIN.': 'Weka PIN yako ya sasa.',
+  'That is not your current PIN.': 'Hiyo si PIN yako ya sasa.',
+  'The two PINs do not match.': 'PIN mbili hazifanani.',
+  '4 to 6 digits. Avoid 1234 or 0000, and do not use your year of birth.':
+    'Tarakimu 4 hadi 6. Epuka 1234 au 0000, na usitumie mwaka wako wa kuzaliwa.',
+  'With a PIN you can sign in using just your first name, phone number and PIN.':
+    'Kwa PIN unaweza kuingia kwa jina lako la kwanza, nambari ya simu na PIN pekee.',
+  'Your admin set the PIN you just used, so they know it too. Pick one only you know.':
+    'Msimamizi wako aliweka PIN uliyotumia, hivyo anaijua pia. Chagua ambayo wewe pekee unaijua.',
+  'Pick a new PIN. You will use it with your first name and phone number to sign in.':
+    'Chagua PIN mpya. Utaitumia na jina lako la kwanza na nambari ya simu kuingia.',
+  'Signed in as {name}': 'Umeingia kama {name}',
+
+  // Rejections composed in the Edge Function
+  'That name, phone number and PIN do not match. Check them, or ask your admin.':
+    'Jina, nambari ya simu na PIN hazilingani. Zihakiki, au muulize msimamizi wako.',
+  'First name, phone number and PIN are all required.':
+    'Jina la kwanza, nambari ya simu na PIN zote zinahitajika.',
+  'Enter a phone number — it is how you sign in.':
+    'Weka nambari ya simu — ni jinsi unavyoingia.',
+  'Another member is already registered with that phone number.':
+    'Mwanachama mwingine amesajiliwa na nambari hiyo ya simu.',
+  'Another member is already registered with that phone number. Check the digits, or ask your admin.':
+    'Mwanachama mwingine amesajiliwa na nambari hiyo ya simu. Hakiki tarakimu, au muulize msimamizi wako.',
+
+  // Admin: the Sign-in PINs panel
+  'Sign-in PINs': 'PIN za kuingia',
+  'Members sign in with their first name, phone number and PIN. Reset one only for the member standing in front of you.':
+    'Wanachama huingia kwa jina la kwanza, nambari ya simu na PIN. Weka upya kwa mwanachama aliyesimama mbele yako pekee.',
+  'New PIN for {name} — read it out now, it is not shown again.':
+    'PIN mpya ya {name} — isome sasa, haitaonyeshwa tena.',
+  'set {date}': 'imewekwa {date}',
+  'locked out': 'imefungwa',
+  'no PIN': 'hana PIN',
+  'admin-set': 'ya msimamizi',
+  'own PIN': 'PIN yake',
+  'Reset': 'Weka upya',
+  'Could not reset the PIN.': 'Imeshindwa kuweka upya PIN.',
+  'Could not load PIN status.': 'Imeshindwa kupakia hali ya PIN.',
+
+  // Admin: adding a member
+  'Member created. Read these three things out — they are how they sign in.':
+    'Mwanachama ameundwa. Soma vitu hivi vitatu — ni jinsi anavyoingia.',
+  'They will be asked to choose their own PIN the first time they sign in, so this one stops working then.':
+    'Ataombwa kuchagua PIN yake mwenyewe mara ya kwanza anapoingia, hivyo hii itaacha kufanya kazi.',
+  'The account was created but the PIN was not: {reason} Set one from the Sign-in PINs panel.':
+    'Akaunti imeundwa lakini PIN haikuundwa: {reason} Weka moja kutoka kwenye kidirisha cha PIN za kuingia.',
+  'Could not create the PIN.': 'Imeshindwa kuunda PIN.',
+  'Show email login (backup)': 'Onyesha kuingia kwa barua pepe (mbadala)',
+  'Hide email login': 'Ficha kuingia kwa barua pepe',
+  'Email (backup login)': 'Barua pepe (kuingia mbadala)',
+  'Half of their login. Make sure it is the number they use.':
+    'Nusu ya kuingia kwake. Hakikisha ni nambari anayoitumia.',
+  'Members sign in by phone and PIN. A real email here also enables self-service password reset.':
+    'Wanachama huingia kwa simu na PIN. Barua pepe halisi hapa pia huwezesha kubadilisha nywila mwenyewe.',
 }
 
 export function createTranslator(lang) {

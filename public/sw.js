@@ -1,10 +1,29 @@
 // Minimal service worker for installability + offline app shell (build plan §11
-// item 35). Network-first for same-origin GETs, falling back to cache (and to the
-// SPA shell for navigations) when offline. Supabase API calls are cross-origin and
-// deliberately left untouched, so data is always live when online.
-const CACHE = 'micro-saccos-v1'
+// item 35). Cache-first for Vite's content-hashed /assets/, network-first for
+// everything else same-origin, falling back to cache (and to the SPA shell for
+// navigations) when offline. Supabase API calls are cross-origin and deliberately
+// left untouched, so data is always live when online.
+// Bumped with the caching strategy below. The old worker wrote failed responses
+// into the cache, so anyone carrying a 5xx from a deploy window needs a clean
+// slate rather than an upgrade — the activate handler drops every other version.
+const CACHE = 'micro-saccos-v2'
 
-self.addEventListener('install', () => self.skipWaiting())
+// The SPA shell, precached so the offline fallback can actually find it.
+//
+// Navigations are cached under the path that was asked for (/dashboard, /profile,
+// …), never under /index.html, because the server rewrites without the browser
+// knowing. So the fallback's `caches.match('/index.html')` matched nothing unless
+// something had happened to request that exact path, and offline navigation fell
+// through to a browser error page — the one case the shell exists for.
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.add(new Request('/index.html', { cache: 'reload' })))
+      .catch(() => {})
+      .then(() => self.skipWaiting()),
+  )
+})
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
@@ -62,15 +81,48 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
+  // Vite's build output is content-hashed, so /assets/index-Bp6Eqax3.js can never
+  // change meaning — a new build is a new filename. Those are served cache-first:
+  // a repeat visit paints from disk instead of waiting on the network, which on
+  // the 3G connections this group is actually on is the difference between
+  // "instant" and "several seconds of white screen". Everything else stays
+  // network-first so data-adjacent responses are never stale.
+  const immutable = url.pathname.startsWith('/assets/')
+
+  if (immutable) {
+    event.respondWith(
+      caches.match(request).then((cached) => cached || fetchAndCache(request)),
+    )
+    return
+  }
+
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        const copy = response.clone()
-        caches.open(CACHE).then((cache) => cache.put(request, copy))
-        return response
-      })
-      .catch(() =>
-        caches.match(request).then((cached) => cached || caches.match('/index.html')),
-      ),
+    fetchAndCache(request).catch(() =>
+      caches.match(request).then((cached) => {
+        if (cached) return cached
+        // The SPA shell answers for a NAVIGATION and nothing else. It used to
+        // answer for anything that failed, so an offline request for a script or
+        // an image was served index.html — HTML with a .js content type, which
+        // fails as a syntax error rather than as a missing file, and reads in the
+        // console as a broken build instead of a dropped connection.
+        if (request.mode === 'navigate') return caches.match('/index.html')
+        return Response.error()
+      }),
+    ),
   )
 })
+
+// Cache only what is worth replaying. Without the `ok` check, a 500 or a 503
+// served during a deploy was written into the cache like any other response and
+// then handed back from it forever after, turning a few seconds of downtime into
+// a permanently broken install. `basic` excludes opaque cross-origin responses,
+// whose status always reads 0.
+function fetchAndCache(request) {
+  return fetch(request).then((response) => {
+    if (response.ok && response.type === 'basic') {
+      const copy = response.clone()
+      caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {})
+    }
+    return response
+  })
+}

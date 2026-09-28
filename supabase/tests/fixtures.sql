@@ -202,5 +202,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, tests;
 
+-- An admin who also holds the overseer flag (041). Clears the JWT claim while it
+-- writes, because protect_overseer() refuses the flag to anyone with an auth.uid()
+-- — which is exactly how the real service-role script sets it.
+CREATE OR REPLACE FUNCTION tests.make_overseer(p_name text)
+RETURNS uuid AS $$
+DECLARE
+  v_id   uuid := tests.make_member(p_name, true);
+  v_sub  text := current_setting('request.jwt.claim.sub', true);
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  -- one_overseer_only is a unique index and the whole test file is one
+  -- transaction, so the previous block's overseer has to stand down first.
+  UPDATE profiles SET is_superadmin = false WHERE is_superadmin;
+  UPDATE profiles SET is_superadmin = true WHERE id = v_id;
+  PERFORM set_config('request.jwt.claim.sub', COALESCE(v_sub, ''), true);
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, tests;
+
 GRANT USAGE ON SCHEMA tests TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA tests TO authenticated;

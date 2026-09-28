@@ -19,7 +19,7 @@ penalty someone has already been charged.
 | **Partial payments** | Pay what you have. Money is applied penalty → interest → principal, and the row is marked *part paid* until it's clear. Penalties then accrue on the balance still owed, not the original total. |
 | **Loans that go bad** | Reschedule, write off, or settle against the borrower's own savings — each 2-of-N. `v_loan_risk` flags non-performance from the record rather than a flag someone has to remember to set. |
 | **Cycles & share-out** | Close a cycle and split what the group earned. Shares are **time-weighted** (member-months), so a late joiner doesn't take an equal cut, and largest-remainder rounding means the shares sum exactly to the pot. Earnings-only or full share-out. |
-| **Withdrawals & exit** | An admin opens a withdrawal on a member's behalf, capped by pool liquidity and by the savings held as security behind any active loan. Exit settles a member and deactivates them — *keeping* their history, unlike deletion. |
+| **Withdrawals & exit** | An admin opens a withdrawal on a member's behalf, capped by pool liquidity and by the savings held as security behind any active loan. Exit settles a member and deactivates them — *keeping* their history, unlike deletion. A former member is therefore `is_active = false`, the same as an unapproved sign-up, so `has_member_history()` (`040`) keeps them out of the applicant queue: neither reinstating them nor deleting them as an "applicant" is possible. |
 | **Reminders** | Notifications fan out to SMS (Beem Africa) and Web Push, deduped per week so an overdue member is nudged, not spammed. A daily pg_cron sweep raises what's due. |
 | **Admin mandate** | Members are read-only: every transaction is keyed by an admin, enforced in the database rather than by hiding buttons. A monthly batch sheet posts the whole group's fees at once. |
 | **Corrections** | Because the admin now keys the amount, the typo is theirs. A 2-of-N void reverses the *exact* figures the waterfall allocated — recomputing a penalty later would use today's date and give a different answer — and refuses once the schedule has moved on. |
@@ -48,6 +48,33 @@ of it on every push.
 > usable. That first admin therefore holds elevated, un-countersigned power until a
 > second admin is promoted — promote a second admin early, and note that every such
 > action is still recorded in the `audit_log` regardless of admin count.
+
+> **Security note — the overseer (041).** One profile may hold `is_superadmin`. For
+> that member, and only that member, the two-of-N rule does not apply at any admin
+> count: requests execute on their own signature, their own recorded payments settle
+> without a second admin, and the loan-free-admin mandate does not bind them. This is
+> a deliberate concentration of authority, not a bootstrap fallback — it does not
+> lapse when a second admin is promoted. What it does **not** remove:
+>
+> - **The audit log.** Every overseer action is still written to `audit_log`, which is
+>   the only remaining check on the office. Read it at `/admin/audit`.
+> - **The lending caps.** `pool_loan_fraction` and `contribution_multiplier` still
+>   apply. They are `group_settings` rows rather than admin confirmations — though the
+>   overseer can now change them alone, which the settings history records.
+>
+> The flag is settable **only** from the service role — `protect_overseer()` refuses
+> any change to it that arrives with an `auth.uid()`, so no admin can grant it to
+> themselves through the app, and no number of admins can strip it. While it is held,
+> that profile also cannot be demoted, deactivated or deleted from inside the app.
+> Both granting and revoking go through the key holder:
+>
+> ```
+> npm run set-overseer -- albertdancharles@gmail.com   # grant
+> npm run set-overseer -- --clear                      # stand down (the recovery path)
+> ```
+>
+> If that account is lost, the service-role key is the only way back — clear the flag
+> before demoting, settling out or removing the member.
 
 ## Stack
 
@@ -109,7 +136,49 @@ even against a direct PostgREST call, not just a hidden button.
 **Admins create every account.** There is no `/signup`, no `/complete-profile` and no
 `/pending`; self-registration and Google sign-in were removed along with the flow they
 served. Use **+ Add member** on the admin dashboard, which calls the `admin-create-member`
-Edge Function (service role, admin-gated) and returns a temporary password to hand over.
+Edge Function (service role, admin-gated) and returns the member's sign-in PIN to hand over
+(plus a temp password for the backup email login).
+
+### How members sign in (migration `042`)
+
+Members sign in with **first name + phone number + PIN**. That is the default tab on the
+login screen; email + password is the second tab and is what the admin uses.
+
+Why a PIN and not just name + phone, which is what was asked for: everyone in the group knows
+everyone's first name and phone number, and `full_name` is already published in-app by
+`group_member_directory()`, so with no secret the group's own phone list is a working
+credential for every account in it. Members can't file loans or payments — `034` took that
+away — so the exposure isn't forged requests. It's reading another member's dashboard and
+profile PII, taking over their login by changing their phone number, and signing in as an
+**admin**, whose session approves loans and records payments, and whose signature alone is a
+quorum if they're the overseer (`041`). Name and phone identify; the PIN authenticates.
+
+- **4–6 digits.** All-same-digit and straight runs (`1234`, `9876`) are refused.
+- **Hashed** with PBKDF2-SHA256 in the `member-pin-auth` Edge Function, never in SQL. A PIN
+  is small enough to brute-force at any iteration count, so the control that actually
+  protects the account is the attempt limit: **5 tries, then a 15-minute lockout**, counted
+  against the phone number that was *typed* so an unknown number throttles identically and
+  the endpoint cannot be used to ask who is in the group.
+- **`member_pins` and `phone_login_attempts` are service-role only** — RLS on, no policies.
+  `15_phone_pin_login.test.sql` asserts a member's JWT cannot reach either, or any of the
+  lookup functions. (It caught a real hole on its first run: revoking `FROM public` is not
+  enough, because Supabase's `ALTER DEFAULT PRIVILEGES` hands `anon` and `authenticated` an
+  explicit grant at create time.)
+- **Phone numbers are normalised.** `0712…`, `+255712…` and `255712…` are one number, and a
+  unique index enforces that exactly one member holds it. Migration `042` refuses to apply if
+  existing data already has a collision, and names the numbers to fix.
+- **An admin-issued PIN is a stop, not a suggestion.** It is flagged `must_change`, and
+  `ProtectedRoute` holds the member on `/set-pin` until they choose their own — while two
+  people know the PIN, nothing filed in that member's name is evidence they filed it.
+- **No self-service reset.** A synthetic `@umojagroup.app` address has no inbox, so there is
+  nowhere to send a reset. The **Sign-in PINs** panel on the admin dashboard is the whole
+  recovery path: it shows who has no PIN, who is locked out, and who is still on an
+  admin-issued one, and issues a new PIN that is shown once.
+
+**Rolling this out to existing members:** they have no PIN until one is issued, so phone login
+will reject them (email + password keeps working throughout). After applying `042`, open
+**Sign-in PINs** on the admin dashboard and reset each member, handing the PIN over the same
+way a temp password was handed over.
 
 ### One-time dashboard settings
 
@@ -123,6 +192,13 @@ Edge Function (service role, admin-gated) and returns a temporary password to ha
 3. Keep **Confirm email** ON — it still matters for password resets.
 4. Redeploy `admin-create-member` and set its `ALLOWED_ORIGINS` secret. It is now the only
    way a member can come into existence, so it is worth confirming it works end to end.
+   (`042` also made it return the new profile's `id`, which the Add member dialog needs to
+   mint the PIN — an older deployed copy will create members with no PIN.)
+5. Deploy `member-pin-auth` with **Verify JWT OFF**, and set its `ALLOWED_ORIGINS` secret.
+   The switch has to be off because signing in happens before there is a JWT to verify; the
+   function verifies the caller itself for the two actions that need it (`set_pin` checks the
+   session, `reset_pin` additionally checks the caller is an admin). With Verify JWT left on,
+   phone login fails for everyone with a 401.
 
 ### Who signs what
 

@@ -3,6 +3,12 @@
 // generated temp password for the admin to share. Creating users needs the
 // service-role key, so it must run server-side; the caller must be a signed-in admin.
 //
+// Since 042 it also returns the new profile's `id`, so the caller can follow up with
+// member-pin-auth to mint the member's sign-in PIN. The PIN is minted there rather
+// than here to keep one copy of the PBKDF2 hashing: the deploy path for these
+// functions is a dashboard paste, so there is no _shared/ module to import, and a
+// hash routine duplicated across two functions is a hash routine that drifts.
+//
 // Deploy (no Docker): Supabase Dashboard → Edge Functions → deploy a function named
 // "admin-create-member", paste this file, keep "Verify JWT" ON. Or via CLI:
 //   npx supabase functions deploy admin-create-member --project-ref <ref>
@@ -105,6 +111,20 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+
+  // 042 added a unique index on the NORMALISED phone number, because the number is
+  // now half of the member's login and has to identify exactly one person.
+  // +255712345678 and 0712345678 are the same handset and now collide. Checked here
+  // because the insert happens inside the handle_new_user trigger, so a collision
+  // would otherwise reach the admin as GoTrue's "Database error creating new user".
+  const { data: taken } = await admin.rpc('phone_number_taken', { p_phone: phone_number })
+  if (taken) {
+    return json(
+      { error: 'Another member is already registered with that phone number.' },
+      409,
+      cors,
+    )
+  }
   const { data: created, error } = await admin.auth.admin.createUser({
     email,
     password,
@@ -131,6 +151,7 @@ Deno.serve(async (req) => {
   })
 
   // Returned to the admin so they can pass the temp credentials on; the new member
-  // changes the password on first login.
-  return json({ email, password }, 200, cors)
+  // changes the password on first login. `id` is what the caller needs to mint the
+  // member's sign-in PIN through member-pin-auth.
+  return json({ id: created?.user?.id ?? null, email, password }, 200, cors)
 })

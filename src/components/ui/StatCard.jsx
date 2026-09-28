@@ -16,7 +16,7 @@ export default function StatCard({ label, value, sub, danger = false, accent = f
 
   return (
     <div
-      className={`rounded-2xl border p-4 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-[0_6px_14px_-8px_rgba(15,23,42,0.10)] ${tone}`}
+      className={`rounded-2xl border p-4 shadow-card transition-shadow hover:shadow-[0_6px_14px_-8px_rgba(15,23,42,0.10)] ${tone}`}
     >
       <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
       {/* `money-lg` steps the figure down below 400px. A value like

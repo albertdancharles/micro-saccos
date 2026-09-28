@@ -16,7 +16,8 @@
     "build:setup": "node scripts/build-setup.mjs",
     "seed": "node scripts/seed.mjs",
     "reset-passwords": "node scripts/reset-passwords.mjs",
-    "promote-admin": "node scripts/promote-admin.mjs"
+    "promote-admin": "node scripts/promote-admin.mjs",
+    "set-overseer": "node scripts/set-overseer.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

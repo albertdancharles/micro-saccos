@@ -35,14 +35,20 @@ export default function SavingsChart({ memberId: overrideMemberId = null }) {
     load()
   }, [load])
 
-  if (loading || data.length === 0) {
-    // Skip rendering until there's something interesting — a member with no
-    // savings yet doesn't need an empty chart cluttering their dashboard.
-    return null
-  }
+  // Order matters here. `loading || data.length === 0` used to come first, and a
+  // failed load leaves data empty — so the error branch below was unreachable and
+  // every failure was swallowed silently.
+  if (loading) return null
   if (error) {
-    return <p className="text-sm text-red-600">{error}</p>
+    return (
+      <p className="rounded-xl border border-red-200/70 bg-red-50 p-3 text-sm text-red-700">
+        {error}
+      </p>
+    )
   }
+  // Nothing to plot yet is not a failure — a member with no savings doesn't need
+  // an empty chart cluttering their dashboard.
+  if (data.length === 0) return null
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-card">

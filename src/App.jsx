@@ -16,6 +16,7 @@ import RoleHome from './routes/RoleHome'
 import Login from './pages/Login'
 
 const UpdatePassword = lazy(() => import('./pages/UpdatePassword'))
+const SetPin = lazy(() => import('./pages/SetPin'))
 const MemberDashboard = lazy(() => import('./pages/MemberDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const Profile = lazy(() => import('./pages/Profile'))
@@ -56,6 +57,10 @@ export default function App() {
               endpoint is still open even with no UI pointing at it. */}
 
           <Route element={<ProtectedRoute />}>
+            {/* Inside the guard, and exempted by it: ProtectedRoute sends anyone
+                still on an admin-issued PIN here, so it has to be a route the guard
+                itself allows through. */}
+            <Route path="/set-pin" element={<SetPin />} />
             <Route path="/" element={<RoleHome />} />
             <Route path="/dashboard" element={<MemberDashboard />} />
             <Route path="/members" element={<GroupMembers />} />

@@ -22,8 +22,22 @@ import {
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
 
-const CARD =
-  'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
+const CARD = 'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card'
+
+// One labelled figure in the stacked mobile ledger. An em dash for zero keeps the
+// grid readable — "TSh 0" four times in a row is noise an admin has to read past
+// to find the one member who actually owes something.
+function MemberFigure({ label, value, tone }) {
+  const amount = Number(value)
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`truncate text-sm tabular-nums ${amount > 0 ? tone : 'text-slate-300'}`}>
+        {amount > 0 ? formatTZS(amount) : '—'}
+      </dd>
+    </div>
+  )
+}
 
 function Line({ label, value, tone, strong, indent }) {
   const color =
@@ -203,7 +217,31 @@ export default function Reports() {
                 <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">
                   {t('Members ({n})').replace('{n}', members.length)}
                 </h2>
-                <div className="overflow-x-auto">
+                {/* Five money columns needed ~440px, so on every phone this
+                    scrolled sideways — and the columns that fell off the right
+                    edge were "Fines" and "Last payout", which is most of why an
+                    admin opens the per-member ledger at all. Same fix the member
+                    directory already uses: stack each member on mobile, keep the
+                    table from sm up where it fits. */}
+                <ul className="divide-y divide-slate-100 sm:hidden">
+                  {members.map((m) => (
+                    <li key={m.member_id} className="py-3 first:pt-0 last:pb-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{m.full_name}</p>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                        <MemberFigure label={t('Capital')} value={m.capital_tzs} tone="text-slate-900" />
+                        <MemberFigure label={t('Owes')} value={m.outstanding_tzs} tone="text-red-700" />
+                        <MemberFigure label={t('Fines')} value={m.penalties_tzs} tone="text-slate-500" />
+                        <MemberFigure
+                          label={t('Last payout')}
+                          value={m.last_payout_tzs}
+                          tone="text-emerald-700"
+                        />
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="hidden sm:block">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-slate-500 text-left">

@@ -1,6 +1,10 @@
 // Profile / self-service (Phase 1c). Members can update their phone, change their
-// password, and view a breakdown of what they've contributed (savings + paid fees).
-// Reduces the admin's manual reset and update burden.
+// sign-in PIN or password, and view a breakdown of what they've contributed (savings
+// + paid fees). Reduces the admin's manual reset and update burden.
+//
+// Note the order the two credential sections appear in, and why: since 042 a member
+// signs in with first name + phone + PIN, so the PIN is the live credential and the
+// password belongs to a synthetic address most members will never type.
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
@@ -15,10 +19,12 @@ import { formatTZS } from '../lib/format'
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
 import NotificationPrefs from '../components/member/NotificationPrefs'
+import PasswordField from '../components/ui/PasswordField'
+import PinForm from '../components/ui/PinForm'
 
 function Section({ title, children }) {
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card">
       <h2 className="text-[13px] font-semibold tracking-tight text-slate-900 mb-3">{title}</h2>
       {children}
     </section>
@@ -51,8 +57,16 @@ function PhoneForm({ initialPhone, onSaved }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Phone number')}</label>
+        {/* htmlFor/id: the label was floating free, so tapping it did nothing and
+            a screen reader announced an unlabelled text box. */}
+        <label htmlFor="profile-phone" className="block text-sm font-medium text-slate-700 mb-1">
+          {t('Phone number')}
+        </label>
         <input
+          id="profile-phone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
           className="input-field"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
@@ -97,28 +111,24 @@ function PasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('New password')}</label>
-        <input
-          type="password"
-          className="input-field"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          autoComplete="new-password"
-          placeholder={t('At least 8 characters')}
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Confirm')}</label>
-        <input
-          type="password"
-          className="input-field"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          autoComplete="new-password"
-          placeholder={t('Re-enter password')}
-        />
-      </div>
+      <PasswordField
+        id="profile-new-password"
+        label={t('New password')}
+        autoComplete="new-password"
+        required={false}
+        value={pw}
+        onChange={(e) => setPw(e.target.value)}
+        placeholder={t('At least 8 characters')}
+      />
+      <PasswordField
+        id="profile-confirm-password"
+        label={t('Confirm')}
+        autoComplete="new-password"
+        required={false}
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        placeholder={t('Re-enter password')}
+      />
       {error && <p className="text-sm text-red-600">{error}</p>}
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <button type="submit" disabled={busy} className="btn-primary w-full">
@@ -215,7 +225,7 @@ function ContributionsCard({ memberId }) {
 }
 
 export default function Profile() {
-  const { profile, user, refreshProfile } = useAuth()
+  const { profile, user, pinStatus, refreshProfile } = useAuth()
   const { t } = useLanguage()
   const navigate = useNavigate()
   const home = profile?.role === 'admin' ? '/admin' : '/dashboard'
@@ -257,6 +267,22 @@ export default function Profile() {
 
         <Section title={t('Reminders')}>
           <NotificationPrefs memberId={user?.id} />
+        </Section>
+
+        {/* PIN first, password second: the PIN is what a member actually signs in
+            with. The password belongs to a synthetic @umojagroup.app address most of
+            them will never type, and is kept mainly for the admin. */}
+        <Section title={pinStatus?.hasPin ? t('Change your PIN') : t('Set a sign-in PIN')}>
+          {!pinStatus?.hasPin && (
+            <p className="mb-3 text-xs text-slate-500">
+              {t('With a PIN you can sign in using just your first name, phone number and PIN.')}
+            </p>
+          )}
+          <PinForm
+            requireCurrent={pinStatus?.hasPin === true && pinStatus?.mustChange !== true}
+            submitLabel={pinStatus?.hasPin ? t('Change PIN') : t('Save PIN')}
+            onSaved={refreshProfile}
+          />
         </Section>
 
         <Section title={t('Change password')}>

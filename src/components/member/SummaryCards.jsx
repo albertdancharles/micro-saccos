@@ -28,7 +28,7 @@ function HeroCard({ label, value, sub, tone = 'sky' }) {
 
   return (
     <div
-      className={`relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br ${palette.bg} p-4 sm:p-5 ring-1 ${palette.ring} shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.10)]`}
+      className={`relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br ${palette.bg} p-4 sm:p-5 ring-1 ${palette.ring} shadow-hero`}
     >
       <p className={`text-[11px] font-semibold uppercase tracking-wide ${palette.chip}`}>
         {label}
@@ -120,7 +120,11 @@ export default function SummaryCards({
       />
 
       <HeroCard
-        label={t('Max loan you can request')}
+        /* Not "can request": since the admin mandate (034) a member cannot file
+           a loan at all — the member INSERT policy on `loans` was dropped, so the
+           card was naming an action the reader has no way to take. It is a
+           ceiling on what an admin can file for them, so it says that. */
+        label={t('Max loan you qualify for')}
         value={formatTZS(maxLoanAmount)}
         sub={maxLoanSub}
         tone="emerald"

@@ -25,6 +25,7 @@ import LoanProgressBar from '../components/member/LoanProgressBar'
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
 import SavingsChart from '../components/member/SavingsChart'
+import DashboardSkeleton from '../components/ui/DashboardSkeleton'
 
 export default function MemberDashboard({ viewAs = null, viewedName = null }) {
   const { profile, user } = useAuth()
@@ -78,7 +79,7 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
         )}
 
         {summary.loading ? (
-          <p className="text-center text-slate-400 py-8">{t('Loading dashboard…')}</p>
+          <DashboardSkeleton label={t('Loading your account…')} />
         ) : (
           <>
             <SummaryCards

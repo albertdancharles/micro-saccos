@@ -131,9 +131,20 @@ export default function RecordFeeSheet({ onActioned }) {
       {loading ? (
         <div className="skeleton h-24 w-full" />
       ) : others.length === 0 ? (
-        <p className="text-sm text-slate-500 py-4 text-center">
-          {t('Every fee is settled. Nothing to record.')}
-        </p>
+        /* "Every fee is settled" is only true if the admin's own fee is settled
+           too. It is excluded from this sheet, not from the month — so when it is
+           the last one outstanding, the sheet used to declare the group square
+           while the admin still owed, and the note explaining where to pay it was
+           inside the branch that no longer rendered. */
+        mine.length > 0 ? (
+          <p className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 text-xs text-amber-800">
+            {t('Every other fee is settled. Only your own is left — record it with “Record a payment”, since an admin’s own money always needs a second admin’s signature.')}
+          </p>
+        ) : (
+          <p className="text-sm text-slate-500 py-4 text-center">
+            {t('Every fee is settled. Nothing to record.')}
+          </p>
+        )
       ) : (
         <>
           <div className="divide-y divide-slate-100">

@@ -14,13 +14,45 @@
 import { useEffect, useRef } from 'react'
 import { useLanguage } from '../../hooks/useLanguage'
 
+// Tab stops inside the sheet. `:not([disabled])` matters — a submit button
+// disabled while the form is posting must not become the wrap target, or Tab
+// lands on something that cannot be pressed.
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export default function Modal({ open, onClose, title, children }) {
   const { t } = useLanguage()
   const panelRef = useRef(null)
 
+  // Escape closes; Tab is kept inside the sheet.
+  //
+  // Without the trap, tabbing past the last field walked out of the dialog and
+  // into the page behind it — which is still fully rendered, and on the admin
+  // dashboard is a page of approve and reject buttons. `aria-modal` tells a
+  // screen reader the rest of the page is inert; it does not make it so, and a
+  // keyboard user could reach and fire a control the sheet was covering.
   useEffect(() => {
     if (!open) return
-    const onKey = (e) => e.key === 'Escape' && onClose()
+    const onKey = (e) => {
+      if (e.key === 'Escape') return onClose()
+      if (e.key !== 'Tab') return
+
+      const focusable = panelRef.current?.querySelectorAll(FOCUSABLE)
+      if (!focusable?.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+
+      // Wrap at both ends, and pull focus back in if it has already escaped
+      // (the panel itself is focused on open, and is not in this list).
+      if (e.shiftKey && (active === first || !panelRef.current.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (active === last || !panelRef.current.contains(active))) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
@@ -43,10 +75,16 @@ export default function Modal({ open, onClose, title, children }) {
   }, [open])
 
   // Move focus into the sheet so keyboard and screen-reader users land inside it
-  // rather than continuing from wherever they were on the page behind.
+  // rather than continuing from wherever they were on the page behind — then hand
+  // it back to whatever opened the sheet, so closing returns you where you were
+  // instead of at the top of the document.
   useEffect(() => {
     if (!open) return
+    const opener = document.activeElement
     panelRef.current?.focus()
+    return () => {
+      if (opener instanceof HTMLElement && document.contains(opener)) opener.focus()
+    }
   }, [open])
 
   if (!open) return null

@@ -17,9 +17,20 @@
   --color-app-text: #0f172a;
   --color-app-muted: #64748b;
 
-  /* Soft elevation scale. Used via utility classes shadow-card / shadow-pop. */
+  /* Soft elevation scale, lowest to highest. Each of these was inlined as a raw
+     arbitrary value in a dozen-plus components, which meant "the card shadow"
+     existed as a string to be copied rather than a decision to be changed —
+     `shadow-card` was already defined here and most callers still pasted its
+     value. Named once, they are used as shadow-card / shadow-lift / shadow-hero /
+     shadow-pop / shadow-auth. */
   --shadow-card: 0 1px 2px -1px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.04);
+  /* Hover state for an interactive card (queue items). */
+  --shadow-lift: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px -6px rgba(15, 23, 42, 0.08);
+  /* Hero summary cards — the one figure a screen is opened for. */
+  --shadow-hero: 0 1px 2px -1px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.10);
   --shadow-pop: 0 6px 14px -8px rgba(15, 23, 42, 0.12), 0 12px 32px -16px rgba(15, 23, 42, 0.10);
+  /* The signed-out card, floating on its own against the ambient wash. */
+  --shadow-auth: 0 16px 48px -24px rgba(15, 23, 42, 0.18);
 
   /* Default radius and motion tokens. */
   --radius-card: 14px;

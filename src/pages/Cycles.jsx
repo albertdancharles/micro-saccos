@@ -28,7 +28,7 @@ import UploadZone from '../components/ui/UploadZone'
 import Badge from '../components/ui/Badge'
 
 const CARD =
-  'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]'
+  'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card'
 
 function Row({ label, value, tone }) {
   const color =
@@ -149,7 +149,37 @@ function CloseWizard({ cycle, onDone }) {
 
       {preview && (
         <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 mb-3">
-          <div className="overflow-x-auto">
+          {/* Up to five columns of TZS. On a phone that scrolled sideways and
+              the column that went off the right edge was "Payout" — the number
+              every member in the room is waiting to hear. Stacked on mobile so
+              the share-out can be read aloud from the phone it was computed on;
+              the table returns from sm up. */}
+          <ul className="divide-y divide-slate-200/70 sm:hidden">
+            {preview.map((r) => (
+              <li key={r.member_id} className="py-2.5 first:pt-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm text-slate-700">{r.full_name}</span>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
+                    {formatTZS(r.total_payout_tzs)}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
+                  {(Number(r.share_ratio) * 100).toFixed(1)}% {t('share')}
+                  {' · '}
+                  <span className="text-emerald-700">{formatTZS(r.earnings_tzs)}</span>{' '}
+                  {t('earnings')}
+                  {mode === 'full_shareout' && (
+                    <>
+                      {' · '}
+                      {formatTZS(r.capital_returned_tzs)} {t('capital')}
+                    </>
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden sm:block">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-500 text-left">

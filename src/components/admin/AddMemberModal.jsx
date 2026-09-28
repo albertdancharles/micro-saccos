@@ -1,10 +1,26 @@
-// Add member (v2). Admin enters name + phone + email (a name-based @umojagroup.app
-// address is suggested, matching the seed convention) and the Edge Function creates
-// the account, returning a temp password to share. Member changes it on first login.
+// Add member (v3). Admin enters name + phone + email (a name-based @umojagroup.app
+// address is suggested, matching the seed convention), the Edge Function creates the
+// account, and a sign-in PIN is minted for it.
+//
+// What changed in v3 and why the handover screen is shaped the way it is: since 042 a
+// member signs in with their first name, their phone number and a PIN. So those three
+// things are what the admin reads out, and they are shown together as one set of
+// instructions rather than as a credential dump. The email and temp password are
+// still created and still work, but they are folded away — a member has no inbox at
+// that address and in practice never types it, and leading with it is what made
+// every forgotten login an admin reset.
+//
+// Two calls, not one: the account is created by admin-create-member and the PIN is
+// minted by member-pin-auth. That is deliberate (one copy of the PBKDF2 hashing, see
+// member-pin-auth's header) and it means the second call can fail on its own. If it
+// does, the member exists without a PIN, which is recoverable from the Sign-in PINs
+// panel — so that is exactly what the error says to do, rather than implying the
+// whole thing failed.
 import { useState } from 'react'
 import Modal from '../ui/Modal'
 import { supabase } from '../../supabaseClient'
 import { createMember } from '../../lib/admin'
+import { resetMemberPin } from '../../lib/phoneAuth'
 import { useLanguage } from '../../hooks/useLanguage'
 
 // firstname.lastname@umojagroup.app from a full name.
@@ -20,6 +36,21 @@ function suggestEmail(name) {
   return `${local}@umojagroup.app`
 }
 
+function firstWord(name) {
+  return String(name || '').trim().split(/\s+/)[0] || ''
+}
+
+function HandoverRow({ label, value, mono = true }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-xs text-slate-500">{label}</span>
+      <span className={`text-right text-slate-900 break-all ${mono ? 'font-mono' : ''}`}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
 function Form({ onCreated, onClose }) {
   const { t } = useLanguage()
   const [fullName, setFullName] = useState('')
@@ -28,7 +59,9 @@ function Form({ onCreated, onClose }) {
   const [phone, setPhone] = useState('+255')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [created, setCreated] = useState(null) // { email, password }
+  // { firstName, phone, pin, pinError, email, password }
+  const [created, setCreated] = useState(null)
+  const [showFallback, setShowFallback] = useState(false)
 
   function onNameChange(value) {
     setFullName(value)
@@ -48,7 +81,26 @@ function Form({ onCreated, onClose }) {
         email: email.trim(),
         phone_number: phone.trim(),
       })
-      setCreated(result)
+
+      // The account exists from here on. A failure minting the PIN must not read as
+      // "nothing happened" — it is one recoverable step short of done.
+      let pin = null
+      let pinError = ''
+      try {
+        const minted = await resetMemberPin(result.id)
+        pin = minted?.pin ?? null
+      } catch (err) {
+        pinError = err?.message || t('Could not create the PIN.')
+      }
+
+      setCreated({
+        firstName: firstWord(fullName),
+        phone: phone.trim(),
+        pin,
+        pinError,
+        email: result.email,
+        password: result.password,
+      })
       onCreated?.()
     } catch (err) {
       setError(err?.message || t('Could not create the member.'))
@@ -61,18 +113,53 @@ function Form({ onCreated, onClose }) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          {t('Member created. Share these temp credentials — they change the password on first login.')}
+          {t('Member created. Read these three things out — they are how they sign in.')}
         </p>
-        <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-2">
-          <div className="flex justify-between gap-3">
-            <span className="text-slate-500">{t('Email')}</span>
-            <span className="font-mono text-slate-900 break-all">{created.email}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-slate-500">{t('Temp password')}</span>
-            <span className="font-mono text-slate-900">{created.password}</span>
-          </div>
+
+        <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-100 space-y-2 text-sm">
+          <HandoverRow label={t('First name')} value={created.firstName} mono={false} />
+          <HandoverRow label={t('Phone number')} value={created.phone} />
+          {created.pin ? (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="shrink-0 text-xs text-slate-500">{t('PIN')}</span>
+              <span className="font-mono text-2xl tracking-[0.3em] text-emerald-900">
+                {created.pin}
+              </span>
+            </div>
+          ) : (
+            <p role="alert" className="text-xs text-red-700">
+              {t('The account was created but the PIN was not: {reason} Set one from the Sign-in PINs panel.').replace(
+                '{reason}',
+                created.pinError,
+              )}
+            </p>
+          )}
         </div>
+
+        {created.pin && (
+          <p className="text-xs text-slate-500">
+            {t('They will be asked to choose their own PIN the first time they sign in, so this one stops working then.')}
+          </p>
+        )}
+
+        {/* Folded away, not removed. It is the admin's way back in if phone login is
+            ever misbehaving, and it is the only login with a working reset email. */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowFallback((v) => !v)}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {showFallback ? t('Hide email login') : t('Show email login (backup)')}
+          </button>
+          {showFallback && (
+            <div className="mt-2 rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-100 space-y-2 text-sm">
+              <HandoverRow label={t('Email')} value={created.email} />
+              <HandoverRow label={t('Temp password')} value={created.password} />
+            </div>
+          )}
+        </div>
+
         <button onClick={onClose} className="btn-primary w-full">
           {t('Done')}
         </button>
@@ -92,7 +179,23 @@ function Form({ onCreated, onClose }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Email (login)')}</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Phone number')}</label>
+        <input
+          className="input-field"
+          type="tel"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+255…"
+        />
+        {/* Promoted above the email field: this is half the member's login now, and
+            it has to be the number they actually answer. */}
+        <p className="mt-1 text-xs text-slate-400">
+          {t('Half of their login. Make sure it is the number they use.')}
+        </p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Email (backup login)')}</label>
         <input
           className="input-field"
           type="email"
@@ -104,17 +207,8 @@ function Form({ onCreated, onClose }) {
           placeholder="jane.mushi@umojagroup.app"
         />
         <p className="mt-1 text-xs text-slate-400">
-          {t('A real email enables self-service password reset; otherwise you reset it for them.')}
+          {t('Members sign in by phone and PIN. A real email here also enables self-service password reset.')}
         </p>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{t('Phone number')}</label>
-        <input
-          className="input-field"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="+255…"
-        />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

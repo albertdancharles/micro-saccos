@@ -17,7 +17,7 @@
 --     a member-initiated write), so without the cron job fee generation waits on
 --     an admin logging in.
 --
--- 39 migrations: 001_create_tables.sql .. 039_dispatch_requires_pg_net.sql
+-- 42 migrations: 001_create_tables.sql .. 042_phone_pin_login.sql
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -9763,3 +9763,1903 @@ REVOKE ALL ON FUNCTION schedule_notification_drain(text, text, text) FROM public
 --     from cron.job_run_details
 --    where jobname = 'drain-notification-outbox'
 --    order by start_time desc limit 5;
+
+-- ---------------------------------------------------------------------------
+-- 040_exit_is_not_an_application.sql
+-- ---------------------------------------------------------------------------
+
+-- 040_exit_is_not_an_application.sql — stop the applicant queue eating ex-members.
+--
+-- `profiles.is_active = false` carries two entirely different meanings:
+--
+--   * 018 — a sign-up nobody has approved yet. handle_new_user() defaults new
+--     rows to inactive, so a stray registration lands here. It has no history:
+--     no fee has ever been raised against it, no shilling has ever moved.
+--
+--   * 025 — a member who EXITED. request_member_exit settles their whole balance
+--     and mark_withdrawal_paid deactivates them. This path is deliberately
+--     distinct from request_member_deletion (010), which erases: exit KEEPS every
+--     fee, loan and repayment on record so past cycles still reconcile. That
+--     retention is the entire point of having two flows.
+--
+-- Nothing distinguished them. `getAdminData` selected every inactive profile and
+-- handed the lot to the applicant queue, where a member who left last quarter
+-- appeared under the heading "Pending registrations", labelled "Applied <date>",
+-- with two buttons:
+--
+--   Approve member  -> approve_member(), which flips is_active back to true. A
+--                      settled, paid-out ex-member is silently a member again,
+--                      back in the fee sweep, back in the share-out weighting.
+--   Reject          -> reject_pending_member(), which is
+--                      `DELETE FROM auth.users` and cascades to profiles. One tap
+--                      destroys precisely the history exit exists to preserve —
+--                      and it is the cheap-looking button, sitting next to a row
+--                      that reads like a stranger's application.
+--
+-- The client now splits the list, but the RPCs are reachable straight from
+-- PostgREST by any admin's JWT, so the rule belongs here. Both functions gain the
+-- same guard: an applicant is someone with NO history. Anyone else is a former
+-- member, and neither reinstatement nor erasure is an applicant decision.
+--
+-- Deliberately not changed: request_member_deletion (010) still deletes anyone,
+-- ex-member included. That is the 2-of-N flow, it is named for what it does, and
+-- an admin reaching for it has said what they mean.
+
+-- ---------------------------------------------------------------------------
+-- has_member_history — has anything ever been recorded against this profile?
+--
+-- An exit always books its settlement as an approved savings_adjustment, so this
+-- is true even for someone who left having never paid a fee.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION has_member_history(p_member_id uuid)
+RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM payment_submissions WHERE member_id        = p_member_id)
+      OR EXISTS (SELECT 1 FROM monthly_fees        WHERE member_id        = p_member_id)
+      OR EXISTS (SELECT 1 FROM loans               WHERE member_id        = p_member_id)
+      OR EXISTS (SELECT 1 FROM savings_adjustments
+                  WHERE target_member_id = p_member_id AND status = 'approved');
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+COMMENT ON FUNCTION has_member_history(uuid) IS
+  'True once anything has been recorded against this profile. Separates a pending sign-up (018) from a member who exited (025); both are is_active = false.';
+
+-- ---------------------------------------------------------------------------
+-- approve_member — unchanged for real applicants, closed to ex-members.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION approve_member(p_member_id uuid)
+RETURNS void AS $$
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  IF has_member_history(p_member_id) THEN
+    RAISE EXCEPTION
+      'This is a former member, not a new applicant. Their record is kept deliberately; reinstating them is not an approval.';
+  END IF;
+
+  UPDATE profiles SET is_active = true
+   WHERE id = p_member_id AND is_active = false;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Member not found or already active'; END IF;
+  INSERT INTO audit_log (actor_id, action, target_type, target_id)
+  VALUES (auth.uid(), 'approve_member', 'profile', p_member_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- reject_pending_member — the destructive one. Same guard, stated in the terms
+-- the admin needs: there is another flow, and it is the one that means this.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION reject_pending_member(p_member_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_role   text;
+  v_active boolean;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  SELECT role, is_active INTO v_role, v_active FROM profiles WHERE id = p_member_id;
+  IF NOT FOUND      THEN RAISE EXCEPTION 'Member not found'; END IF;
+  IF v_active       THEN RAISE EXCEPTION 'Member is already active; use member deletion instead'; END IF;
+  IF v_role = 'admin' THEN RAISE EXCEPTION 'Cannot reject an admin'; END IF;
+
+  IF has_member_history(p_member_id) THEN
+    RAISE EXCEPTION
+      'This member has a recorded history and cannot be rejected as an applicant. Exit keeps that history on purpose; use member deletion (2-of-N) to erase it.';
+  END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id)
+  VALUES (auth.uid(), 'reject_pending_member', 'profile', p_member_id);
+  DELETE FROM auth.users WHERE id = p_member_id;  -- cascades to profiles
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION has_member_history(uuid)     TO authenticated;
+GRANT EXECUTE ON FUNCTION approve_member(uuid)         TO authenticated;
+GRANT EXECUTE ON FUNCTION reject_pending_member(uuid)  TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 041_superadmin_overseer.sql
+-- ---------------------------------------------------------------------------
+
+-- 041_superadmin_overseer.sql — one overseer, unrestricted.
+--
+-- Until now every monetary or structural action needed two admin signatures
+-- (008), and an admin's own money needed two REGARDLESS of how few admins exist
+-- (036). This migration carves out a single "overseer": one profile that acts on
+-- its own signature everywhere, on its own money included.
+--
+-- HOW THE BYPASS WORKS. Almost nothing here rewrites the money logic. Every
+-- request_* function in this schema already ends with the same shape:
+--
+--     IF (SELECT count(*) FROM ..._approvals WHERE ...) >= required_approvals()
+--     THEN PERFORM execute_...(v_id);
+--
+-- The requester's own signature is cast as part of the request. So making
+-- required_approvals() return 1 for the overseer means the overseer's request
+-- EXECUTES INSIDE THE REQUEST CALL — savings edits, pool edits, role changes,
+-- setting changes, loan actions, cycle closes, social grants, member deletions
+-- and payment voids all complete on one call, and never reach the approve_*
+-- queue where the "you cannot approve your own request" guards live. Those
+-- guards are therefore left standing and untouched for every other admin.
+--
+-- WHAT IS DELIBERATELY *NOT* BYPASSED. The lending caps in approve_loan — the
+-- pool fraction and the contribution multiplier — still apply to the overseer.
+-- They are not admin confirmations, they are group lending limits, and they are
+-- already group_settings rows the overseer can now change alone and instantly
+-- through request_setting_change. Hardcoding a second bypass would only hide
+-- the change from the settings history.
+--
+-- Requires 040.
+
+-- --------------------------------------------------------------------------
+-- 1. The flag.
+--
+--    A column rather than a fourth `role` value, because role = 'admin' is what
+--    is_admin() and every RLS policy in the schema key off. A separate role
+--    would have silently locked the overseer out of the whole application.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_superadmin boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN profiles.is_superadmin IS
+  'The overseer. Acts on a single signature everywhere. Set only from the service role.';
+
+-- "He is the overseer", singular. A partial unique index over a constant makes
+-- a second overseer a constraint violation rather than a quiet governance hole.
+CREATE UNIQUE INDEX IF NOT EXISTS one_overseer_only
+  ON profiles ((true)) WHERE is_superadmin;
+
+-- --------------------------------------------------------------------------
+-- 2. The gate.
+--
+--    Mirrors is_admin() from 034: SECURITY DEFINER to bypass RLS, pinned
+--    search_path, and is_active checked — a deactivated profile acts on nothing.
+--    Note it does NOT require role = 'admin': the overseer keeps authority even
+--    mid-role-change, and part 5 stops that role from being changed at all.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION is_superadmin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+     WHERE id = auth.uid() AND is_superadmin = true AND is_active = true
+  );
+$$;
+
+-- --------------------------------------------------------------------------
+-- 3. One signature is a quorum.
+--
+--    This single function is what every 2-of-N flow consults, so this is the
+--    whole governance bypass. For everyone else the rule is unchanged:
+--    least(2, active admins).
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION required_approvals()
+RETURNS int
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT CASE
+    WHEN is_superadmin() THEN 1
+    ELSE (SELECT least(2, count(*)::int)
+            FROM profiles WHERE role = 'admin' AND is_active = true)
+  END;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 4. The overseer's own money.
+--
+--    036 made an admin recording their OWN payment a permanent two-signature
+--    matter — greatest(required_approvals(), 2) — specifically so a one-admin
+--    group could not degrade it. That was a deliberate group decision, and this
+--    is the one place in this migration that reverses one. The overseer now
+--    settles their own recorded payments alone. Every other admin still cannot.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION submission_threshold(p_submission_id uuid)
+RETURNS int AS $$
+DECLARE
+  s payment_submissions%ROWTYPE;
+BEGIN
+  IF is_superadmin() THEN RETURN 1; END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id;
+  IF s.id IS NULL THEN RETURN required_approvals(); END IF;
+
+  IF s.recorded_by IS NOT NULL AND s.recorded_by = s.member_id THEN
+    RETURN greatest(required_approvals(), 2);
+  END IF;
+
+  IF s.recorded_by IS NOT NULL AND s.submission_type = 'monthly_fee' THEN
+    RETURN 1;
+  END IF;
+
+  RETURN required_approvals();
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 5. Protecting the office.
+--
+--    Two separate problems, both closed by one trigger rather than by editing
+--    the dozen functions that could otherwise reach profiles:
+--
+--    (a) ESCALATION. `Admin can update any profile` (003) is a bare USING
+--        clause with no WITH CHECK, so every admin can already UPDATE any
+--        column of any profile. Without this trigger, adding is_superadmin
+--        would hand all of them a one-statement path to making THEMSELVES
+--        overseer. The flag is now settable only where auth.uid() is NULL —
+--        i.e. from the service role, off the public API.
+--
+--    (b) REMOVAL. The overseer cannot be demoted, deactivated or deleted
+--        through the app at all, by any number of admins. The recovery path is
+--        deliberately the same as the setting path: the service-role key.
+--        Whoever holds it clears the flag first, and only then can the ordinary
+--        role-change and exit flows touch that profile again.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION protect_overseer()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.is_superadmin AND auth.uid() IS NOT NULL THEN
+      RAISE EXCEPTION 'The overseer cannot be removed from inside the app.';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  -- (a) Who may hand out the office.
+  IF NEW.is_superadmin IS DISTINCT FROM OLD.is_superadmin AND auth.uid() IS NOT NULL THEN
+    RAISE EXCEPTION
+      'The overseer flag is not settable from the app. Use scripts/set-overseer.mjs with the service-role key.';
+  END IF;
+
+  -- (b) While the office is held, the profile holding it is immovable.
+  IF OLD.is_superadmin AND NEW.is_superadmin THEN
+    IF NEW.role <> 'admin' THEN
+      RAISE EXCEPTION 'The overseer cannot be demoted. Clear is_superadmin first.';
+    END IF;
+    IF NEW.is_active = false THEN
+      RAISE EXCEPTION 'The overseer cannot be deactivated. Clear is_superadmin first.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS protect_overseer_trg ON profiles;
+CREATE TRIGGER protect_overseer_trg
+  BEFORE UPDATE OR DELETE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION protect_overseer();
+
+-- --------------------------------------------------------------------------
+-- 6. The loan-free-admin mandate.
+--
+--    035's approve_loan refuses a loan to an admin when that would leave no
+--    loan-free admin. Unlike the lending caps in the same function, this one is
+--    hardcoded rather than a group_settings row, so the overseer cannot lift it
+--    by changing a setting. It is exempted here instead. The body below is
+--    035's, unchanged except for the one marked line.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION approve_loan(p_loan_id uuid, p_proof_url text)
+RETURNS void AS $$
+DECLARE
+  v_loan              loans%ROWTYPE;
+  v_int               numeric(12,2);
+  v_pool              numeric(14,2);
+  v_contribution      numeric(14,2);
+  v_required          int;
+  v_approvals         int;
+  v_final_proof       text;
+  v_other_admin_loans int;
+  v_total_admins      int;
+  v_fraction          numeric := setting('pool_loan_fraction');
+  v_multiplier        numeric := setting('contribution_multiplier');
+  v_rate              numeric := setting('loan_interest_rate');
+  v_months            int     := setting('default_loan_months')::int;
+  v_n                 int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id FOR UPDATE;
+  IF v_loan.id IS NULL          THEN RAISE EXCEPTION 'Loan not found';      END IF;
+  IF v_loan.status <> 'pending' THEN RAISE EXCEPTION 'Loan is not pending'; END IF;
+
+  SELECT pool_balance_tzs INTO v_pool FROM v_group_pool;
+  IF v_loan.principal > floor(v_fraction * COALESCE(v_pool, 0)) THEN
+    RAISE EXCEPTION 'Loan exceeds % of the group pool (max %).',
+      round(v_fraction * 100) || '%', floor(v_fraction * COALESCE(v_pool, 0));
+  END IF;
+
+  SELECT
+      COALESCE((SELECT SUM(amount_claimed) FROM payment_submissions
+                WHERE member_id = v_loan.member_id
+                  AND submission_type = 'savings_deposit'
+                  AND status = 'approved'), 0)
+    + COALESCE((SELECT SUM(amount) FROM monthly_fees
+                WHERE member_id = v_loan.member_id AND status = 'paid'), 0)
+  INTO v_contribution;
+  IF v_loan.principal > floor(v_multiplier * v_contribution) THEN
+    RAISE EXCEPTION 'Loan exceeds %x member contribution (max %).',
+      v_multiplier, floor(v_multiplier * v_contribution);
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_approvals (loan_id, admin_id, proof_url)
+    VALUES (p_loan_id, auth.uid(), p_proof_url);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this loan';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM loan_approvals WHERE loan_id = p_loan_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan', 'loan', p_loan_id,
+            jsonb_build_object(
+              'member_id', v_loan.member_id,
+              'principal', v_loan.principal,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  IF (SELECT role FROM profiles WHERE id = v_loan.member_id) = 'admin' THEN
+    SELECT count(*) INTO v_total_admins
+      FROM profiles WHERE role = 'admin' AND is_active = true;
+    SELECT count(*) INTO v_other_admin_loans
+      FROM loans
+      WHERE status = 'active'
+        AND member_id IN (SELECT id FROM profiles WHERE role = 'admin' AND is_active = true)
+        AND member_id <> v_loan.member_id;
+    -- OVERSEER: the superadmin is exempt from the loan-free-admin mandate.
+    IF v_other_admin_loans >= v_total_admins - 1 AND NOT is_superadmin() THEN
+      RAISE EXCEPTION 'Not all admins may hold loans simultaneously; one admin must remain loan-free.';
+    END IF;
+  END IF;
+
+  SELECT proof_url INTO v_final_proof
+  FROM loan_approvals WHERE loan_id = p_loan_id
+  ORDER BY approved_at ASC LIMIT 1;
+
+  v_int := round(v_loan.principal * v_rate);
+
+  UPDATE loans
+    SET status = 'active',
+        approved_at = now(),
+        approved_by = auth.uid(),
+        disbursed_at = now(),
+        disbursement_proof_url = v_final_proof,
+        outstanding_principal = v_loan.principal,
+        interest_rate = v_rate
+    WHERE id = p_loan_id;
+
+  FOR v_n IN 1..v_months LOOP
+    INSERT INTO loan_installments
+      (loan_id, installment_number, due_date, principal_due, interest_due, penalty_rate)
+    VALUES (
+      p_loan_id,
+      v_n,
+      (today_eat() + (v_n || ' month')::interval)::date,
+      CASE WHEN v_n = v_months THEN v_loan.principal ELSE 0 END,
+      v_int,
+      setting('penalty_rate')
+    );
+  END LOOP;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_loan', 'loan', p_loan_id,
+          jsonb_build_object(
+            'member_id',     v_loan.member_id,
+            'principal',     v_loan.principal,
+            'approvals',     v_approvals,
+            'interest_rate', v_rate,
+            'months',        v_months
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 7. Recording the overseer's own payment in a one-admin group.
+--
+--    036's record_payment refuses a self-recorded payment outright when fewer
+--    than two admins exist, and that check runs BEFORE submission_threshold —
+--    so part 4 alone would not reach it. Without this the overseer of a
+--    one-admin group is the only member who cannot have a payment recorded.
+--    The body below is 036's, unchanged except for the one marked guard.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION record_payment(
+  p_member_id  uuid,
+  p_type       text,
+  p_related_id uuid,
+  p_amount     numeric,
+  p_proof_url  text DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_id        uuid;
+  v_self      boolean;
+  v_admins    int;
+  v_required  int;
+  v_approvals int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Enter an amount greater than zero';
+  END IF;
+  IF p_type NOT IN ('savings_deposit', 'monthly_fee', 'loan_installment') THEN
+    RAISE EXCEPTION 'Unknown payment type: %', p_type;
+  END IF;
+  IF p_type IN ('monthly_fee', 'loan_installment') AND p_related_id IS NULL THEN
+    RAISE EXCEPTION 'Choose which fee or installment this payment settles';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_member_id AND is_active = true) THEN
+    RAISE EXCEPTION 'That member is not active';
+  END IF;
+
+  v_self := (p_member_id = auth.uid());
+
+  -- Fail here, not silently later. Without a second admin this row could never
+  -- reach its threshold and would sit pending forever with no way to finish it.
+  -- OVERSEER: exempt. Without this the overseer of a one-admin group could not
+  -- record their own payment at all, since this guard precedes the threshold.
+  IF v_self AND NOT is_superadmin() THEN
+    SELECT count(*) INTO v_admins FROM profiles WHERE role = 'admin' AND is_active = true;
+    IF v_admins < 2 THEN
+      RAISE EXCEPTION 'A second admin is required to record your own payment. Promote another admin first.';
+    END IF;
+  END IF;
+
+  INSERT INTO payment_submissions
+    (member_id, submission_type, related_id, amount_claimed, proof_url, recorded_by)
+  VALUES (p_member_id, p_type, p_related_id, p_amount, p_proof_url, auth.uid())
+  RETURNING id INTO v_id;
+
+  INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+  VALUES (v_id, auth.uid(), p_amount);
+
+  v_required := submission_threshold(v_id);
+  SELECT count(*) INTO v_approvals FROM submission_approvals WHERE submission_id = v_id;
+
+  IF v_approvals >= v_required THEN
+    PERFORM settle_submission(v_id, p_amount);
+  ELSE
+    INSERT INTO notifications (recipient_id, kind, title, body, data)
+    SELECT p.id, 'payment_awaiting_signature',
+           'A payment needs your signature',
+           NULL,
+           jsonb_build_object('submission_id', v_id)
+      FROM profiles p
+     WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+  END IF;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'record_payment', 'submission', v_id,
+          jsonb_build_object(
+            'submission_type', p_type,
+            'member_id',       p_member_id,
+            'amount',          p_amount,
+            'self_recorded',   v_self,
+            'approvals',       v_approvals,
+            'required',        v_required,
+            'settled',         v_approvals >= v_required
+          ));
+
+  RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 8. The flows that never asked required_approvals().
+--
+--    Part 3 is not, on its own, the whole bypass. Seven workflows — savings
+--    edits, pool edits, role changes, settings, loan actions, cycle close and
+--    withdrawals — compute their own quorum inline instead of calling
+--    required_approvals():
+--
+--        SELECT count(*) INTO v_other_admins
+--          FROM profiles WHERE role = 'admin' AND is_active AND id <> auth.uid();
+--        v_required := least(2, v_other_admins);
+--        IF v_required = 0 THEN PERFORM execute_...(v_id); END IF;
+--
+--    Changing required_approvals() alone leaves every one of them untouched, so
+--    the overseer's request would sit pending exactly like anyone else's. The
+--    thirteen bodies below are their current definitions, reproduced verbatim
+--    from the migrations named against each, with two mechanical edits and
+--    nothing else — each marked `-- OVERSEER` in place:
+--
+--      * the quorum line becomes 0 for the overseer, which is what makes the
+--        request execute inside its own call; and
+--      * the "you cannot approve your own request" guards gain
+--        `AND NOT is_superadmin()`, so the overseer can also carry a request
+--        that someone else opened, or one that names the overseer.
+--
+--    Every one of these edits is conditional on is_superadmin(). For all other
+--    admins each function behaves exactly as it did before this migration.
+-- --------------------------------------------------------------------------
+
+-- request_savings_edit — from 013_savings_edits.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_savings_edit(
+  p_target_member_id uuid,
+  p_delta            numeric,
+  p_reason           text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_request_id    uuid;
+  v_target_role   text;
+  v_target_name   text;
+  v_requester     text;
+  v_other_admins  int;
+  v_required      int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_delta = 0   THEN RAISE EXCEPTION 'Delta must be non-zero'; END IF;
+  IF coalesce(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every savings edit';
+  END IF;
+
+  SELECT role, full_name INTO v_target_role, v_target_name
+    FROM profiles WHERE id = p_target_member_id;
+  IF v_target_role IS NULL THEN RAISE EXCEPTION 'Member not found'; END IF;
+
+  -- Admins may only target non-admins or themselves; never another admin.
+  IF v_target_role = 'admin' AND p_target_member_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Admins cannot edit another admin''s savings';
+  END IF;
+
+  -- Block overlapping pending requests for the same target.
+  IF EXISTS (
+    SELECT 1 FROM savings_adjustments
+     WHERE target_member_id = p_target_member_id AND status = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'A pending savings edit already exists for this member';
+  END IF;
+
+  INSERT INTO savings_adjustments (target_member_id, requested_by, delta, reason)
+  VALUES (p_target_member_id, auth.uid(), p_delta, trim(p_reason))
+  RETURNING id INTO v_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_savings_edit', 'profile', p_target_member_id,
+          jsonb_build_object(
+            'request_id',  v_request_id,
+            'delta',       p_delta,
+            'reason',      p_reason,
+            'target_name', v_target_name
+          ));
+
+  -- Notify every other admin so they can act.
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'savings_edit_requested',
+         'Savings edit requested',
+         COALESCE(v_requester, 'An admin') || ' wants to adjust ' ||
+           COALESCE(v_target_name, 'a member') || '''s savings by ' ||
+           p_delta || ' TZS',
+         jsonb_build_object(
+           'request_id', v_request_id,
+           'target_id',  p_target_member_id,
+           'delta',      p_delta
+         )
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  -- Required = min(2, other active admin count). With a single admin in the
+  -- system there are no "others" so the request auto-applies.
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_savings_edit(v_request_id);
+  END IF;
+
+  RETURN v_request_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_savings_edit — from 013_savings_edits.sql, unchanged but for the 1 quorum site and 2 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_savings_edit(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_request      savings_adjustments%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_request FROM savings_adjustments WHERE id = p_request_id FOR UPDATE;
+  IF v_request.id IS NULL          THEN RAISE EXCEPTION 'Edit request not found'; END IF;
+  IF v_request.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+
+  -- "Other admins must approve" — neither the requester nor the target may vote.
+  IF v_request.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+  IF v_request.target_member_id = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve an edit to your own savings';
+  END IF;
+
+  BEGIN
+    INSERT INTO savings_adjustment_approvals (adjustment_id, admin_id)
+    VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this edit';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_request.requested_by;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM savings_adjustment_approvals WHERE adjustment_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_savings_edit', 'profile',
+            v_request.target_member_id,
+            jsonb_build_object(
+              'request_id', p_request_id,
+              'approvals',  v_approvals,
+              'required',   v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_savings_edit(p_request_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- request_pool_edit — from 015_pool_edits.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_pool_edit(p_delta numeric, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_request_id   uuid;
+  v_requester    text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_delta = 0   THEN RAISE EXCEPTION 'Delta must be non-zero'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every pool edit';
+  END IF;
+
+  -- Block overlapping pending requests so the pool doesn't get adjusted twice
+  -- on the same conceptual change. Cancelling a pending request unblocks the
+  -- next one.
+  IF EXISTS (SELECT 1 FROM pool_adjustments WHERE status = 'pending') THEN
+    RAISE EXCEPTION 'A pending pool edit already exists; cancel or approve it first';
+  END IF;
+
+  INSERT INTO pool_adjustments (requested_by, delta, reason)
+  VALUES (auth.uid(), p_delta, trim(p_reason))
+  RETURNING id INTO v_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_pool_edit', 'pool', NULL,
+          jsonb_build_object(
+            'request_id', v_request_id,
+            'delta',      p_delta,
+            'reason',     p_reason
+          ));
+
+  -- Notify every other active admin so they can act.
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'pool_edit_requested',
+         'Pool edit requested',
+         COALESCE(v_requester, 'An admin') || ' wants to adjust the group pool by ' ||
+           p_delta || ' TZS',
+         jsonb_build_object(
+           'request_id', v_request_id,
+           'delta',      p_delta
+         )
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_pool_edit(v_request_id);
+  END IF;
+
+  RETURN v_request_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_pool_edit — from 015_pool_edits.sql, unchanged but for the 1 quorum site and 1 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_pool_edit(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_request      pool_adjustments%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_request FROM pool_adjustments WHERE id = p_request_id FOR UPDATE;
+  IF v_request.id IS NULL          THEN RAISE EXCEPTION 'Pool edit request not found'; END IF;
+  IF v_request.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed';   END IF;
+
+  IF v_request.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO pool_adjustment_approvals (adjustment_id, admin_id)
+    VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this edit';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_request.requested_by;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM pool_adjustment_approvals WHERE adjustment_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_pool_edit', 'pool', NULL,
+            jsonb_build_object(
+              'request_id', p_request_id,
+              'approvals',  v_approvals,
+              'required',   v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_pool_edit(p_request_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- request_role_change — from 016_role_changes.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_role_change(
+  p_target_member_id uuid,
+  p_change_type      text,
+  p_reason           text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_request_id    uuid;
+  v_target_role   text;
+  v_target_name   text;
+  v_admin_count   int;
+  v_other_admins  int;
+  v_required      int;
+  v_requester     text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_change_type NOT IN ('promote', 'demote') THEN
+    RAISE EXCEPTION 'Invalid change_type (use promote or demote)';
+  END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every role change';
+  END IF;
+
+  SELECT role, full_name INTO v_target_role, v_target_name
+    FROM profiles WHERE id = p_target_member_id;
+  IF v_target_role IS NULL THEN RAISE EXCEPTION 'Member not found'; END IF;
+
+  IF p_change_type = 'promote' THEN
+    IF v_target_role = 'admin' THEN
+      RAISE EXCEPTION 'Member is already an admin';
+    END IF;
+  ELSE  -- demote
+    IF v_target_role <> 'admin' THEN
+      RAISE EXCEPTION 'Member is not an admin';
+    END IF;
+    SELECT count(*) INTO v_admin_count
+      FROM profiles WHERE role = 'admin' AND is_active = true;
+    IF v_admin_count <= 1 THEN
+      RAISE EXCEPTION 'Cannot revoke the last remaining admin';
+    END IF;
+  END IF;
+
+  -- Block overlapping pending requests for the same target.
+  IF EXISTS (
+    SELECT 1 FROM role_change_requests
+     WHERE target_member_id = p_target_member_id AND status = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'A pending role-change request already exists for this member';
+  END IF;
+
+  INSERT INTO role_change_requests (target_member_id, requested_by, change_type, reason)
+  VALUES (p_target_member_id, auth.uid(), p_change_type, trim(p_reason))
+  RETURNING id INTO v_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_role_change', 'profile', p_target_member_id,
+          jsonb_build_object(
+            'request_id',  v_request_id,
+            'change_type', p_change_type,
+            'reason',      p_reason,
+            'target_name', v_target_name
+          ));
+
+  -- Notify every OTHER active admin so they can vote.
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'role_change_requested',
+         CASE WHEN p_change_type = 'promote'
+              THEN 'Admin promotion requested'
+              ELSE 'Admin revocation requested'
+         END,
+         COALESCE(v_requester, 'An admin') || ' wants to ' || p_change_type || ' ' ||
+           COALESCE(v_target_name, 'a member'),
+         jsonb_build_object(
+           'request_id',  v_request_id,
+           'target_id',   p_target_member_id,
+           'change_type', p_change_type
+         )
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_role_change(v_request_id);
+  END IF;
+
+  RETURN v_request_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_role_change — from 016_role_changes.sql, unchanged but for the 1 quorum site and 2 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_role_change(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_request      role_change_requests%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_request FROM role_change_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_request.id IS NULL          THEN RAISE EXCEPTION 'Role-change request not found'; END IF;
+  IF v_request.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed';     END IF;
+
+  IF v_request.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+  IF v_request.target_member_id = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve a role change targeting yourself';
+  END IF;
+
+  BEGIN
+    INSERT INTO role_change_approvals (request_id, admin_id)
+    VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this request';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_request.requested_by;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM role_change_approvals WHERE request_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_role_change', 'profile',
+            v_request.target_member_id,
+            jsonb_build_object(
+              'request_id', p_request_id,
+              'approvals',  v_approvals,
+              'required',   v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_role_change(p_request_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- request_setting_change — from 020_group_settings.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_setting_change(
+  p_key text, p_new_value numeric, p_reason text
+)
+RETURNS uuid AS $$
+DECLARE
+  v_change_id    uuid;
+  v_current      group_settings%ROWTYPE;
+  v_requester    text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every rule change';
+  END IF;
+
+  SELECT * INTO v_current FROM group_settings WHERE key = p_key;
+  IF v_current.key IS NULL THEN RAISE EXCEPTION 'Unknown setting: %', p_key; END IF;
+
+  IF p_new_value = v_current.value THEN
+    RAISE EXCEPTION 'That is already the current value';
+  END IF;
+  IF p_new_value < v_current.min_value OR p_new_value > v_current.max_value THEN
+    RAISE EXCEPTION '% must be between % and %',
+      v_current.label, v_current.min_value, v_current.max_value;
+  END IF;
+
+  -- One pending change per key, so two admins can't approve conflicting values.
+  IF EXISTS (SELECT 1 FROM setting_changes WHERE key = p_key AND status = 'pending') THEN
+    RAISE EXCEPTION 'A pending change for this setting already exists; cancel or approve it first';
+  END IF;
+
+  INSERT INTO setting_changes (key, old_value, new_value, reason, requested_by)
+  VALUES (p_key, v_current.value, p_new_value, trim(p_reason), auth.uid())
+  RETURNING id INTO v_change_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_setting_change', 'setting', NULL,
+          jsonb_build_object(
+            'change_id', v_change_id,
+            'key',       p_key,
+            'old_value', v_current.value,
+            'new_value', p_new_value,
+            'reason',    p_reason
+          ));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'setting_change_requested',
+         'Rule change proposed',
+         COALESCE(v_requester, 'An admin') || ' wants to change ' || v_current.label ||
+           ' from ' || v_current.value || ' to ' || p_new_value,
+         jsonb_build_object('change_id', v_change_id, 'key', p_key)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_setting_change(v_change_id);
+  END IF;
+
+  RETURN v_change_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_setting_change — from 020_group_settings.sql, unchanged but for the 1 quorum site and 1 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_setting_change(p_change_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_change       setting_changes%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_change FROM setting_changes WHERE id = p_change_id FOR UPDATE;
+  IF v_change.id IS NULL          THEN RAISE EXCEPTION 'Setting change not found'; END IF;
+  IF v_change.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_change.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO setting_change_approvals (change_id, admin_id)
+    VALUES (p_change_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this change';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_change.requested_by;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM setting_change_approvals WHERE change_id = p_change_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_setting_change', 'setting', NULL,
+            jsonb_build_object(
+              'change_id', p_change_id,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_setting_change(p_change_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- request_loan_action — from 022_loan_distress.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_loan_action(
+  p_loan_id uuid, p_action text, p_reason text,
+  p_amount numeric DEFAULT NULL, p_term_months int DEFAULT NULL
+)
+RETURNS uuid AS $$
+DECLARE
+  v_action_id    uuid;
+  v_loan         loans%ROWTYPE;
+  v_requester    text;
+  v_member       text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required for every loan action';
+  END IF;
+  IF p_action NOT IN ('restructure', 'write_off', 'recover_from_savings') THEN
+    RAISE EXCEPTION 'Unknown loan action: %', p_action;
+  END IF;
+
+  SELECT * INTO v_loan FROM loans WHERE id = p_loan_id;
+  IF v_loan.id IS NULL         THEN RAISE EXCEPTION 'Loan not found';                  END IF;
+  IF v_loan.status <> 'active' THEN RAISE EXCEPTION 'Only an active loan can be actioned'; END IF;
+  IF v_loan.member_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot open an action against your own loan';
+  END IF;
+
+  IF p_action = 'restructure' THEN
+    IF p_term_months IS NULL OR p_term_months < 1 OR p_term_months > 24 THEN
+      RAISE EXCEPTION 'Term must be between 1 and 24 months';
+    END IF;
+  ELSIF p_action = 'recover_from_savings' THEN
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+      RAISE EXCEPTION 'Enter the amount to recover';
+    END IF;
+  END IF;
+
+  -- One open action per loan, so two admins can't approve conflicting outcomes.
+  IF EXISTS (SELECT 1 FROM loan_actions WHERE loan_id = p_loan_id AND status = 'pending') THEN
+    RAISE EXCEPTION 'This loan already has a pending action; cancel or approve it first';
+  END IF;
+
+  INSERT INTO loan_actions (loan_id, action, amount, term_months, reason, requested_by)
+  VALUES (p_loan_id, p_action, p_amount, p_term_months, trim(p_reason), auth.uid())
+  RETURNING id INTO v_action_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_loan_' || p_action, 'loan', p_loan_id,
+          jsonb_build_object(
+            'action_id',   v_action_id,
+            'member_id',   v_loan.member_id,
+            'amount',      p_amount,
+            'term_months', p_term_months,
+            'reason',      p_reason
+          ));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  SELECT full_name INTO v_member    FROM profiles WHERE id = v_loan.member_id;
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'loan_action_requested',
+         'Loan action proposed',
+         COALESCE(v_requester, 'An admin') || ' proposed to ' ||
+           replace(p_action, '_', ' ') || ' ' || COALESCE(v_member, 'a member') || '''s loan',
+         jsonb_build_object('action_id', v_action_id, 'loan_id', p_loan_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles
+   WHERE role = 'admin' AND is_active = true
+     AND id <> auth.uid() AND id <> v_loan.member_id;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_loan_action(v_action_id);
+  END IF;
+
+  RETURN v_action_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_loan_action — from 022_loan_distress.sql, unchanged but for the 1 quorum site and 2 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_loan_action(p_action_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_act          loan_actions%ROWTYPE;
+  v_borrower     uuid;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_act FROM loan_actions WHERE id = p_action_id FOR UPDATE;
+  IF v_act.id IS NULL          THEN RAISE EXCEPTION 'Loan action not found';  END IF;
+  IF v_act.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_act.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  SELECT member_id INTO v_borrower FROM loans WHERE id = v_act.loan_id;
+  IF v_borrower = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve an action on your own loan';
+  END IF;
+
+  BEGIN
+    INSERT INTO loan_action_approvals (action_id, admin_id) VALUES (p_action_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this action';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles
+   WHERE role = 'admin' AND is_active = true
+     AND id <> v_act.requested_by AND id <> v_borrower;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM loan_action_approvals WHERE action_id = p_action_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_loan_action', 'loan', v_act.loan_id,
+            jsonb_build_object(
+              'action_id', p_action_id,
+              'approvals', v_approvals,
+              'required',  v_required
+            ));
+    RETURN;
+  END IF;
+
+  PERFORM execute_loan_action(p_action_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- request_cycle_close — from 024_share_out.sql, unchanged but for the 1 quorum site and 0 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION request_cycle_close(p_cycle_id uuid, p_mode text, p_reason text)
+RETURNS uuid AS $$
+DECLARE
+  v_closure_id   uuid;
+  v_cycle        cycles%ROWTYPE;
+  v_open_loans   int;
+  v_open_subs    int;
+  v_requester    text;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_mode NOT IN ('earnings_only', 'full_shareout') THEN
+    RAISE EXCEPTION 'Unknown share-out mode: %', p_mode;
+  END IF;
+  IF COALESCE(trim(p_reason), '') = '' THEN
+    RAISE EXCEPTION 'A reason is required to close a cycle';
+  END IF;
+
+  SELECT * INTO v_cycle FROM cycles WHERE id = p_cycle_id;
+  IF v_cycle.id IS NULL       THEN RAISE EXCEPTION 'Cycle not found';           END IF;
+  IF v_cycle.status <> 'open' THEN RAISE EXCEPTION 'This cycle is already closed'; END IF;
+
+  -- Nothing may be in flight: a submission approved mid-close would land in a
+  -- cycle whose numbers are already frozen.
+  SELECT count(*) INTO v_open_subs FROM payment_submissions WHERE status = 'pending';
+  IF v_open_subs > 0 THEN
+    RAISE EXCEPTION 'Clear the % pending payment(s) before closing the cycle', v_open_subs;
+  END IF;
+
+  SELECT count(*) INTO v_open_loans FROM loans WHERE status IN ('pending', 'active');
+  IF v_open_loans > 0 AND p_mode = 'full_shareout' THEN
+    RAISE EXCEPTION
+      'Cannot return everyone''s capital while % loan(s) are still out. Settle or write them off first, or close with earnings only.',
+      v_open_loans;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM cycle_closures WHERE cycle_id = p_cycle_id AND status = 'pending') THEN
+    RAISE EXCEPTION 'A closure request for this cycle is already open';
+  END IF;
+
+  INSERT INTO cycle_closures (cycle_id, mode, reason, requested_by)
+  VALUES (p_cycle_id, p_mode, trim(p_reason), auth.uid())
+  RETURNING id INTO v_closure_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'request_cycle_close', 'cycle', p_cycle_id,
+          jsonb_build_object('closure_id', v_closure_id, 'mode', p_mode, 'reason', p_reason));
+
+  SELECT full_name INTO v_requester FROM profiles WHERE id = auth.uid();
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  SELECT p.id, 'cycle_close_requested',
+         'Cycle close proposed',
+         COALESCE(v_requester, 'An admin') || ' proposed to close ' || v_cycle.name,
+         jsonb_build_object('closure_id', v_closure_id, 'cycle_id', p_cycle_id)
+    FROM profiles p
+   WHERE p.role = 'admin' AND p.is_active = true AND p.id <> auth.uid();
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> auth.uid();
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  IF v_required = 0 THEN
+    PERFORM execute_cycle_close(v_closure_id);
+  END IF;
+
+  RETURN v_closure_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_cycle_close — from 024_share_out.sql, unchanged but for the 1 quorum site and 1 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_cycle_close(p_closure_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_closure      cycle_closures%ROWTYPE;
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_closure FROM cycle_closures WHERE id = p_closure_id FOR UPDATE;
+  IF v_closure.id IS NULL          THEN RAISE EXCEPTION 'Closure request not found'; END IF;
+  IF v_closure.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed'; END IF;
+  IF v_closure.requested_by = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own request';
+  END IF;
+
+  BEGIN
+    INSERT INTO cycle_closure_approvals (closure_id, admin_id) VALUES (p_closure_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this closure';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_closure.requested_by;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM cycle_closure_approvals WHERE closure_id = p_closure_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_cycle_close', 'cycle', v_closure.cycle_id,
+            jsonb_build_object('closure_id', p_closure_id,
+                               'approvals', v_approvals, 'required', v_required));
+    RETURN;
+  END IF;
+
+  PERFORM execute_cycle_close(p_closure_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_withdrawal — from 025_withdrawals_and_exit.sql, unchanged but for the 1 quorum site and 1 self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_withdrawal(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_req          withdrawal_requests%ROWTYPE;
+  v_max          numeric(14,2);
+  v_approvals    int;
+  v_other_admins int;
+  v_required     int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_req FROM withdrawal_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_req.id IS NULL          THEN RAISE EXCEPTION 'Withdrawal not found';    END IF;
+  IF v_req.status <> 'pending' THEN RAISE EXCEPTION 'Already processed';       END IF;
+  IF v_req.member_id = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own withdrawal';
+  END IF;
+
+  BEGIN
+    INSERT INTO withdrawal_approvals (request_id, admin_id) VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this withdrawal';
+  END;
+
+  SELECT COALESCE(count(*), 0) INTO v_other_admins
+    FROM profiles WHERE role = 'admin' AND is_active = true AND id <> v_req.member_id;
+  v_required := CASE WHEN is_superadmin() THEN 0 ELSE least(2, v_other_admins) END;  -- OVERSEER
+
+  SELECT count(*) INTO v_approvals FROM withdrawal_approvals WHERE request_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_withdrawal', 'withdrawal', p_request_id,
+            jsonb_build_object('approvals', v_approvals, 'required', v_required));
+    RETURN;
+  END IF;
+
+  -- Re-check the ceiling at the moment of approval: the pool and the member's
+  -- balance may both have moved since the request was opened. The request's own
+  -- amount is excluded from the "committed" subtraction inside member_withdrawable
+  -- by adding it back here.
+  SELECT withdrawable_tzs + v_req.amount INTO v_max FROM member_withdrawable(v_req.member_id);
+  IF v_req.amount > v_max THEN
+    RAISE EXCEPTION 'Only % can be withdrawn now — the pool or their balance has changed', v_max;
+  END IF;
+
+  UPDATE withdrawal_requests
+     SET status = 'approved', approved_at = now()
+   WHERE id = p_request_id;
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_withdrawal', 'withdrawal', p_request_id,
+          jsonb_build_object('member_id', v_req.member_id, 'amount', v_req.amount));
+
+  INSERT INTO notifications (recipient_id, kind, title, body, data)
+  VALUES (v_req.member_id, 'withdrawal_approved', 'Withdrawal approved',
+          'Your withdrawal of ' || v_req.amount || ' TZS was approved and will be paid out.',
+          jsonb_build_object('request_id', p_request_id));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- --------------------------------------------------------------------------
+-- 9. Two self-guards on flows that DO use required_approvals().
+--
+--    Member deletion and payment-submission approval already read their
+--    threshold from part 3, so only their self-approval guards stand in the
+--    overseer's way. Same mechanical edit, same verbatim bodies.
+-- --------------------------------------------------------------------------
+
+-- approve_member_deletion — from 010_member_deletion.sql, unchanged but for the self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_member_deletion(p_request_id uuid)
+RETURNS void AS $$
+DECLARE
+  v_request   deletion_requests%ROWTYPE;
+  v_approvals int;
+  v_required  int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+
+  SELECT * INTO v_request FROM deletion_requests WHERE id = p_request_id FOR UPDATE;
+  IF v_request.id IS NULL          THEN RAISE EXCEPTION 'Deletion request not found'; END IF;
+  IF v_request.status <> 'pending' THEN RAISE EXCEPTION 'Request already processed';   END IF;
+  IF v_request.target_member_id = auth.uid() AND NOT is_superadmin() THEN  -- OVERSEER
+    RAISE EXCEPTION 'You cannot approve your own deletion';
+  END IF;
+
+  BEGIN
+    INSERT INTO deletion_approvals (request_id, admin_id) VALUES (p_request_id, auth.uid());
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this deletion';
+  END;
+
+  v_required := required_approvals();
+  SELECT count(*) INTO v_approvals FROM deletion_approvals WHERE request_id = p_request_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_member_deletion', 'profile',
+            v_request.target_member_id,
+            jsonb_build_object(
+              'request_id', p_request_id,
+              'approvals',  v_approvals,
+              'required',   v_required
+            ));
+    RETURN;
+  END IF;
+
+  -- Threshold reached → execute deletion.
+  PERFORM execute_member_deletion(p_request_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- approve_submission — from 036_admin_recording.sql, unchanged but for the self-guard(s) marked OVERSEER.
+CREATE OR REPLACE FUNCTION approve_submission(p_submission_id uuid, p_amount_received numeric)
+RETURNS void AS $$
+DECLARE
+  s              payment_submissions%ROWTYPE;
+  v_required     int;
+  v_approvals    int;
+  v_final_amount numeric(12,2);
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  IF p_amount_received IS NULL OR p_amount_received <= 0 THEN
+    RAISE EXCEPTION 'Invalid amount received';
+  END IF;
+
+  SELECT * INTO s FROM payment_submissions WHERE id = p_submission_id FOR UPDATE;
+  IF s.id IS NULL             THEN RAISE EXCEPTION 'Submission not found'; END IF;
+  IF s.status <> 'pending'    THEN RAISE EXCEPTION 'Already reviewed';    END IF;
+  IF s.member_id = auth.uid() AND NOT is_superadmin() THEN RAISE EXCEPTION 'Cannot approve your own submission'; END IF;  -- OVERSEER
+
+  BEGIN
+    INSERT INTO submission_approvals (submission_id, admin_id, amount_received)
+    VALUES (p_submission_id, auth.uid(), p_amount_received);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'You have already approved this submission';
+  END;
+
+  v_required := submission_threshold(p_submission_id);
+  SELECT count(*) INTO v_approvals FROM submission_approvals WHERE submission_id = p_submission_id;
+
+  IF v_approvals < v_required THEN
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+    VALUES (auth.uid(), 'partial_approve_submission', 'submission', p_submission_id,
+            jsonb_build_object(
+              'submission_type', s.submission_type,
+              'member_id',       s.member_id,
+              'amount_received', p_amount_received,
+              'approvals',       v_approvals,
+              'required',        v_required
+            ));
+    RETURN;
+  END IF;
+
+  -- The first signature's figure is the one that settles (Decision #11).
+  SELECT amount_received INTO v_final_amount
+  FROM submission_approvals
+  WHERE submission_id = p_submission_id
+  ORDER BY approved_at ASC
+  LIMIT 1;
+
+  PERFORM settle_submission(p_submission_id, v_final_amount);
+
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+  VALUES (auth.uid(), 'approve_submission', 'submission', p_submission_id,
+          jsonb_build_object(
+            'submission_type', s.submission_type,
+            'member_id',       s.member_id,
+            'amount_received', v_final_amount,
+            'approvals',       v_approvals
+          ));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 042_phone_pin_login.sql
+-- ---------------------------------------------------------------------------
+
+-- 042_phone_pin_login.sql — let a member sign in with first name + phone + PIN.
+--
+-- Members have never had a real email. The admin mints a synthetic
+-- firstname.lastname@umojagroup.app address (AddMemberModal) and reads out a
+-- 10-character temp password, and the member is then expected to remember both.
+-- In practice they remember neither, so every lost login becomes an admin reset.
+--
+-- This migration adds the storage behind a login that asks for what a member
+-- actually knows: their first name, their phone number, and a PIN they chose.
+--
+-- The one thing it deliberately does NOT do is make name + phone sufficient on
+-- their own. Every member of a 15-person group knows every other member's first
+-- name and phone number, and full_name is already published in-app by
+-- group_member_directory() (019), so with no secret the group's own phone list
+-- is a working credential for every account in it.
+--
+-- Being precise about what that costs, because 034 already took the obvious
+-- answer away: a member cannot file a loan or a payment, since those INSERT
+-- policies are gone, so the risk is not forged requests. It is three other
+-- things. Reading another member's dashboard and the PII on their profile
+-- (national ID, next of kin, residence). Changing their phone number through
+-- update_own_phone(), which after this migration IS half their login, locking
+-- them out of their own account. And signing in as an ADMIN, which is the one
+-- that matters: an admin records payments and approves loans, and since 041 an
+-- overseer's single signature is a quorum, so one impersonated admin session
+-- moves group money with nobody else involved.
+--
+-- The PIN is the secret; the name and phone only say who is claiming to sign in.
+--
+-- Where the PIN is verified: NOT here. Hashing and comparison live in the
+-- member-phone-login Edge Function, which holds the service-role key. Two
+-- reasons. First, a PIN has at most 10^6 possibilities, so no hash cost saves it
+-- from an offline guess — the only control that matters is a server-side attempt
+-- limit, which needs a trusted caller. Second, doing it in Postgres would mean a
+-- SECURITY DEFINER function reachable from PostgREST that takes a PIN and
+-- answers yes or no, which is the oracle this is trying not to build.
+--
+-- Nothing in this file is readable or writable by `authenticated`. Both tables
+-- are RLS-enabled with no policies at all, so only the service role reaches
+-- them. That is intentional and is asserted in 15_phone_pin_login.test.sql.
+--
+-- Requires 001 (profiles), 007 (audit_log). Independent of 041 (the overseer):
+-- nothing here touches required_approvals() or is_superadmin.
+
+-- --------------------------------------------------------------------------
+-- 1. Phone normalisation
+--
+-- Admins type a phone number three different ways for the same handset:
+-- +255712345678, 255712345678 and 0712345678. `profiles.phone_number` is UNIQUE
+-- (001), which blocks an exact repeat but not those three, so without a
+-- canonical form two profiles could hold the same real number and the login
+-- lookup would match both.
+--
+-- Canonical form is the 9-digit Tanzanian subscriber number (7xxxxxxxx /
+-- 6xxxxxxxx). IMMUTABLE so it can carry a unique index.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION normalize_phone_tz(p_phone text)
+RETURNS text AS $$
+DECLARE
+  v_digits text;
+BEGIN
+  IF p_phone IS NULL THEN RETURN NULL; END IF;
+
+  v_digits := regexp_replace(p_phone, '\D', '', 'g');
+  IF v_digits = '' THEN RETURN NULL; END IF;
+
+  -- Strip the country code or the trunk prefix, whichever this form used.
+  IF length(v_digits) = 12 AND left(v_digits, 3) = '255' THEN
+    v_digits := right(v_digits, 9);
+  ELSIF length(v_digits) = 10 AND left(v_digits, 1) = '0' THEN
+    v_digits := right(v_digits, 9);
+  END IF;
+
+  -- Anything that is not a 9-digit subscriber number by now is not a number we
+  -- can canonicalise. Return it as digits rather than NULL: a foreign or
+  -- malformed number must still compare equal to itself, or two members holding
+  -- the same unparseable string would both look like "no phone" and the
+  -- uniqueness guard below would not see the collision.
+  RETURN v_digits;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- First name, lowercased, for the confirmation check at login. Never a selector
+-- on its own — two members may share a first name; the phone is the key.
+CREATE OR REPLACE FUNCTION member_first_name(p_full_name text)
+RETURNS text AS $$
+  SELECT lower(split_part(btrim(coalesce(p_full_name, '')), ' ', 1));
+$$ LANGUAGE sql IMMUTABLE;
+
+-- --------------------------------------------------------------------------
+-- 2. Refuse to proceed if live data already holds a collision
+--
+-- The unique index below would fail on its own, but with "could not create
+-- unique index" and a row count — not with the two numbers an admin has to go
+-- and fix. Failing here, by hand, in the SQL editor where someone is looking,
+-- is the same posture 039 takes for a drain that cannot run.
+-- --------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_dupes text;
+BEGIN
+  SELECT string_agg(detail, E'\n  ') INTO v_dupes
+  FROM (
+    SELECT normalize_phone_tz(phone_number) || ' ← ' ||
+           string_agg(full_name || ' (' || phone_number || ')', ', ' ORDER BY full_name)
+             AS detail
+    FROM profiles
+    WHERE phone_number IS NOT NULL
+    GROUP BY normalize_phone_tz(phone_number)
+    HAVING count(*) > 1
+  ) d;
+
+  IF v_dupes IS NOT NULL THEN
+    RAISE EXCEPTION E'Two or more profiles share a phone number once normalised:\n  %\n\nPhone number is half of the new login credential, so it has to identify exactly one member. Correct these in the admin member list, then re-run this migration.', v_dupes;
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_normalized_phone_key
+  ON profiles (normalize_phone_tz(phone_number))
+  WHERE phone_number IS NOT NULL;
+
+-- --------------------------------------------------------------------------
+-- 3. member_pins — one PIN per member, hashed
+--
+-- `must_change` is true for a PIN an admin set (a handover code, spoken aloud)
+-- and false once the member has chosen their own. It is the same distinction the
+-- temp password carried, kept because it is the only thing that separates "a PIN
+-- the member knows" from "a PIN the admin also knows".
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS member_pins (
+  member_id   uuid PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+  pin_hash    text        NOT NULL,
+  must_change boolean     NOT NULL DEFAULT true,
+  set_at      timestamptz NOT NULL DEFAULT now(),
+  set_by      uuid        REFERENCES profiles(id),  -- NULL when the member set it
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- RLS on, no policies: service role only. A member's PIN hash is not something
+-- the member's own session needs to read, and `authenticated` reaching this
+-- table at all would hand every member the group's password file.
+ALTER TABLE member_pins ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON member_pins FROM anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. phone_login_attempts — the attempt limit
+--
+-- Keyed on the normalised phone the caller TYPED, not on a member id, so a
+-- number that matches no member is throttled exactly like one that does. That
+-- is what stops the endpoint answering "is this number in the group?" — without
+-- it, five wrong guesses against a real member get a lockout message and five
+-- against a stranger get a generic one, and the difference is the answer.
+-- --------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS phone_login_attempts (
+  phone_key       text PRIMARY KEY,
+  attempts        int         NOT NULL DEFAULT 0,
+  first_attempt_at timestamptz NOT NULL DEFAULT now(),
+  last_attempt_at timestamptz NOT NULL DEFAULT now(),
+  locked_until    timestamptz
+);
+
+ALTER TABLE phone_login_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON phone_login_attempts FROM anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 5. own_pin_status() — what the app may ask about its own session
+--
+-- The app needs exactly two facts to decide whether to show the "choose your
+-- PIN" screen: does this member have a PIN, and was it set by an admin. Scoped
+-- to auth.uid(), so it cannot be asked about anyone else.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION own_pin_status()
+RETURNS TABLE (has_pin boolean, must_change boolean) AS $$
+  SELECT
+    p.member_id IS NOT NULL,
+    coalesce(p.must_change, false)
+  FROM (SELECT auth.uid() AS uid) me
+  LEFT JOIN member_pins p ON p.member_id = me.uid;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION own_pin_status() FROM public, anon;
+GRANT EXECUTE ON FUNCTION own_pin_status() TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 6. member_pin_overview() — admin view of who can actually sign in
+--
+-- Returns whether a PIN exists and whether the member is currently locked out.
+-- Never the hash. An admin handing out logins needs to see who has not set one
+-- yet; that is the whole purpose.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION member_pin_overview()
+RETURNS TABLE (
+  member_id    uuid,
+  full_name    text,
+  has_pin      boolean,
+  must_change  boolean,
+  set_at       timestamptz,
+  locked_until timestamptz
+) AS $$
+  SELECT
+    pr.id,
+    pr.full_name,
+    mp.member_id IS NOT NULL,
+    coalesce(mp.must_change, false),
+    mp.set_at,
+    la.locked_until
+  FROM profiles pr
+  LEFT JOIN member_pins mp ON mp.member_id = pr.id
+  LEFT JOIN phone_login_attempts la
+         ON la.phone_key = normalize_phone_tz(pr.phone_number)
+        AND la.locked_until > now()
+  WHERE pr.is_active
+    AND is_admin()
+  ORDER BY pr.full_name;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION member_pin_overview() FROM public, anon;
+GRANT EXECUTE ON FUNCTION member_pin_overview() TO authenticated;
+
+-- --------------------------------------------------------------------------
+-- 7. What these tables are, for whoever opens them next
+--
+-- No audit trigger here: the two events worth recording are a member choosing
+-- their own PIN and an admin issuing one, and both are already written to
+-- audit_log as `set_own_pin` and `admin_reset_pin` by the member-pin-auth Edge
+-- Function, which is the only thing that can write these tables at all. A
+-- trigger would either duplicate those rows or record the service role as the
+-- actor, which is the one fact the log does not need.
+-- --------------------------------------------------------------------------
+
+COMMENT ON TABLE member_pins IS
+  'Hashed member login PINs. Service role only — verified in the member-pin-auth Edge Function, never in SQL.';
+COMMENT ON TABLE phone_login_attempts IS
+  'Per-phone attempt limiter for PIN login. Keyed on the typed number so unknown numbers throttle identically to known ones.';
+
+-- --------------------------------------------------------------------------
+-- 8. Service-role surface for the Edge Functions
+--
+-- Three functions the member-phone-login function calls, and nothing else can.
+-- They are SECURITY DEFINER but every grant to public/anon/authenticated is
+-- revoked, so they are unreachable from PostgREST with an anon or member JWT.
+-- The grant to service_role is guarded: the SQL test harness is a plain Postgres
+-- where that role does not exist (bootstrap.sql creates only authenticated and
+-- anon), and an unguarded GRANT would abort the migration and take CI with it.
+--
+-- Keeping the phone lookup in SQL rather than re-deriving it in TypeScript is
+-- deliberate: normalize_phone_tz is the one definition of what counts as the
+-- same number, and it is the same definition the unique index enforces. A second
+-- copy in Deno would be free to drift from the index that guarantees the lookup
+-- returns one row.
+-- --------------------------------------------------------------------------
+
+-- Everything member-phone-login needs to decide a login, in one round trip.
+-- Returns no row when the number matches nobody, which the caller must treat
+-- identically to a wrong name or a wrong PIN.
+CREATE OR REPLACE FUNCTION lookup_phone_login(p_phone text)
+RETURNS TABLE (
+  member_id   uuid,
+  email       text,
+  first_name  text,
+  is_active   boolean,
+  pin_hash    text,
+  must_change boolean
+) AS $$
+  SELECT
+    pr.id,
+    u.email::text,
+    member_first_name(pr.full_name),
+    pr.is_active,
+    mp.pin_hash,
+    coalesce(mp.must_change, false)
+  FROM profiles pr
+  JOIN auth.users u ON u.id = pr.id
+  LEFT JOIN member_pins mp ON mp.member_id = pr.id
+  WHERE pr.phone_number IS NOT NULL
+    AND normalize_phone_tz(pr.phone_number) = normalize_phone_tz(p_phone);
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+-- Take one attempt against this number. Returns the lock expiry if the number is
+-- already locked out (caller must refuse without looking at the PIN), else NULL.
+--
+-- The counter is keyed on the TYPED number and resets after a quiet window, so a
+-- member who fumbles a digit one month does not carry that toward a lock the
+-- next. Attempts are counted before verification, never after, so a caller that
+-- crashes mid-verify still spends the attempt.
+CREATE OR REPLACE FUNCTION begin_login_attempt(
+  p_phone_key     text,
+  p_max_attempts  int DEFAULT 5,
+  p_lock_minutes  int DEFAULT 15,
+  p_window_minutes int DEFAULT 30
+)
+RETURNS timestamptz AS $$
+DECLARE
+  v_row phone_login_attempts;
+BEGIN
+  SELECT * INTO v_row FROM phone_login_attempts
+   WHERE phone_key = p_phone_key FOR UPDATE;
+
+  IF v_row.phone_key IS NOT NULL AND v_row.locked_until > now() THEN
+    RETURN v_row.locked_until;
+  END IF;
+
+  -- Locked but expired, or quiet for longer than the window: start fresh.
+  IF v_row.phone_key IS NULL
+     OR v_row.locked_until IS NOT NULL
+     OR v_row.first_attempt_at < now() - make_interval(mins => p_window_minutes) THEN
+    INSERT INTO phone_login_attempts (phone_key, attempts, first_attempt_at, last_attempt_at, locked_until)
+    VALUES (p_phone_key, 1, now(), now(), NULL)
+    ON CONFLICT (phone_key) DO UPDATE
+      SET attempts = 1, first_attempt_at = now(), last_attempt_at = now(), locked_until = NULL;
+    RETURN NULL;
+  END IF;
+
+  -- `>` and not `>=`: the attempt being counted here is one the caller is about to
+  -- make, so locking at `= p_max_attempts` would refuse the fifth try and allow only
+  -- four. Attempts 1..p_max_attempts are verified; the one after that is refused.
+  UPDATE phone_login_attempts
+     SET attempts = attempts + 1,
+         last_attempt_at = now(),
+         locked_until = CASE WHEN attempts + 1 > p_max_attempts
+                             THEN now() + make_interval(mins => p_lock_minutes)
+                             ELSE NULL END
+   WHERE phone_key = p_phone_key
+   RETURNING locked_until INTO v_row.locked_until;
+
+  RETURN v_row.locked_until;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- A correct PIN clears the count. Called only after verification succeeds.
+CREATE OR REPLACE FUNCTION clear_login_attempts(p_phone_key text)
+RETURNS void AS $$
+  DELETE FROM phone_login_attempts WHERE phone_key = p_phone_key;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
+
+-- REVOKE from anon and authenticated BY NAME, not just from public.
+--
+-- `REVOKE ... FROM public` alone is not enough and the first run of
+-- 15_phone_pin_login.test.sql proved it: Supabase ships
+-- `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS TO postgres, anon,
+-- authenticated, service_role`, so these roles receive an EXPLICIT grant the
+-- moment the function is created. Revoking the implicit PUBLIC grant leaves that
+-- explicit one standing, and lookup_phone_login stayed callable with a member's
+-- JWT — a phone-number-to-member directory for anyone signed in.
+REVOKE ALL ON FUNCTION lookup_phone_login(text) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION begin_login_attempt(text, int, int, int) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION clear_login_attempts(text) FROM public, anon, authenticated;
+
+DO $$
+BEGIN
+  -- Present on Supabase, absent in the test harness.
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION lookup_phone_login(text) TO service_role';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION begin_login_attempt(text, int, int, int) TO service_role';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION clear_login_attempts(text) TO service_role';
+  END IF;
+END $$;
+
+-- --------------------------------------------------------------------------
+-- 9. update_own_phone() — say what went wrong in words
+--
+-- A member changing their own phone number is now changing half of their login
+-- credential, and the unique index added above can refuse the write. 006's
+-- version was a bare UPDATE, so a collision would surface in the Profile screen
+-- as `duplicate key value violates unique constraint
+-- "profiles_normalized_phone_key"` — which names an index the member has no way
+-- to act on, and tells them nothing about what to do.
+--
+-- Same function, same permissions, with the two failures a member can actually
+-- cause turned into sentences. Replaces the definition in 006.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION update_own_phone(p_phone text)
+RETURNS void AS $$
+DECLARE
+  v_phone text := NULLIF(btrim(p_phone), '');
+BEGIN
+  -- Clearing the number is allowed, but it costs the member their PIN login, so
+  -- it should not be something they do by accident with an empty field.
+  IF v_phone IS NULL THEN
+    RAISE EXCEPTION 'Enter a phone number — it is how you sign in.';
+  END IF;
+
+  UPDATE profiles
+     SET phone_number = v_phone
+   WHERE id = auth.uid();
+
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'Another member is already registered with that phone number. Check the digits, or ask your admin.';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION update_own_phone(text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION update_own_phone(text) TO authenticated;
+
+-- A number that is already taken, reported before anything is written. Used by
+-- admin-create-member so adding a member with a duplicate number fails with a
+-- sentence instead of "Database error creating new user" from the signup trigger.
+CREATE OR REPLACE FUNCTION phone_number_taken(p_phone text, p_except uuid DEFAULT NULL)
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+     WHERE phone_number IS NOT NULL
+       AND normalize_phone_tz(phone_number) = normalize_phone_tz(p_phone)
+       AND (p_except IS NULL OR id <> p_except)
+  );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION phone_number_taken(text, uuid) FROM public, anon, authenticated;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION phone_number_taken(text, uuid) TO service_role';
+  END IF;
+END $$;

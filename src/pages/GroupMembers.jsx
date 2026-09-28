@@ -58,7 +58,7 @@ export default function GroupMembers() {
         {rows == null && !error ? (
           <p className="text-center text-slate-400 py-8">{t('Loading…')}</p>
         ) : rows && (
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-[0_1px_2px_-1px_rgba(15,23,42,0.04),0_1px_3px_rgba(15,23,42,0.04)]">
+          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card">
             <div className="flex items-baseline justify-between mb-3">
               <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">{t('Members')}</h2>
               <span className="text-xs text-slate-400 tabular-nums">
@@ -118,17 +118,32 @@ export default function GroupMembers() {
               })}
             </ul>
 
+            {/* The totals carry their own column labels. Two bare figures under a
+                single "total" heading relied on the reader keeping the column
+                order from the rows above in their head — and the rows are stacked
+                cards, not a table, so there is no header line still on screen to
+                check against. */}
             <div className="-mx-5 mt-1 border-t-2 border-slate-200 px-5 pt-3">
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                 {t('total')}
               </p>
-              <div className="mt-1 flex items-baseline gap-4 font-semibold text-slate-900">
-                <p className="min-w-0 flex-1 truncate text-sm tabular-nums">
-                  {formatTZS(totalSavings)}
-                </p>
-                <p className="min-w-0 flex-1 truncate text-sm tabular-nums">
-                  {formatTZS(totalLoans)}
-                </p>
+              <div className="mt-1 flex items-baseline gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    {t('Savings')}
+                  </p>
+                  <p className="truncate text-sm font-semibold tabular-nums text-slate-900">
+                    {formatTZS(totalSavings)}
+                  </p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    {t('Loan balance')}
+                  </p>
+                  <p className="truncate text-sm font-semibold tabular-nums text-slate-900">
+                    {formatTZS(totalLoans)}
+                  </p>
+                </div>
               </div>
             </div>
           </section>

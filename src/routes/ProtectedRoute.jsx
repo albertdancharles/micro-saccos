@@ -11,7 +11,7 @@
 // inactive-but-signed-in user there is an infinite loop. Signing out from here is
 // the only way off this screen, which is also the honest thing to show someone
 // whose membership has ended.
-import { Navigate, Outlet, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { signOut } from '../lib/auth'
@@ -49,8 +49,9 @@ function Deactivated() {
 }
 
 export default function ProtectedRoute({ requireAdmin = false }) {
-  const { session, profile, loading, loadingProfile } = useAuth()
+  const { session, profile, pinStatus, loading, loadingProfile } = useAuth()
   const { t } = useLanguage()
+  const location = useLocation()
 
   if (loading) return <FullScreen>{t('Loading…')}</FullScreen>
   if (!session) return <Navigate to="/login" replace />
@@ -62,6 +63,17 @@ export default function ProtectedRoute({ requireAdmin = false }) {
   // 034 scoped the group-wide read policies to is_active_member(), so even the
   // requests this screen prevents would come back empty.
   if (profile && !profile.is_active) return <Deactivated />
+
+  // Still on the PIN an admin read out to them. Held here until they choose their
+  // own, because until they do, two people can sign in as this member — and one of
+  // them can read their PII and change the phone number their login depends on.
+  // Worse when the member is themselves an admin: 008 wants a second signature from
+  // a second person, and a PIN the first person knows is not that.
+  //
+  // The /set-pin exemption is what stops this being a redirect loop.
+  if (pinStatus?.mustChange && location.pathname !== '/set-pin') {
+    return <Navigate to="/set-pin" replace />
+  }
 
   if (requireAdmin && profile?.role !== 'admin') return <Navigate to="/dashboard" replace />
 
