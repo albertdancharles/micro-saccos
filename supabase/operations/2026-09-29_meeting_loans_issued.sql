@@ -10,16 +10,16 @@
 --
 --     Veroda Makunja     200,000       Amani Ngoko        100,000
 --     Raheli Mosha       200,000       Peter Okama        250,000
---     Pius Mushi         400,000       Silivana Kambanga  100,000
+--     Pius Mushi         400,000       Silvana Kambanga   100,000
 --     Kelvin Sinde       350,000       Yuda Ntandu        400,000
 --     Albert Charles     532,700       Massoud Massoud    400,000
 --     Eva                200,000       Jackson Onyango    400,000
---     Deus Owano         400,000       -------------------------
+--     Deus Mimbi         400,000       -------------------------
 --                                      total            3,932,700
 --
--- Every one of these is pinned to a named member — by phone number where the
--- number is known, which is all of them but Eva. Nuru Mwakisyala is the one
--- active member who did not borrow.
+-- Every one of these is pinned to a named member — by phone number for twelve
+-- of them, by name for Yuda Ntandu, whose profile carries no number at all.
+-- Nuru Mwakisyala is the one active member who did not borrow.
 --
 -- WHAT IT DOES TO THE BOOKS. Nothing is created or destroyed: 3,932,700 moves
 -- from the liquid pool to outstanding principal.
@@ -144,22 +144,33 @@ alter table loans disable trigger on_new_loan;
 
 -- WHO BORROWED WHAT.
 --
--- Each row names ONE member, by phone number wherever the number is known.
--- Phone is `profiles.phone_number`, which is UNIQUE (001), so it identifies a
--- person exactly; a first name does not. Three of these would have gone wrong
--- on names alone — the group's register spells them Raheli, Silivana and
--- Massoud Massoud, none of which a match on 'Rahel' or 'Silvana' would find.
--- The numbers below are the ones the group was set up with (scripts/seed.mjs).
+-- Each row names ONE member, by phone number wherever the register has one.
+-- A first name does not identify anybody; a number does.
 --
--- `full_name` is NOT how the row is matched when a phone is given; it is
--- checked AGAINST the profile the phone found. If a number has moved to a
--- different person since the group was set up, that mismatch stops the file
--- rather than quietly lending 400,000 in the wrong name.
+-- MATCHED THROUGH normalize_phone_tz() (042), NOT ON THE STRING. The register
+-- holds the same handset three different ways — '+255757595443',
+-- '255753463567' and '0712154837' all appear in it — so a literal comparison
+-- misses five of these thirteen. 042 already solved this for the phone + PIN
+-- login: it strips the country code or the trunk prefix and compares the
+-- 9-digit subscriber number, and there is a unique index on exactly that
+-- expression, so the match below is both correct and indexed. The numbers
+-- written here are in +255 form for readability; any of the three forms would
+-- find the same member.
 --
--- Eva has no number here because she joined after the group was seeded and the
--- repository does not know it. Her row is matched on name, which works as long
--- as she is the only active Eva; if the file stops on her, put her full name or
--- her number in and run it again.
+-- YUDA NTANDU HAS NO NUMBER in the register, so his row carries none and is
+-- matched on his name instead. Worth fixing separately: without a phone number
+-- he cannot use the phone + PIN login at all, and no SMS can reach him.
+--
+-- `full_name` is NOT how a row is matched when a number is given; it is checked
+-- AGAINST the profile the number found. If a number has moved to a different
+-- person, that mismatch stops the file rather than quietly lending 400,000 in
+-- the wrong name. The check is case-insensitive, which it has to be: the
+-- register currently reads 'Kelvin sinde', 'Peter okama' and 'yuda ntandu'.
+--
+-- THE NAMES BELOW ARE THE REGISTER'S, NOT scripts/seed.mjs's. The seed file is
+-- stale on two of them — it says Deus Owano where the group says Deus Mimbi,
+-- and Silivana where the group says Silvana. The register is what members see
+-- in the app, so it wins.
 --
 -- `seq` is the order the meeting took them in. It matters to ONE check: since
 -- 045 the lending ceiling is the same figure for everybody in the room, but
@@ -175,22 +186,22 @@ create temp table op_meeting_loans (
 ) on commit drop;
 
 insert into op_meeting_loans (seq, full_name, phone_number, principal) values
-  ( 1, 'Veroda Makunja',    '+255679044511', 200000.00),
-  ( 2, 'Raheli Mosha',      '+255757595443', 200000.00),
-  ( 3, 'Pius Mushi',        '+255764174646', 400000.00),
-  ( 4, 'Kelvin Sinde',      '+255753463567', 350000.00),
-  ( 5, 'Albert Charles',    '+255655500410', 532700.00),
-  ( 6, 'Eva',               null,            200000.00),
-  ( 7, 'Deus Owano',        '+255737646188', 400000.00),
-  ( 8, 'Amani Ngoko',       '+255717195783', 100000.00),
-  ( 9, 'Peter Okama',       '+255621328108', 250000.00),
-  (10, 'Silivana Kambanga', '+255756300222', 100000.00),
-  (11, 'Yuda Ntandu',       '+255621115735', 400000.00),
-  (12, 'Massoud Massoud',   '+255655036403', 400000.00),
-  (13, 'Jackson Onyango',   '+255712154837', 400000.00);
+  ( 1, 'Veroda Makunja',   '+255679044511', 200000.00),
+  ( 2, 'Raheli Mosha',     '+255757595443', 200000.00),
+  ( 3, 'Pius Mushi',       '+255764174646', 400000.00),
+  ( 4, 'Kelvin Sinde',     '+255753463567', 350000.00),
+  ( 5, 'Albert Charles',   '+255655500410', 532700.00),
+  ( 6, 'Eva',              '+255765500410', 200000.00),
+  ( 7, 'Deus Mimbi',       '+255737646188', 400000.00),
+  ( 8, 'Amani Ngoko',      '+255717195783', 100000.00),
+  ( 9, 'Peter Okama',      '+255621328108', 250000.00),
+  (10, 'Silvana Kambanga', '+255756300222', 100000.00),
+  (11, 'Yuda Ntandu',      null,            400000.00),  -- no number in the register
+  (12, 'Massoud Massoud',  '+255655036403', 400000.00),
+  (13, 'Jackson Onyango',  '+255712154837', 400000.00);
 
 -- Not borrowing, and that is the whole of the difference between 14 members and
--- 13 loans: Nuru Mwakisyala (+255716731151).
+-- 13 loans: Nuru Mwakisyala (0716731151).
 
 do $$
 declare
@@ -227,11 +238,12 @@ begin
   select count(*), sum(principal) into v_count, v_total from op_meeting_loans;
 
   -- ------------------------------------------------------- who each loan is for
-  -- By phone number where there is one: phone_number is UNIQUE on profiles, so
-  -- it names a person and a first name does not. Only the rows with no number
-  -- fall back to the name, matched case-insensitively and accepting a leading
-  -- word, so 'Eva' finds 'Eva Mtui' — but if it finds two Evas the file stops
-  -- rather than guessing which one just borrowed 200,000.
+  -- By normalised phone number where there is one (see the note above the table:
+  -- the register holds three different formats, so the raw strings do not
+  -- compare). Only rows with no number fall back to the name, matched
+  -- case-insensitively and accepting a leading word, so 'Yuda Ntandu' finds
+  -- 'yuda ntandu' — but if a name finds two members the file stops rather than
+  -- guessing which one just borrowed 400,000.
   select string_agg(x.line, E'\n' order by x.seq) into v_problem
     from (
       select o.seq,
@@ -245,7 +257,8 @@ begin
         left join profiles p
                on p.is_active = true
               and (case when o.phone_number is not null
-                        then p.phone_number = o.phone_number
+                        then normalize_phone_tz(p.phone_number)
+                               = normalize_phone_tz(o.phone_number)
                         else lower(p.full_name) = lower(o.full_name)
                              or lower(p.full_name) like lower(o.full_name) || ' %'
                    end)
@@ -266,7 +279,8 @@ begin
     from profiles p
    where p.is_active = true
      and (case when o.phone_number is not null
-               then p.phone_number = o.phone_number
+               then normalize_phone_tz(p.phone_number)
+                      = normalize_phone_tz(o.phone_number)
                else lower(p.full_name) = lower(o.full_name)
                     or lower(p.full_name) like lower(o.full_name) || ' %'
           end);
