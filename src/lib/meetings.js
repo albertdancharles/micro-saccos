@@ -131,6 +131,26 @@ export async function recordSocialContribution(supabase, memberId, amount, reaso
   return data
 }
 
+// At a meeting everyone pays the same welfare contribution, so filling the form
+// once per member is pure tedium. There is no bulk RPC behind this — it posts one
+// contribution per member, in order — so a run can stop half-way. It therefore
+// reports exactly who did not get one, rather than throwing on the first failure
+// and leaving the admin to guess how far it got before re-running (and paying
+// some members twice).
+export async function recordSocialContributionForAll(supabase, memberIds, amount, reason) {
+  const saved = []
+  const failed = []
+  for (const memberId of memberIds) {
+    try {
+      await recordSocialContribution(supabase, memberId, amount, reason)
+      saved.push(memberId)
+    } catch (err) {
+      failed.push({ memberId, message: err?.message || '' })
+    }
+  }
+  return { saved, failed }
+}
+
 export async function requestSocialGrant(supabase, memberId, amount, reason) {
   const { data, error } = await supabase.rpc('request_social_grant', {
     p_member_id: memberId,

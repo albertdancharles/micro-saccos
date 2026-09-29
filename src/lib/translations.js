@@ -432,6 +432,16 @@ const sw = {
   'Record a contribution': 'Andika mchango',
   'Propose a grant': 'Pendekeza msaada',
   'Choose a member…': 'Chagua mwanachama…',
+  'Every member — the same amount each ({n})':
+    'Kila mwanachama — kiasi kilekile kwa kila mmoja ({n})',
+  'Amount each (TSh)': 'Kiasi cha kila mmoja (TSh)',
+  '{n} members × {each} = {total} into the fund':
+    'Wanachama {n} × {each} = {total} kwenye mfuko',
+  'Saving for everyone…': 'Inahifadhi kwa kila mmoja…',
+  'Saved for all {n} members.': 'Imehifadhiwa kwa wanachama wote {n}.',
+  'Saved for {n} of {total}. Not saved for: {names}':
+    'Imehifadhiwa kwa {n} kati ya {total}. Haikuhifadhiwa kwa: {names}',
+  'There are no members to record for.': 'Hakuna wanachama wa kuandikia.',
   'e.g. monthly welfare contribution': 'mfano: mchango wa kila mwezi wa msaada',
   'e.g. funeral costs': 'mfano: gharama za msiba',
   'A reason is required.': 'Sababu inahitajika.',

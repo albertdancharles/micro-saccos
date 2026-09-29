@@ -23,6 +23,7 @@ import {
   applyAttendanceFines,
   getSocialFund,
   recordSocialContribution,
+  recordSocialContributionForAll,
   requestSocialGrant,
   approveSocialGrant,
   rejectSocialGrant,
@@ -259,6 +260,12 @@ function NewMeeting({ onCreated }) {
   )
 }
 
+// The monthly welfare contribution is the same figure for every member, so the
+// picker offers the whole group as one choice. Only for contributions: a grant is
+// money going OUT to one member in need, and it takes a second admin's approval —
+// there is no such thing as proposing one for everybody at once.
+const EVERYONE = '__everyone__'
+
 function SocialFund({ fund, members, currentAdminId, onChanged }) {
   const { t } = useLanguage()
   const [mode, setMode] = useState(null)
@@ -267,19 +274,68 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // The outcome of a whole-group run, kept outside the form because the form
+  // closes on success and a partial run still has to be read and acted on.
+  const [note, setNote] = useState(null)
 
   if (!fund) return null
+
+  // Clearing the pick matters here: leaving it on EVERYONE while switching to
+  // 'grant' would carry a choice the grant form does not offer.
+  function start(next) {
+    setMode(next)
+    setPick('')
+    setError('')
+    setNote(null)
+  }
+
+  function close() {
+    setMode(null)
+    setPick('')
+    setError('')
+  }
+
+  const everyone = mode === 'contribution' && pick === EVERYONE
+  const amountNumber = Number(amount)
 
   async function submit(e) {
     e.preventDefault()
     setError('')
-    const n = Number(amount)
+    setNote(null)
+    const n = amountNumber
     if (!pick) return setError(t('Choose a member.'))
     if (!(n > 0)) return setError(t('Enter an amount greater than zero.'))
     if (!reason.trim()) return setError(t('A reason is required.'))
+    if (everyone && members.length === 0) return setError(t('There are no members to record for.'))
     setBusy(true)
     try {
-      if (mode === 'contribution') {
+      if (everyone) {
+        const { saved, failed } = await recordSocialContributionForAll(
+          supabase,
+          members.map((m) => m.id),
+          n,
+          reason.trim(),
+        )
+        if (failed.length > 0) {
+          // Named, because the rest of the group is already recorded — the admin
+          // needs to finish these few one at a time, not run the whole lot again.
+          const names = failed
+            .map(({ memberId }) => members.find((m) => m.id === memberId)?.name || t('A member'))
+            .join(', ')
+          setNote({
+            ok: false,
+            text: t('Saved for {n} of {total}. Not saved for: {names}')
+              .replace('{n}', String(saved.length))
+              .replace('{total}', String(members.length))
+              .replace('{names}', names),
+          })
+        } else {
+          setNote({
+            ok: true,
+            text: t('Saved for all {n} members.').replace('{n}', String(saved.length)),
+          })
+        }
+      } else if (mode === 'contribution') {
         await recordSocialContribution(supabase, pick, n, reason.trim())
       } else {
         await requestSocialGrant(supabase, pick, n, reason.trim())
@@ -356,6 +412,19 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
         </div>
       )}
 
+      {note && (
+        <div
+          className={`rounded-xl p-3 mb-3 text-xs ring-1 ring-inset ${
+            note.ok
+              ? 'bg-emerald-50 ring-emerald-200/70 text-emerald-900'
+              : 'bg-amber-50 ring-amber-200/70 text-amber-900'
+          }`}
+        >
+          {/* The failure note names members, and a name is not a word to translate. */}
+          <span translate={note.ok ? undefined : 'no'}>{note.text}</span>
+        </div>
+      )}
+
       {mode ? (
         <form onSubmit={submit} className="space-y-2">
           <select
@@ -365,6 +434,14 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
             className="input-field"
           >
             <option value="">{t('Choose a member…')}</option>
+            {mode === 'contribution' && members.length > 0 && (
+              <option value={EVERYONE}>
+                {t('Every member — the same amount each ({n})').replace(
+                  '{n}',
+                  String(members.length),
+                )}
+              </option>
+            )}
             {members.map((m) => (
               <option key={m.id} value={m.id} translate="no">
                 {m.name}
@@ -376,10 +453,18 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
-            placeholder={t('Amount (TSh)')}
-            aria-label={t('Amount (TSh)')}
+            placeholder={everyone ? t('Amount each (TSh)') : t('Amount (TSh)')}
+            aria-label={everyone ? t('Amount each (TSh)') : t('Amount (TSh)')}
             className="input-field tabular-nums"
           />
+          {everyone && amountNumber > 0 && (
+            <p className="text-xs text-slate-500 tabular-nums">
+              {t('{n} members × {each} = {total} into the fund')
+                .replace('{n}', String(members.length))
+                .replace('{each}', formatTZS(amountNumber))
+                .replace('{total}', formatTZS(amountNumber * members.length))}
+            </p>
+          )}
           <input
             type="text"
             value={reason}
@@ -395,19 +480,23 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={busy} className="btn-primary flex-1">
-              {busy ? t('Working…') : t('Save')}
+              {busy
+                ? everyone
+                  ? t('Saving for everyone…')
+                  : t('Working…')
+                : t('Save')}
             </button>
-            <button type="button" onClick={() => setMode(null)} className="btn-secondary">
+            <button type="button" onClick={close} className="btn-secondary">
               {t('Cancel')}
             </button>
           </div>
         </form>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setMode('contribution')} className="btn-secondary text-xs">
+          <button onClick={() => start('contribution')} className="btn-secondary text-xs">
             {t('Record a contribution')}
           </button>
-          <button onClick={() => setMode('grant')} className="btn-secondary text-xs">
+          <button onClick={() => start('grant')} className="btn-secondary text-xs">
             {t('Propose a grant')}
           </button>
         </div>
