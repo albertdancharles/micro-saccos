@@ -7,6 +7,41 @@
 
 export const ATTENDANCE = ['present', 'late', 'excused', 'absent']
 
+// ------------------------------------------------------------- the meeting day
+//
+// The group meets on the LAST SATURDAY of every month. That is the same rule as
+// meeting_day() in migration 043 — kept in both places because the server needs
+// it to set loan due dates and the client needs it to fill in a date field.
+// Change one, change the other.
+
+// The last Saturday of `monthIndex` (0-based) in `year`, as a day number.
+// getDay() is 0 for Sunday and 6 for Saturday, so (day + 1) % 7 is the number
+// of days back to Saturday — 0 when the month already ends on one.
+function lastSaturdayOf(year, monthIndex) {
+  const last = new Date(year, monthIndex + 1, 0)
+  return last.getDate() - ((last.getDay() + 1) % 7)
+}
+
+function isoDate(year, monthIndex, day) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// The most recent meeting on or before `today`, as 'YYYY-MM-DD'.
+//
+// Not simply "this month's last Saturday": record_meeting rejects a future date,
+// and for most of a month that Saturday has not happened yet — on the 5th of a
+// month the meeting to record is still last month's.
+export function lastMeetingOnOrBefore(today = new Date()) {
+  const year = today.getFullYear()
+  const monthIndex = today.getMonth()
+  const thisMonth = lastSaturdayOf(year, monthIndex)
+  if (thisMonth <= today.getDate()) return isoDate(year, monthIndex, thisMonth)
+
+  const prevYear = monthIndex === 0 ? year - 1 : year
+  const prevMonth = monthIndex === 0 ? 11 : monthIndex - 1
+  return isoDate(prevYear, prevMonth, lastSaturdayOf(prevYear, prevMonth))
+}
+
 export async function getMeetings(supabase) {
   const { data, error } = await supabase
     .from('meetings')

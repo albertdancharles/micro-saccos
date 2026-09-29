@@ -7,10 +7,11 @@ import { useAuth } from './useAuth'
 import { useCoalesced } from './useCoalesced'
 import { getApprovedSavings } from '../lib/savings'
 import { getCurrentLoan, getInstallments } from '../lib/loans'
-import { getMyFees } from '../lib/fees'
+import { getMyFees, feesDueNow } from '../lib/fees'
 
 // 'YYYY-MM' for month comparison (period and due_date are DB date strings, already EAT).
 const monthKey = (dateStr) => (dateStr ? String(dateStr).slice(0, 7) : '')
+
 
 const EMPTY = {
   pool: 0,
@@ -63,9 +64,10 @@ export function useMemberSummary(overrideMemberId = null) {
       const paidFees = fees.reduce((s, f) => s + Number(f.amount_paid ?? 0), 0)
       const contribution = savings
 
-      // Amount due now = unpaid fees + installments that are overdue or due this
-      // month. Cancelled installments are historical, never an obligation.
-      const feesDue = fees.filter((f) => f.computed_status !== 'paid')
+      // Amount due now = fees the member has actually had a chance to pay (see
+      // feesDueNow) + installments that are overdue or due this month. Cancelled
+      // installments are historical, never an obligation.
+      const feesDue = feesDueNow(fees)
       const instDue = installments.filter(
         (i) =>
           i.computed_status !== 'paid' &&

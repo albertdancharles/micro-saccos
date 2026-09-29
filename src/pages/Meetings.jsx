@@ -15,6 +15,7 @@ import { formatTZS, formatDate } from '../lib/format'
 import { getMemberDirectory } from '../lib/directory'
 import {
   ATTENDANCE,
+  lastMeetingOnOrBefore,
   getMeetings,
   getAttendance,
   recordMeeting,
@@ -185,7 +186,10 @@ function Register({ meeting, names, onChanged }) {
 function NewMeeting({ onCreated }) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
-  const [heldOn, setHeldOn] = useState(new Date().toISOString().slice(0, 10))
+  // The group meets on the last Saturday of the month, so that — not today — is
+  // the date being recorded almost every time. Still editable for a rescheduled
+  // or extraordinary meeting.
+  const [heldOn, setHeldOn] = useState(() => lastMeetingOnOrBefore())
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('')
   const [busy, setBusy] = useState(false)
