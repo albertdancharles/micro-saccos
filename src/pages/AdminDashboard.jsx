@@ -103,7 +103,7 @@ export default function AdminDashboard() {
             {/* Above everything: if the books don't balance, nothing else on this
                 page can be trusted. Renders nothing when they do. */}
             <ReconciliationBanner reconciliation={admin.reconciliation} />
-            {/* Also silent unless something is wrong: reminders piling up unsent. */}
+            {/* Muted for now: renders nothing until SMS sending is connected. */}
             <MessagingBanner messaging={admin.messaging} />
             <AdminSummaryCards
               stats={admin.stats}

@@ -8,8 +8,17 @@
 // said otherwise.
 import { useLanguage } from '../../hooks/useLanguage'
 
+// Muted on purpose, until SMS sending is actually connected. Right now the
+// drain has never been scheduled, so the banner is permanently on and telling
+// the admin about work we already know we haven't done — a warning that is
+// always lit stops being a warning. Flip this back to true the day the drain
+// is running, and it goes back to catching the queue that quietly stops.
+const SHOW_MESSAGING_BANNER = false
+
 export default function MessagingBanner({ messaging }) {
   const { t } = useLanguage()
+
+  if (!SHOW_MESSAGING_BANNER) return null
 
   // No row = migration 032 not applied yet. Nothing to say.
   if (!messaging) return null
