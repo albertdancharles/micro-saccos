@@ -8,14 +8,18 @@
 -- meeting on Saturday 2026-09-26, as active, disbursed loans with their
 -- repayment schedules — the state approve_loan() would have left behind.
 --
---     Veroda            200,000        Amani             100,000
---     Rahel             200,000        Peter             250,000
---     Pius Mushi        400,000        Silvana Kambanga  100,000
---     Kelvin            350,000        Yuda              400,000
---     Albert            532,700        Massoud           400,000
---     Eva               200,000        Jackson           400,000
---     Deus              400,000        ------------------------
---                                      total           3,932,700
+--     Veroda Makunja     200,000       Amani Ngoko        100,000
+--     Raheli Mosha       200,000       Peter Okama        250,000
+--     Pius Mushi         400,000       Silivana Kambanga  100,000
+--     Kelvin Sinde       350,000       Yuda Ntandu        400,000
+--     Albert Charles     532,700       Massoud Massoud    400,000
+--     Eva                200,000       Jackson Onyango    400,000
+--     Deus Owano         400,000       -------------------------
+--                                      total            3,932,700
+--
+-- Every one of these is pinned to a named member — by phone number where the
+-- number is known, which is all of them but Eva. Nuru Mwakisyala is the one
+-- active member who did not borrow.
 --
 -- WHAT IT DOES TO THE BOOKS. Nothing is created or destroyed: 3,932,700 moves
 -- from the liquid pool to outstanding principal.
@@ -138,32 +142,55 @@ begin;
 -- disabled.
 alter table loans disable trigger on_new_loan;
 
--- The meeting's decisions, in the order they were taken. `seq` matters to one
--- check only: since 045 the lending ceiling is the same figure for everybody in
--- the room, but whether the pool could cover each disbursement depends on what
--- had already been handed out, so that one is walked in this order.
+-- WHO BORROWED WHAT.
+--
+-- Each row names ONE member, by phone number wherever the number is known.
+-- Phone is `profiles.phone_number`, which is UNIQUE (001), so it identifies a
+-- person exactly; a first name does not. Three of these would have gone wrong
+-- on names alone — the group's register spells them Raheli, Silivana and
+-- Massoud Massoud, none of which a match on 'Rahel' or 'Silvana' would find.
+-- The numbers below are the ones the group was set up with (scripts/seed.mjs).
+--
+-- `full_name` is NOT how the row is matched when a phone is given; it is
+-- checked AGAINST the profile the phone found. If a number has moved to a
+-- different person since the group was set up, that mismatch stops the file
+-- rather than quietly lending 400,000 in the wrong name.
+--
+-- Eva has no number here because she joined after the group was seeded and the
+-- repository does not know it. Her row is matched on name, which works as long
+-- as she is the only active Eva; if the file stops on her, put her full name or
+-- her number in and run it again.
+--
+-- `seq` is the order the meeting took them in. It matters to ONE check: since
+-- 045 the lending ceiling is the same figure for everybody in the room, but
+-- whether the pool could cover each disbursement depends on what had already
+-- been handed out, so that one is walked in this order.
 create temp table op_meeting_loans (
-  seq       int  primary key,
-  full_name text not null unique,
-  principal numeric(12,2) not null check (principal > 0),
-  member_id uuid,
-  loan_id   uuid
+  seq          int  primary key,
+  full_name    text not null unique,
+  phone_number text unique,
+  principal    numeric(12,2) not null check (principal > 0),
+  member_id    uuid,
+  loan_id      uuid
 ) on commit drop;
 
-insert into op_meeting_loans (seq, full_name, principal) values
-  ( 1, 'Veroda',            200000.00),
-  ( 2, 'Rahel',             200000.00),
-  ( 3, 'Pius Mushi',        400000.00),
-  ( 4, 'Kelvin',            350000.00),
-  ( 5, 'Albert',            532700.00),
-  ( 6, 'Eva',               200000.00),
-  ( 7, 'Deus',              400000.00),
-  ( 8, 'Amani',             100000.00),
-  ( 9, 'Peter',             250000.00),
-  (10, 'Silvana Kambanga',  100000.00),
-  (11, 'Yuda',              400000.00),
-  (12, 'Massoud',           400000.00),
-  (13, 'Jackson',           400000.00);
+insert into op_meeting_loans (seq, full_name, phone_number, principal) values
+  ( 1, 'Veroda Makunja',    '+255679044511', 200000.00),
+  ( 2, 'Raheli Mosha',      '+255757595443', 200000.00),
+  ( 3, 'Pius Mushi',        '+255764174646', 400000.00),
+  ( 4, 'Kelvin Sinde',      '+255753463567', 350000.00),
+  ( 5, 'Albert Charles',    '+255655500410', 532700.00),
+  ( 6, 'Eva',               null,            200000.00),
+  ( 7, 'Deus Owano',        '+255737646188', 400000.00),
+  ( 8, 'Amani Ngoko',       '+255717195783', 100000.00),
+  ( 9, 'Peter Okama',       '+255621328108', 250000.00),
+  (10, 'Silivana Kambanga', '+255756300222', 100000.00),
+  (11, 'Yuda Ntandu',       '+255621115735', 400000.00),
+  (12, 'Massoud Massoud',   '+255655036403', 400000.00),
+  (13, 'Jackson Onyango',   '+255712154837', 400000.00);
+
+-- Not borrowing, and that is the whole of the difference between 14 members and
+-- 13 loans: Nuru Mwakisyala (+255716731151).
 
 do $$
 declare
@@ -190,6 +217,7 @@ declare
   v_breach_list  text[] := '{}';
   v_problem      text;
   v_roster       text;
+  v_assignment   text;
   v_admins       int;
   v_admin_loans  int;
   v_loan_id      uuid;
@@ -198,31 +226,38 @@ declare
 begin
   select count(*), sum(principal) into v_count, v_total from op_meeting_loans;
 
-  -- ------------------------------------------------------------------ names
-  -- A name must land on exactly one active member. Matching is case-insensitive
-  -- and accepts a leading-word prefix, so 'Kelvin' finds 'Kelvin Mwangi' — but
-  -- if it finds two Kelvins the file stops rather than guessing which one just
-  -- borrowed 350,000.
-  select string_agg(x.line, E'\n' order by x.full_name) into v_problem
+  -- ------------------------------------------------------- who each loan is for
+  -- By phone number where there is one: phone_number is UNIQUE on profiles, so
+  -- it names a person and a first name does not. Only the rows with no number
+  -- fall back to the name, matched case-insensitively and accepting a leading
+  -- word, so 'Eva' finds 'Eva Mtui' — but if it finds two Evas the file stops
+  -- rather than guessing which one just borrowed 200,000.
+  select string_agg(x.line, E'\n' order by x.seq) into v_problem
     from (
-      select o.full_name,
-             '  ' || o.full_name || ' -> ' ||
+      select o.seq,
+             '  ' || o.full_name
+               || coalesce(' (' || o.phone_number || ')', ' (no number given)')
+               || ' -> ' ||
              case when count(p.id) = 0 then 'no active member matches'
                   else count(p.id) || ' members match: ' ||
                        string_agg(p.full_name, ' / ' order by p.full_name) end as line
         from op_meeting_loans o
         left join profiles p
                on p.is_active = true
-              and (lower(p.full_name) = lower(o.full_name)
-                   or lower(p.full_name) like lower(o.full_name) || ' %')
-       group by o.full_name
+              and (case when o.phone_number is not null
+                        then p.phone_number = o.phone_number
+                        else lower(p.full_name) = lower(o.full_name)
+                             or lower(p.full_name) like lower(o.full_name) || ' %'
+                   end)
+       group by o.seq, o.full_name, o.phone_number
       having count(p.id) <> 1
     ) x;
 
   if v_problem is not null then
-    select string_agg('  ' || full_name, E'\n' order by full_name) into v_roster
+    select string_agg('  ' || full_name || coalesce(' (' || phone_number || ')', ''),
+                      E'\n' order by full_name) into v_roster
       from profiles where is_active = true;
-    raise exception E'ABORTED: these names do not resolve to one member each.\n%\n\nThe active roster is:\n%\n\nEdit the names in the temp table above to match, then re-run.',
+    raise exception E'ABORTED: these rows do not resolve to one active member each.\n%\n\nThe active roster is:\n%\n\nFix the number or the name in the table above, then re-run.',
       v_problem, v_roster;
   end if;
 
@@ -230,12 +265,31 @@ begin
      set member_id = p.id
     from profiles p
    where p.is_active = true
-     and (lower(p.full_name) = lower(o.full_name)
-          or lower(p.full_name) like lower(o.full_name) || ' %');
+     and (case when o.phone_number is not null
+               then p.phone_number = o.phone_number
+               else lower(p.full_name) = lower(o.full_name)
+                    or lower(p.full_name) like lower(o.full_name) || ' %'
+          end);
 
-  -- Two different spellings must not both land on the same person.
+  -- Two rows must not land on the same person.
   if (select count(distinct member_id) from op_meeting_loans) <> v_count then
-    raise exception 'ABORTED: two of the names resolve to the same member.';
+    raise exception 'ABORTED: two rows resolve to the same member.';
+  end if;
+
+  -- A number that has moved to somebody else would sail through the match above
+  -- and lend 400,000 in the wrong name. The name written beside the number has
+  -- to agree with the profile the number found.
+  select string_agg('  ' || o.full_name || ' (' || o.phone_number || ') is '
+                    || p.full_name || ' in the register', E'\n' order by o.seq)
+    into v_problem
+    from op_meeting_loans o
+    join profiles p on p.id = o.member_id
+   where o.phone_number is not null
+     and lower(p.full_name) <> lower(o.full_name);
+
+  if v_problem is not null then
+    raise exception E'ABORTED: a number belongs to someone other than the name beside it.\n%\n\nIf the member has simply changed how their name is spelled, update the table above to match the register. If the NUMBER has moved to a different person, find the right one before lending in their name.',
+      v_problem;
   end if;
 
   -- --------------------------------------------------------------- one loan
@@ -260,6 +314,16 @@ begin
       'Run 2026-09-29_pool_profit_3932700.sql first.',
       v_total, v_pool, v_total - v_pool;
   end if;
+
+  -- ------------------------------------------------------------- the reading
+  -- Who is getting what, in the register's own names, so the operator can check
+  -- the assignment against the minutes BEFORE anything is written. It is shown
+  -- in the refusal below and again in the notice on a successful run.
+  select string_agg('  ' || rpad(p.full_name, 20) ||
+                    lpad(to_char(o.principal, 'FM999,999,999'), 10) ||
+                    coalesce('  ' || p.phone_number, ''), E'\n' order by o.seq)
+    into v_assignment
+    from op_meeting_loans o join profiles p on p.id = o.member_id;
 
   -- --------------------------------------------------------- the three rules
   -- 045: the ceiling is a share of what the group is WORTH, and lending does not
@@ -328,8 +392,8 @@ begin
   if array_length(v_breach_list, 1) > 0 then
     v_breaches := array_to_string(v_breach_list, E'\n');
     if not v_acknowledge_rule_breaches then
-      raise exception E'ABORTED — NOTHING WAS WRITTEN. Recording these loans breaks % of the group''s own rules:\n\n%\n\nThe loans were agreed in the room and approve_loan() never saw them, so no ceiling stopped them at the time. If the group means this recording to stand, set\n\n    v_acknowledge_rule_breaches := true;\n\nin the block above and run the file again. The list is written into the audit log for every loan.',
-        array_length(v_breach_list, 1), v_breaches;
+      raise exception E'ABORTED — NOTHING WAS WRITTEN.\n\nThis is who would be recorded, and for how much:\n\n%\n\nCheck that against the minutes first. Recording it breaks % of the group''s own rules:\n\n%\n\nThe loans were agreed in the room and approve_loan() never saw them, so no ceiling stopped them at the time. If the group means this recording to stand, set\n\n    v_acknowledge_rule_breaches := true;\n\nin the block above and run the file again. The list is written into the audit log for every loan.',
+        v_assignment, array_length(v_breach_list, 1), v_breaches;
     end if;
   else
     v_breaches := '(none)';
@@ -388,8 +452,8 @@ begin
                       'supabase/operations/2026-09-29_meeting_loans_issued.sql.'));
   end loop;
 
-  raise notice 'Recorded % loans totalling % TZS. Pool % -> %. Rule breaches: %',
-    v_count, v_total, v_pool, v_pool - v_total, v_breaches;
+  raise notice E'Recorded % loans totalling % TZS. Pool % -> %.\n%\nRule breaches: %',
+    v_count, v_total, v_pool, v_pool - v_total, v_assignment, v_breaches;
 end $$;
 
 alter table loans enable trigger on_new_loan;
