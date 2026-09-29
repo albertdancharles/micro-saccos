@@ -14,6 +14,7 @@ import MemberGrid from '../components/admin/MemberGrid'
 import ApprovalsQueue from '../components/admin/ApprovalsQueue'
 import AddMemberModal from '../components/admin/AddMemberModal'
 import AppHeader from '../components/ui/AppHeader'
+import Name from '../components/ui/Name'
 import BottomNav from '../components/ui/BottomNav'
 import DashboardSkeleton from '../components/ui/DashboardSkeleton'
 import PendingMembersQueue from '../components/admin/PendingMembersQueue'
@@ -78,7 +79,7 @@ export default function AdminDashboard() {
     <div className="min-h-dvh bg-[var(--color-app-bg)]">
       <AppHeader
         eyebrow={t('Micro-SACCOS · Admin')}
-        title={profile?.full_name || user?.email}
+        title={<Name>{profile?.full_name || user?.email}</Name>}
         width="max-w-4xl"
         links={[
           { to: '/dashboard', label: t('My view') },

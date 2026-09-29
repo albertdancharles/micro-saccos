@@ -23,6 +23,7 @@ import RepaymentSchedule from '../components/member/RepaymentSchedule'
 import History from '../components/member/History'
 import LoanProgressBar from '../components/member/LoanProgressBar'
 import AppHeader from '../components/ui/AppHeader'
+import Name from '../components/ui/Name'
 import BottomNav from '../components/ui/BottomNav'
 import SavingsChart from '../components/member/SavingsChart'
 import DashboardSkeleton from '../components/ui/DashboardSkeleton'
@@ -56,7 +57,7 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
       ) : (
         <AppHeader
           eyebrow={t('Micro-SACCOS')}
-          title={profile?.full_name || user?.email}
+          title={<Name>{profile?.full_name || user?.email}</Name>}
           links={[
             { to: '/members', label: t('Members') },
             { to: '/profile', label: t('Profile') },

@@ -79,7 +79,7 @@ export default function GroupMembers() {
                     className={`-mx-5 px-5 py-3 ${isSelf ? 'bg-emerald-50/50' : ''}`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-slate-900">{r.name}</span>
+                      <span className="truncate font-medium text-slate-900" translate="no">{r.name}</span>
                       {isSelf && (
                         <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
                           {t('You')}

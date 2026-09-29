@@ -37,7 +37,7 @@ function MemberItem({ member, onActioned }) {
     <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-slate-900">{member.full_name}</p>
+          <p className="font-medium text-slate-900" translate="no">{member.full_name}</p>
           <p className="text-xs text-slate-500 mt-0.5">
             {t('Applied {date}').replace('{date}', formatDate(member.created_at?.slice(0, 10)))}
           </p>

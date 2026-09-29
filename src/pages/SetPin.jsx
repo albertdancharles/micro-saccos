@@ -12,6 +12,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../hooks/useLanguage'
 import { signOut } from '../lib/auth'
 import PinForm from '../components/ui/PinForm'
+import { fillNames } from '../components/ui/fillNames'
 
 export default function SetPin() {
   const { profile, pinStatus, refreshProfile } = useAuth()
@@ -57,7 +58,7 @@ export default function SetPin() {
 
           {profile?.full_name && (
             <p className="mt-6 text-center text-xs text-slate-400">
-              {t('Signed in as {name}').replace('{name}', profile.full_name)}
+              {fillNames(t('Signed in as {name}'), { name: profile.full_name })}
             </p>
           )}
 

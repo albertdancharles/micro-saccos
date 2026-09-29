@@ -7,6 +7,7 @@ import { formatTZS } from '../../lib/format'
 import { requestLoanAction } from '../../lib/loanActions'
 import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
+import Name from '../ui/Name'
 
 function Row({ label, value, danger }) {
   return (
@@ -74,7 +75,7 @@ function Form({ loan, onSubmitted, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 space-y-1">
-        <Row label={t('Borrower')} value={loan.memberName} />
+        <Row label={t('Borrower')} value={<Name>{loan.memberName}</Name>} />
         <Row label={t('Outstanding')} value={formatTZS(outstanding)} danger />
         <Row label={t('Their savings')} value={formatTZS(savings)} />
         {loan.risk && (

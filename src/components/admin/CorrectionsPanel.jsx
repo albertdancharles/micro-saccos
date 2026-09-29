@@ -20,6 +20,7 @@ import {
   requestPaymentVoid,
 } from '../../lib/payments'
 import { formatTZS, formatDate } from '../../lib/format'
+import { fillNames } from '../ui/fillNames'
 
 const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
@@ -159,14 +160,14 @@ export default function CorrectionsPanel({ onActioned }) {
               className="rounded-xl bg-amber-50 ring-1 ring-inset ring-amber-200/70 p-3 space-y-2"
             >
               <div className="flex justify-between gap-2 text-sm">
-                <span className="text-slate-900">{v.memberName}</span>
+                <span className="text-slate-900" translate="no">{v.memberName}</span>
                 <span className="tabular-nums text-slate-900">
                   {formatTZS(v.submission?.amount_claimed)}
                 </span>
               </div>
               <p className="text-xs text-slate-600">{v.reason}</p>
               <p className="text-xs text-slate-500">
-                {t('Raised by {name}').replace('{name}', v.requesterName)}
+                {fillNames(t('Raised by {name}'), { name: v.requesterName })}
               </p>
               {/* Stacked below sm: buttons carry white-space: nowrap, so
                   "Awaiting another admin" next to "Cancel" overflows 375px. */}
@@ -204,7 +205,7 @@ export default function CorrectionsPanel({ onActioned }) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-slate-900">{s.memberName}</p>
+                    <p className="truncate text-sm text-slate-900" translate="no">{s.memberName}</p>
                     <p className="text-xs text-slate-500">
                       {t(TYPE_LABEL[s.submission_type] || s.submission_type)}
                       {' · '}

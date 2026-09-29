@@ -52,7 +52,7 @@ function Form({ target, onSubmitted, onClose }) {
       <div className="rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <div className="flex justify-between">
           <span className="text-slate-500">{t('Member')}</span>
-          <span className="text-slate-900">{target.name}</span>
+          <span className="text-slate-900" translate="no">{target.name}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">{t('Current savings')}</span>

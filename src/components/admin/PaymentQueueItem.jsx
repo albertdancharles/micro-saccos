@@ -14,6 +14,7 @@ import { approveSubmission, rejectSubmission } from '../../lib/payments'
 import { allocateFeePayment, allocateInstallmentPayment } from '../../lib/allocation'
 import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
+import { fillNames } from '../ui/fillNames'
 
 const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
@@ -122,7 +123,7 @@ export default function PaymentQueueItem({ submission, onActioned }) {
     <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 transition-shadow hover:shadow-lift">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-slate-900">{submission.memberName}</p>
+          <p className="font-medium text-slate-900" translate="no">{submission.memberName}</p>
           <p className="text-xs text-slate-500 mt-0.5">
             {t(TYPE_LABEL[submission.submission_type])}
             {submission.submission_type === 'monthly_fee' && submission.period && (
@@ -164,10 +165,9 @@ export default function PaymentQueueItem({ submission, onActioned }) {
       {!submission.proof_url ? (
         <p className="text-xs px-3 py-2 rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-200 text-slate-600">
           {submission.recordedByName
-            ? t('No screenshot — recorded by {name}.').replace(
-                '{name}',
-                submission.recordedByName,
-              )
+            ? fillNames(t('No screenshot — recorded by {name}.'), {
+                name: submission.recordedByName,
+              })
             : t('No screenshot attached.')}
         </p>
       ) : proofUrl ? (

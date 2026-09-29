@@ -75,7 +75,7 @@ function Form({ members, onSubmitted, onClose }) {
         >
           <option value="">{t('Choose a member…')}</option>
           {members.map((m) => (
-            <option key={m.id} value={m.id}>
+            <option key={m.id} value={m.id} translate="no">
               {m.full_name}
             </option>
           ))}

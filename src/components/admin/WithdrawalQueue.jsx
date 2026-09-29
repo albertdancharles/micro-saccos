@@ -10,6 +10,7 @@ import { buildPayoutPath, uploadPaymentProof } from '../../lib/storage'
 import UploadZone from '../ui/UploadZone'
 import Badge from '../ui/Badge'
 import { useLanguage } from '../../hooks/useLanguage'
+import Name from '../ui/Name'
 
 function WithdrawalItem({ request, onActioned }) {
   const { t } = useLanguage()
@@ -73,7 +74,7 @@ function WithdrawalItem({ request, onActioned }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium text-slate-900">
-            {request.memberName}
+            <Name>{request.memberName}</Name>
             {request.is_exit && (
               <span className="ml-2 text-xs font-normal text-amber-700">
                 {t('exit settlement')}

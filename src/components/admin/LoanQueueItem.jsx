@@ -123,7 +123,7 @@ export default function LoanQueueItem({ loan, onActioned }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium text-slate-900">{loan.memberName}</p>
+            <p className="font-medium text-slate-900" translate="no">{loan.memberName}</p>
             {!loan.hasPriorLoan && (
               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200">
                 {t('First-time borrower')}

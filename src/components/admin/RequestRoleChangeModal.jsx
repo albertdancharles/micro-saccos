@@ -53,7 +53,7 @@ function Form({ target, adminCount, onSubmitted, onClose }) {
           {isPromote ? t('Promote to admin') : t('Revoke admin role')}
         </p>
         <p>
-          <strong>{target.name}</strong>
+          <strong translate="no">{target.name}</strong>
           {t(' is currently ')}
           <span className="font-mono">{target.role}</span>.
           {isPromote

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLanguage } from '../../hooks/useLanguage'
 import { getMemberPinOverview, resetMemberPin } from '../../lib/phoneAuth'
 import { formatDate } from '../../lib/format'
+import { fillNames } from '../ui/fillNames'
 
 function Badge({ tone, children }) {
   const tones = {
@@ -88,10 +89,9 @@ export default function MemberPinsPanel() {
       {issued && (
         <div className="mb-3 rounded-xl bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-100">
           <p className="text-xs text-emerald-800">
-            {t('New PIN for {name} — read it out now, it is not shown again.').replace(
-              '{name}',
-              issued.full_name,
-            )}
+            {fillNames(t('New PIN for {name} — read it out now, it is not shown again.'), {
+              name: issued.full_name,
+            })}
           </p>
           <p className="mt-1 font-mono text-2xl tracking-[0.3em] text-emerald-900">{issued.pin}</p>
           <button
@@ -116,7 +116,7 @@ export default function MemberPinsPanel() {
           return (
             <li key={row.member_id} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm text-slate-700">{row.full_name}</p>
+                <p className="truncate text-sm text-slate-700" translate="no">{row.full_name}</p>
                 {row.has_pin && row.set_at && (
                   <p className="text-[11px] text-slate-400">
                     {t('set {date}').replace('{date}', formatDate(row.set_at))}

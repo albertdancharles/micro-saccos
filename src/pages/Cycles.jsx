@@ -23,6 +23,7 @@ import {
   markDistributionPaid,
 } from '../lib/cycles'
 import AppHeader from '../components/ui/AppHeader'
+import Name from '../components/ui/Name'
 import BottomNav from '../components/ui/BottomNav'
 import UploadZone from '../components/ui/UploadZone'
 import Badge from '../components/ui/Badge'
@@ -158,7 +159,7 @@ function CloseWizard({ cycle, onDone }) {
             {preview.map((r) => (
               <li key={r.member_id} className="py-2.5 first:pt-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 truncate text-sm text-slate-700">{r.full_name}</span>
+                  <span className="min-w-0 truncate text-sm text-slate-700" translate="no">{r.full_name}</span>
                   <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
                     {formatTZS(r.total_payout_tzs)}
                   </span>
@@ -195,7 +196,7 @@ function CloseWizard({ cycle, onDone }) {
               <tbody className="divide-y divide-slate-200/70">
                 {preview.map((r) => (
                   <tr key={r.member_id}>
-                    <td className="py-1.5 pr-2 text-slate-700">{r.full_name}</td>
+                    <td className="py-1.5 pr-2 text-slate-700" translate="no">{r.full_name}</td>
                     <td className="py-1.5 px-2 text-right tabular-nums text-slate-500">
                       {(Number(r.share_ratio) * 100).toFixed(1)}%
                     </td>
@@ -330,7 +331,7 @@ function PayoutRow({ dist, name, currentAdminId, onDone }) {
     <div className="py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900 truncate">{name}</p>
+          <p className="text-sm font-medium text-slate-900 truncate" translate="no">{name}</p>
           <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
             {t('{earnings} earnings')
               .replace('{earnings}', formatTZS(dist.earnings_tzs))}
@@ -423,7 +424,7 @@ export default function Cycles() {
     <div className="min-h-dvh bg-[var(--color-app-bg)]">
       <AppHeader
         eyebrow={t('Micro-SACCOS · Admin')}
-        title={profile?.full_name || user?.email}
+        title={<Name>{profile?.full_name || user?.email}</Name>}
         width="max-w-4xl"
         links={[{ to: '/admin', label: t('← Admin') }]}
       />

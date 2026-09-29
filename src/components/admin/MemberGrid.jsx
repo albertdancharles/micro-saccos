@@ -66,14 +66,14 @@ function MemberIdentity({ row, isSelf, viewTo, t }) {
       <Monogram name={row.name} isAdmin={row.role === 'admin'} />
       <div className="min-w-0">
         {viewTo ? (
-          <Link
+          <Link translate="no"
             to={viewTo}
             className="block truncate text-[15px] font-medium text-slate-900 transition-colors hover:text-emerald-700"
           >
             {row.name}
           </Link>
         ) : (
-          <span className="block truncate text-[15px] font-medium text-slate-900">{row.name}</span>
+          <span className="block truncate text-[15px] font-medium text-slate-900" translate="no">{row.name}</span>
         )}
         {caption && (
           <p className="truncate text-[11px] font-medium text-slate-400">{caption}</p>

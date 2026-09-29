@@ -165,7 +165,7 @@ export default function RecordFeeSheet({ onActioned }) {
                       className="size-5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-slate-900">{r.name}</span>
+                      <span className="block truncate text-sm text-slate-900" translate="no">{r.name}</span>
                       <span className="block truncate text-xs text-slate-500">
                         {formatDate(r.period)}
                         {Number(r.penalty_due) > 0 && (

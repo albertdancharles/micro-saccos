@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { createTranslator } from '../lib/translations'
 import { supabase } from '../supabaseClient'
 
@@ -47,6 +47,17 @@ export function LanguageProvider({ children }) {
       .then(() => {})
       .catch(() => {})
   }
+
+  // index.html ships lang="sw", and nothing used to change it. A member reading
+  // the English view was therefore served a page still declaring itself Swahili,
+  // so Chrome offered — and on "always translate" silently performed — a machine
+  // translation of the whole page. That rewrites every text node, names included:
+  // "Amani" came back as "Peace", then "Peaceful", because a machine translator
+  // reads it as the Swahili word rather than the member standing in the room.
+  // Declaring the language we are actually rendering removes the false offer.
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
 
   const t = createTranslator(lang)
   return (

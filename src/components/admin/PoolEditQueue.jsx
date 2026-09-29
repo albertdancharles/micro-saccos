@@ -5,6 +5,7 @@ import { formatTZS, formatDate } from '../../lib/format'
 import { approvePoolEdit, cancelPoolEdit } from '../../lib/admin'
 import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
+import { fillNames } from '../ui/fillNames'
 
 function Row({ label, value, danger, accent }) {
   return (
@@ -78,9 +79,10 @@ function EditItem({ request, stats, onActioned }) {
         <div>
           <p className="font-medium text-slate-900">{t('Adjust group pool')}</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            {t('Requested by {name} · {date}')
-              .replace('{name}', request.requesterName)
-              .replace('{date}', formatDate(request.created_at?.slice(0, 10)))}
+            {fillNames(t('Requested by {name} · {date}'), {
+              name: request.requesterName,
+              date: formatDate(request.created_at?.slice(0, 10)),
+            })}
           </p>
         </div>
         <p

@@ -5,6 +5,7 @@ import { formatTZS, formatDate } from '../../lib/format'
 import { approveLoanAction, cancelLoanAction } from '../../lib/loanActions'
 import { useTwoStepAction } from '../../hooks/useTwoStepAction'
 import { useLanguage } from '../../hooks/useLanguage'
+import { fillNames } from '../ui/fillNames'
 
 function ActionItem({ request, onActioned }) {
   const { t } = useLanguage()
@@ -24,10 +25,10 @@ function ActionItem({ request, onActioned }) {
 
   const title =
     request.action === 'restructure'
-      ? t('Reschedule {name}’s loan').replace('{name}', request.memberName)
+      ? fillNames(t('Reschedule {name}’s loan'), { name: request.memberName })
       : request.action === 'write_off'
-        ? t('Write off {name}’s loan').replace('{name}', request.memberName)
-        : t('Recover from {name}’s savings').replace('{name}', request.memberName)
+        ? fillNames(t('Write off {name}’s loan'), { name: request.memberName })
+        : fillNames(t('Recover from {name}’s savings'), { name: request.memberName })
 
   const effect =
     request.action === 'restructure'
@@ -76,9 +77,10 @@ function ActionItem({ request, onActioned }) {
       <div>
         <p className="font-medium text-slate-900">{title}</p>
         <p className="text-xs text-slate-500 mt-0.5">
-          {t('Requested by {name} · {date}')
-            .replace('{name}', request.requesterName)
-            .replace('{date}', formatDate(request.created_at?.slice(0, 10)))}
+          {fillNames(t('Requested by {name} · {date}'), {
+            name: request.requesterName,
+            date: formatDate(request.created_at?.slice(0, 10)),
+          })}
         </p>
       </div>
 

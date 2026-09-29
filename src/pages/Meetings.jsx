@@ -27,6 +27,7 @@ import {
   rejectSocialGrant,
 } from '../lib/meetings'
 import AppHeader from '../components/ui/AppHeader'
+import Name from '../components/ui/Name'
 import BottomNav from '../components/ui/BottomNav'
 
 const CARD =
@@ -361,7 +362,7 @@ function SocialFund({ fund, members, currentAdminId, onChanged }) {
           >
             <option value="">{t('Choose a member…')}</option>
             {members.map((m) => (
-              <option key={m.id} value={m.id}>
+              <option key={m.id} value={m.id} translate="no">
                 {m.name}
               </option>
             ))}
@@ -452,7 +453,7 @@ export default function Meetings() {
     <div className="min-h-dvh bg-[var(--color-app-bg)]">
       <AppHeader
         eyebrow={t('Micro-SACCOS · Admin')}
-        title={profile?.full_name || user?.email}
+        title={<Name>{profile?.full_name || user?.email}</Name>}
         width="max-w-4xl"
         links={[{ to: '/admin', label: t('← Admin') }]}
       />

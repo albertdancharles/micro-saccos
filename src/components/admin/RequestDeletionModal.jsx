@@ -8,6 +8,7 @@ import { supabase } from '../../supabaseClient'
 import { formatTZS } from '../../lib/format'
 import { requestMemberDeletion } from '../../lib/admin'
 import { useLanguage } from '../../hooks/useLanguage'
+import { fillNames } from '../ui/fillNames'
 
 function Form({ target, onSubmitted, onClose }) {
   const { t } = useLanguage()
@@ -42,8 +43,10 @@ function Form({ target, onSubmitted, onClose }) {
       <div className="rounded-xl bg-red-50 ring-1 ring-inset ring-red-200 p-3 text-sm text-red-700 space-y-1">
         <p className="font-semibold">{t('This is irreversible.')}</p>
         <p>
-          {t('Once two admins authorize, {name} and every record below will be permanently deleted. The group pool decreases by their approved savings.')
-            .replace('{name}', target.name)}
+          {fillNames(
+            t('Once two admins authorize, {name} and every record below will be permanently deleted. The group pool decreases by their approved savings.'),
+            { name: target.name },
+          )}
         </p>
       </div>
 

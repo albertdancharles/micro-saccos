@@ -248,7 +248,7 @@ export default function Profile() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-slate-500">{t('Name')}</span>
-              <span className="text-slate-900">{profile?.full_name || '—'}</span>
+              <span className="text-slate-900" translate="no">{profile?.full_name || '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">{t('Email')}</span>

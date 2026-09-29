@@ -20,6 +20,7 @@ import {
   defaultPeriod,
 } from '../lib/reports'
 import AppHeader from '../components/ui/AppHeader'
+import Name from '../components/ui/Name'
 import BottomNav from '../components/ui/BottomNav'
 
 const CARD = 'rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card'
@@ -103,7 +104,7 @@ export default function Reports() {
     <div className="min-h-dvh bg-[var(--color-app-bg)]">
       <AppHeader
         eyebrow={t('Micro-SACCOS · Admin')}
-        title={profile?.full_name || user?.email}
+        title={<Name>{profile?.full_name || user?.email}</Name>}
         width="max-w-4xl"
         links={[{ to: '/admin', label: t('← Admin') }]}
       />
@@ -226,7 +227,7 @@ export default function Reports() {
                 <ul className="divide-y divide-slate-100 sm:hidden">
                   {members.map((m) => (
                     <li key={m.member_id} className="py-3 first:pt-0 last:pb-0">
-                      <p className="truncate text-sm font-medium text-slate-900">{m.full_name}</p>
+                      <p className="truncate text-sm font-medium text-slate-900" translate="no">{m.full_name}</p>
                       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
                         <MemberFigure label={t('Capital')} value={m.capital_tzs} tone="text-slate-900" />
                         <MemberFigure label={t('Owes')} value={m.outstanding_tzs} tone="text-red-700" />
@@ -255,7 +256,7 @@ export default function Reports() {
                     <tbody className="divide-y divide-slate-100">
                       {members.map((m) => (
                         <tr key={m.member_id}>
-                          <td className="py-1.5 pr-2 text-slate-700">{m.full_name}</td>
+                          <td className="py-1.5 pr-2 text-slate-700" translate="no">{m.full_name}</td>
                           <td className="py-1.5 px-2 text-right tabular-nums text-slate-900">
                             {formatTZS(m.capital_tzs)}
                           </td>

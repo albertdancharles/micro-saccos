@@ -31,7 +31,7 @@ export default function FormerMembersPanel({ formerMembers }) {
       <ul className="divide-y divide-slate-100">
         {formerMembers.map((m) => (
           <li key={m.id} className="flex items-center justify-between gap-3 py-2.5">
-            <span className="min-w-0 truncate text-sm text-slate-600">{m.full_name}</span>
+            <span className="min-w-0 truncate text-sm text-slate-600" translate="no">{m.full_name}</span>
             {/* No figure here on purpose. An exit settles the member's whole
                 balance, so every one of these reads "TSh 0" — technically true and
                 worth nothing, and easy to misread as a member sitting at zero
