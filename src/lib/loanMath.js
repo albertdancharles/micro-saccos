@@ -10,21 +10,33 @@
 // Loan ceilings (whole TZS, floored so we never round above the cap):
 //   - 5x the member's contribution (approved savings + paid monthly fees) at the
 //     time of request, so a borrower is anchored to what they've put in.
-//   - 25% of the current group pool, so one member can't drain it.
+//   - 25% of TOTAL GROUP ASSETS — the pool plus everything out on loan — so one
+//     member can't take a disproportionate share of the group.
 // Effective max = the lower of the two; both must hold.
+//
+// ASSETS, NOT THE POOL (migration 045). The pool already has every active loan
+// subtracted, so measuring the cap against it made a member's ceiling depend on
+// how much the group had lent to other people that morning: the same amount was
+// allowed at the top of a meeting's agenda and refused at the bottom. Assets do
+// not move when a loan is disbursed, so the ceiling holds still all meeting.
+// `pool_loan_fraction` keeps its key — it is a group_settings row and renaming
+// it would orphan the group's voted value — but it is a fraction of assets now.
+//
+// Whether the group can actually HAND OVER the money is a separate question that
+// only approve_loan answers, against the pool. These helpers are for display.
 export const POOL_LOAN_FRACTION = 0.25
 export const CONTRIBUTION_LOAN_MULTIPLIER = 5
 export const LOAN_INTEREST_RATE = 0.05
 export const PENALTY_RATE = 0.05
 
-export const poolCeiling = (poolBalance, fraction = POOL_LOAN_FRACTION) =>
-  Math.floor(Number(poolBalance) * Number(fraction))
+export const assetsCeiling = (totalAssets, fraction = POOL_LOAN_FRACTION) =>
+  Math.floor(Number(totalAssets) * Number(fraction))
 
 export const contributionCeiling = (contribution, multiplier = CONTRIBUTION_LOAN_MULTIPLIER) =>
   Math.floor(Number(contribution) * Number(multiplier))
 
-export const maxLoan = (contribution, poolBalance, { fraction, multiplier } = {}) =>
-  Math.min(contributionCeiling(contribution, multiplier), poolCeiling(poolBalance, fraction))
+export const maxLoan = (contribution, totalAssets, { fraction, multiplier } = {}) =>
+  Math.min(contributionCeiling(contribution, multiplier), assetsCeiling(totalAssets, fraction))
 
 // Flat monthly interest = principal x rate, whole shillings (Decision #2).
 export const monthlyInterest = (principal, rate = LOAN_INTEREST_RATE) =>

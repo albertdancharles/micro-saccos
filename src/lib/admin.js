@@ -2,7 +2,7 @@
 // so we fetch the small datasets once and join client-side (15 members → trivial).
 // Returns everything the admin dashboard renders: stats, the member grid, and the
 // pending loan + payment queues.
-import { contributionCeiling, poolCeiling, maxLoan } from './loanMath'
+import { contributionCeiling, assetsCeiling, maxLoan } from './loanMath'
 import { SETTING_DEFAULTS } from './settings'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
@@ -222,7 +222,6 @@ export async function getAdminData(supabase, currentAdminId = null) {
   }
 
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
-  const poolCap = poolCeiling(pool, settings.pool_loan_fraction)
   // Total group assets = liquid pool + everything still owed by active borrowers.
   // outstanding_principal falls back to principal for older active loans that
   // pre-date migration 011.
@@ -230,6 +229,9 @@ export async function getAdminData(supabase, currentAdminId = null) {
     .filter((l) => l.status === 'active')
     .reduce((s, l) => s + Number(l.outstanding_principal ?? l.principal ?? 0), 0)
   const totalAssets = pool + outstandingLoans
+  // 045: the fraction is a share of the group, not of the cash left in it, so
+  // this cap has to be computed after totalAssets rather than from `pool`.
+  const assetsCap = assetsCeiling(totalAssets, settings.pool_loan_fraction)
 
   // Per-member savings now includes deposits, paid monthly fees, and any
   // admin-approved corrective adjustments. Drives the 3x loan ceiling and the
@@ -336,8 +338,8 @@ export async function getAdminData(supabase, currentAdminId = null) {
         memberName: profileName[l.member_id] || 'Unknown',
         contribution,
         contributionCeiling: contributionCeiling(contribution, settings.contribution_multiplier),
-        poolCeiling: poolCap,
-        maxEligible: maxLoan(contribution, pool, {
+        assetsCeiling: assetsCap,
+        maxEligible: maxLoan(contribution, totalAssets, {
           fraction: settings.pool_loan_fraction,
           multiplier: settings.contribution_multiplier,
         }),

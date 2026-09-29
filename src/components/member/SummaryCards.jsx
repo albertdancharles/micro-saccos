@@ -4,7 +4,7 @@
 // Honors UI/UX Pro Max §6 typography (tabular nums), §5 layout, §4 elevation.
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
-import { contributionCeiling, poolCeiling, maxLoan } from '../../lib/loanMath'
+import { contributionCeiling, assetsCeiling, maxLoan } from '../../lib/loanMath'
 import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
 
@@ -62,20 +62,22 @@ export default function SummaryCards({
   const principalRepaid = Math.max(0, originalPrincipal - loanBalance)
 
   const contribCap = contributionCeiling(contribution, multiplier)
-  const poolCap = poolCeiling(pool, fraction)
-  const maxLoanAmount = maxLoan(contribution, pool, { fraction, multiplier })
+  // 045: a quarter of what the group is WORTH — pool plus what is out on loan —
+  // so this figure does not drop every time somebody else borrows.
+  const assetsCap = assetsCeiling(totalAssets, fraction)
+  const maxLoanAmount = maxLoan(contribution, totalAssets, { fraction, multiplier })
   const hasOpenLoan = loan?.status === 'pending' || loan?.status === 'active'
 
   const bindingNote =
     maxLoanAmount === 0
       ? contribCap === 0
         ? t('Make a savings deposit or pay your monthly fee to become eligible.')
-        : t('Group pool is currently too low to issue a loan.')
-      : contribCap < poolCap
+        : t('The group is currently too small to issue a loan.')
+      : contribCap < assetsCap
         ? t('Limited by {n}× your savings.').replace('{n}', multiplier)
-        : contribCap === poolCap
+        : contribCap === assetsCap
           ? t('Both rules cap at the same amount.')
-          : t('Limited by {n}% of the group pool.').replace(
+          : t('Limited by {n}% of total group assets.').replace(
               '{n}',
               Number((fraction * 100).toFixed(2)),
             )

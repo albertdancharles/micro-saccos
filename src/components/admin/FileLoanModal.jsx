@@ -5,7 +5,8 @@
 // with the M-Pesa screenshot attached at the second signature, exactly as before.
 //
 // The ceiling shown here is advisory. approve_loan enforces both caps (a multiple
-// of the member's contribution, and a fraction of the group pool) and file_loan
+// of the member's contribution, and a fraction of TOTAL GROUP ASSETS since 045),
+// plus the pool's ability to actually cover the disbursement, and file_loan
 // enforces one-loan-at-a-time. Nothing here is a guard; it just saves the admin
 // filing something that will be refused later.
 import { useCallback, useEffect, useState } from 'react'
@@ -43,6 +44,11 @@ function Form({ members, onSubmitted, onClose }) {
   }, [loadLimits])
 
   const over = limits && Number(amount) > limits.ceiling
+  // 045 split the ceiling from the cash: a loan can be well inside a member's
+  // ceiling and still be more than the pool holds, because the ceiling is a
+  // share of total assets and most of those may be out on loan. approve_loan
+  // refuses that, so say so here rather than at the approval.
+  const overPool = limits && !over && Number(amount) > Number(limits.pool)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -94,6 +100,10 @@ function Form({ members, onSubmitted, onClose }) {
             <span className="text-slate-500">{t('Max eligible')}</span>
             <span className="tabular-nums text-slate-900">{formatTZS(limits.ceiling)}</span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">{t('Cash in the pool')}</span>
+            <span className="tabular-nums text-slate-900">{formatTZS(limits.pool)}</span>
+          </div>
         </div>
       )}
 
@@ -116,6 +126,14 @@ function Form({ members, onSubmitted, onClose }) {
             {t('Above the {amount} ceiling — the database will refuse to approve it.').replace(
               '{amount}',
               formatTZS(limits.ceiling),
+            )}
+          </p>
+        )}
+        {overPool && (
+          <p className="mt-1 text-xs text-amber-700">
+            {t('Within their ceiling, but the pool only holds {amount} today — it cannot be disbursed until repayments come in.').replace(
+              '{amount}',
+              formatTZS(limits.pool),
             )}
           </p>
         )}

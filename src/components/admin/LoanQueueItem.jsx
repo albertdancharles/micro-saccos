@@ -36,13 +36,15 @@ export default function LoanQueueItem({ loan, onActioned }) {
   const { proofUrl, loadingProof, viewProof, error: proofError } = useSignedProof()
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
-  const contribBinds = Number(loan.contributionCeiling) <= Number(loan.poolCeiling)
+  const contribBinds = Number(loan.contributionCeiling) <= Number(loan.assetsCeiling)
 
   // Both caps are group settings now (020), so the labels have to track the vote
   // rather than hardcode the seeded 3x / 25%.
   const { settings } = useGroupSettings()
   const contribLabel = t('{n}× savings').replace('{n}', settings.contribution_multiplier)
-  const poolLabel = t('{n}% of pool').replace(
+  // 045: a share of the group's total assets, not of the pool. The label has to
+  // say which, or an admin reading it against the pool figure sees a mismatch.
+  const assetsLabel = t('{n}% of group assets').replace(
     '{n}',
     Number((settings.pool_loan_fraction * 100).toFixed(2)),
   )
@@ -148,14 +150,14 @@ export default function LoanQueueItem({ loan, onActioned }) {
       <div className="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-100 p-3 text-sm space-y-1">
         <Row label={t('Member savings')} value={formatTZS(loan.contribution)} />
         <Row label={contribLabel} value={formatTZS(loan.contributionCeiling)} />
-        <Row label={poolLabel} value={formatTZS(loan.poolCeiling)} />
+        <Row label={assetsLabel} value={formatTZS(loan.assetsCeiling)} />
         <div className="border-t border-slate-200 my-1" />
         <Row label={t('Max eligible')} value={formatTZS(loan.maxEligible)} />
         <Row label={t('Requested')} value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600 pt-1">
             {t('Exceeds the {cap} cap; the database will reject the approval.')
-              .replace('{cap}', contribBinds ? contribLabel : poolLabel)}
+              .replace('{cap}', contribBinds ? contribLabel : assetsLabel)}
           </p>
         )}
       </div>

@@ -216,7 +216,7 @@ function ContributionsCard({ memberId }) {
     <div className="space-y-2">
       <ContributionRow label={t('Total savings')} value={savings} />
       <p className="text-xs text-slate-400 mt-2">
-        {t('Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of the group pool).')
+        {t('Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of total group assets).')
           .replace('{n}', settings.contribution_multiplier)
           .replace('{p}', Number((settings.pool_loan_fraction * 100).toFixed(2)))}
       </p>

@@ -140,8 +140,8 @@ const sw = {
   'Change password': 'Badilisha nywila',
   'My contributions': 'Michango yangu',
   'Total savings': 'Jumla ya akiba',
-  'Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of the group pool).':
-    'Inajumuisha amana za akiba, ada za kila mwezi zilizolipwa, na marekebisho yoyote ya msimamizi. Kiwango chako cha mkopo ni mara {n} ya kiasi hiki (kiwango cha {p}% ya hazina ya kikundi).',
+  'Includes your savings deposits, paid monthly fees, and any admin-approved adjustments. Your loan ceiling is {n}× this amount (capped at {p}% of total group assets).':
+    'Inajumuisha amana za akiba, ada za kila mwezi zilizolipwa, na marekebisho yoyote ya msimamizi. Kiwango chako cha mkopo ni mara {n} ya kiasi hiki (kiwango cha {p}% ya jumla ya mali ya kikundi).',
   'Statement': 'Taarifa',
   'Download a CSV with your savings, fees, loans, and full submission history.': 'Pakua CSV yenye akiba yako, ada, mikopo, na historia kamili ya uwasilishaji.',
   'Download statement (CSV)': 'Pakua taarifa (CSV)',
@@ -248,7 +248,7 @@ const sw = {
   'Approved by {names} ({a}/{r}).': 'Imeidhinishwa na {names} ({a}/{r}).',
   'Member savings': 'Akiba ya mwanachama',
   '5× savings': 'Mara 5 ya akiba',
-  '25% of pool': '25% ya hazina',
+  '25% of group assets': '25% ya jumla ya mali ya kikundi',
   'Max eligible': 'Kiwango cha juu',
   'Requested': 'Kilichoombwa',
   'Exceeds the {cap} cap; the database will reject the approval.': 'Inazidi kiwango cha {cap}; mfumo utakataa idhini.',
@@ -519,6 +519,8 @@ const sw = {
 
   'Their savings': 'Akiba yao',
   'Loan amount (TSh)': 'Kiasi cha mkopo (TSh)',
+  'Within their ceiling, but the pool only holds {amount} today — it cannot be disbursed until repayments come in.':
+    'Ipo ndani ya kiwango chake, lakini hazina ina {amount} tu leo — haiwezi kutolewa hadi marejesho yaingie.',
   'Above the {amount} ceiling — the database will refuse to approve it.':
     'Zaidi ya kikomo cha {amount} — mfumo utakataa kuidhinisha.',
   'This only raises the request. Two admins must approve it, and the M-Pesa proof is attached at approval.':
@@ -572,7 +574,7 @@ const sw = {
     'Akaunti zinafunguliwa na msimamizi wa kikundi chako. Zungumza naye ili upate nafasi.',
 
   '{n}× savings': 'Mara {n} ya akiba',
-  '{n}% of pool': '{n}% ya hazina',
+  '{n}% of group assets': '{n}% ya jumla ya mali ya kikundi',
 
   // Reconciliation (migration 027)
   'The group’s books do not balance': 'Hesabu za kikundi hazilingani',
@@ -799,7 +801,7 @@ const sw = {
   'Monthly fee (TZS)': 'Ada ya kila mwezi (TZS)',
   'Monthly loan interest': 'Riba ya mkopo kwa mwezi',
   'Monthly overdue penalty': 'Faini ya kuchelewa kwa mwezi',
-  'Max share of pool per loan': 'Kiwango cha juu cha hazina kwa mkopo mmoja',
+  'Max share of group assets per loan': 'Kiwango cha juu cha mali ya kikundi kwa mkopo mmoja',
   'Loan cap as multiple of contribution': 'Ukomo wa mkopo kwa mara ya mchango',
   'Loan term (months)': 'Muda wa mkopo (miezi)',
   'Group rule changed': 'Kanuni ya kikundi imebadilika',
@@ -822,12 +824,12 @@ const sw = {
   'Max loan you qualify for': 'Mkopo wa juu unaostahili',
   'Make a savings deposit or pay your monthly fee to become eligible.':
     'Weka amana ya akiba au lipa ada yako ya kila mwezi ili kustahili.',
-  'Group pool is currently too low to issue a loan.': 'Hazina ya kikundi iko chini sana kutoa mkopo kwa sasa.',
+  'The group is currently too small to issue a loan.': 'Kikundi bado ni kidogo sana kutoa mkopo kwa sasa.',
   // {n} is the live contribution multiplier / pool percentage from group_settings,
   // so these read correctly after the group votes to change either rule.
   'Limited by {n}× your savings.': 'Imezuiwa na mara {n} ya akiba yako.',
   'Both rules cap at the same amount.': 'Sheria zote mbili zinafikia kiasi sawa.',
-  'Limited by {n}% of the group pool.': 'Imezuiwa na {n}% ya hazina ya kikundi.',
+  'Limited by {n}% of total group assets.': 'Imezuiwa na {n}% ya jumla ya mali ya kikundi.',
   'Available once your current loan is closed.': 'Itapatikana mkopo wako wa sasa ukifungwa.',
 
   // Obligations card

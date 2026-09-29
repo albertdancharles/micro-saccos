@@ -47,20 +47,27 @@ export async function fileLoan(supabase, memberId, principal) {
 }
 
 // What this member could borrow today, for display next to the amount field.
+//
+// Reads v_group_assets, not v_group_pool: since 045 the fraction is a share of
+// what the group is worth, which does not move when the group lends. `pool`
+// comes back too, because approve_loan will also refuse anything the pool
+// cannot actually cover — a ceiling the group can't hand over is worth showing.
 export async function maxLoanFor(supabase, memberId) {
-  const [contribution, poolRes, { values: settings }] = await Promise.all([
+  const [contribution, assetsRes, { values: settings }] = await Promise.all([
     getMemberContribution(supabase, memberId),
-    supabase.from('v_group_pool').select('pool_balance_tzs').single(),
+    supabase.from('v_group_assets').select('pool_balance_tzs, total_assets_tzs').single(),
     getSettings(supabase),
   ])
-  if (poolRes.error) throw poolRes.error
-  const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
+  if (assetsRes.error) throw assetsRes.error
+  const pool = Number(assetsRes.data?.pool_balance_tzs ?? 0)
+  const totalAssets = Number(assetsRes.data?.total_assets_tzs ?? 0)
   const multiplier = settings.contribution_multiplier
   const fraction = settings.pool_loan_fraction
   return {
-    ceiling: computeMaxLoan(contribution.total, pool, { fraction, multiplier }),
+    ceiling: computeMaxLoan(contribution.total, totalAssets, { fraction, multiplier }),
     contribution,
     pool,
+    totalAssets,
     multiplier,
     fraction,
   }

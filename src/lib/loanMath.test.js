@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
-  poolCeiling,
+  assetsCeiling,
   contributionCeiling,
   maxLoan,
   monthlyInterest,
   penaltyDue,
 } from './loanMath'
 
-describe('poolCeiling', () => {
-  it('is 25% of the pool, floored to whole TZS', () => {
-    expect(poolCeiling(1000000)).toBe(250000)
-    expect(poolCeiling(10001)).toBe(2500) // floor(2500.25)
-    expect(poolCeiling(0)).toBe(0)
+describe('assetsCeiling', () => {
+  it('is 25% of total group assets, floored to whole TZS', () => {
+    expect(assetsCeiling(1000000)).toBe(250000)
+    expect(assetsCeiling(10001)).toBe(2500) // floor(2500.25)
+    expect(assetsCeiling(0)).toBe(0)
   })
 })
 
@@ -23,13 +23,23 @@ describe('contributionCeiling', () => {
 })
 
 describe('maxLoan', () => {
-  it('is the lower of 5x contribution and 25% pool', () => {
+  it('is the lower of 5x contribution and 25% of group assets', () => {
     // contribution binds: 5*5000=25,000 < 25% of 1,000,000=250,000
     expect(maxLoan(5000, 1000000)).toBe(25000)
-    // pool binds: 25% of 200,000=50,000 < 5*50,000=250,000
+    // assets bind: 25% of 200,000=50,000 < 5*50,000=250,000
     expect(maxLoan(50000, 200000)).toBe(50000)
     expect(maxLoan(0, 1000000)).toBe(0) // no contribution → no loan
-    expect(maxLoan(100000, 0)).toBe(0)  // empty pool → no loan
+    expect(maxLoan(100000, 0)).toBe(0)  // a group worth nothing → no loan
+  })
+
+  it('does not shrink as the group lends (045)', () => {
+    // A group worth 4,000,000 lends 3,000,000 of it. The pool is down to
+    // 1,000,000 but the group is worth the same, so the ceiling holds at
+    // 25% of 4,000,000 — not at 25% of what is left in the pool.
+    const assets = 4000000
+    expect(maxLoan(1000000, assets)).toBe(1000000)
+    // The old rule would have given 25% of the remaining 1,000,000 pool.
+    expect(maxLoan(1000000, 1000000)).toBe(250000)
   })
 })
 
