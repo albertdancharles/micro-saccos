@@ -52,7 +52,19 @@ declare
   v_collected_at    timestamptz := timestamptz '2026-09-26 12:00:00+03';  -- the meeting
   v_offset_opening  boolean := true;   -- false = the 230,000 did NOT include September
 
+  -- Off. Every row inserted into `notifications` fires on_notification_fan_out
+  -- (migration 026), which queues an SMS for each member with sms_opt_in and a
+  -- phone number — real messages, billed per member, to announce a savings total
+  -- that has not moved. The group was told at the meeting; the dashboard simply
+  -- has to stop contradicting them. Set true only if you want the SMS sent.
+  v_notify          boolean := false;
+
   v_opening_reason  text := 'Opening savings balance recorded for every active member by group decision, 2026-09-29.';
+
+  -- Whose September row THIS run settles. Anyone who paid through the app before
+  -- it ran is not in here, and must not be: their 10,000 was real money on top of
+  -- the opening balance, so taking it back off would rob them.
+  v_member_ids   uuid[];
 
   v_fees_marked  int;
   v_fee_total    numeric(12,2);
@@ -98,13 +110,21 @@ begin
 
   -- 1. The fee is collected. penalty_collected stays 0: penalty_rate has been 0
   --    since the opening reset, and the group charged nobody a fine in September.
+  --
+  --    The roster is taken BEFORE the update so the offset below can be aimed at
+  --    exactly these members. A member who settled September in the app already
+  --    has status = 'paid' and so never enters this list.
+  select array_agg(member_id) into v_member_ids
+    from monthly_fees
+   where period = v_period and status <> 'paid';
+
   with marked as (
     update monthly_fees
        set amount_paid = amount,
            status      = 'paid',
            paid_at     = v_collected_at
      where period = v_period
-       and status <> 'paid'
+       and member_id = any(v_member_ids)
     returning member_id, amount
   )
   select count(*), coalesce(sum(amount), 0),
@@ -121,12 +141,20 @@ begin
     -- credit everybody a second 230,000. It also stays accurate: it names no
     -- amount, so it describes a 220,000 delta exactly as well as a 230,000 one.
     -- The reduction is recorded in the audit_log row below.
+    --
+    -- Restricted to v_member_ids. Without that the offset would reach every
+    -- member holding a September row — including one who had already paid
+    -- through the app — and take 10,000 off an opening balance that never
+    -- contained it. The count check below would catch it and abort, which is
+    -- safe but leaves the file unrunnable the moment one member settles early:
+    -- the rest of the group then stays stuck showing AMOUNT DUE 10,000.
     with offsets as (
       update savings_adjustments sa
          set delta = sa.delta - mf.amount
         from monthly_fees mf
        where mf.member_id = sa.target_member_id
          and mf.period    = v_period
+         and mf.member_id = any(v_member_ids)
          and sa.status    = 'approved'
          and sa.reason    = v_opening_reason
       returning sa.target_member_id, mf.amount
@@ -155,6 +183,7 @@ begin
             'opening_offset',    v_offset_opening,
             'offset_rows',       v_offset_rows,
             'offset_total',      v_offset_total,
+            'members_notified',  v_notify,
             'roster',            v_roster,
             'note', case when v_offset_opening
                       then 'Composition only: savings totals and the pool are unchanged. '
@@ -164,20 +193,23 @@ begin
 
   -- Tell them, but only that the record now matches what they did — their number
   -- has not moved, and a notification implying otherwise would cause more worry
-  -- than silence.
-  insert into notifications (recipient_id, kind, title, body, data)
-  select mf.member_id, 'fee_recorded',
-         'September fee recorded',
-         case when v_offset_opening
-           then 'Your September contribution of ' || mf.amount ||
-                ' TZS, collected at the meeting on 26 September, is now recorded ' ||
-                'against the month. Your savings total is unchanged.'
-           else 'Your September contribution of ' || mf.amount ||
-                ' TZS, collected at the meeting on 26 September, is now recorded.'
-         end,
-         jsonb_build_object('period', v_period, 'amount', mf.amount)
-    from monthly_fees mf
-   where mf.period = v_period and mf.paid_at = v_collected_at;
+  -- than silence. Gated on v_notify because this insert is not free: see the
+  -- declaration above.
+  if v_notify then
+    insert into notifications (recipient_id, kind, title, body, data)
+    select mf.member_id, 'fee_recorded',
+           'September fee recorded',
+           case when v_offset_opening
+             then 'Your September contribution of ' || mf.amount ||
+                  ' TZS, collected at the meeting on 26 September, is now recorded ' ||
+                  'against the month. Your savings total is unchanged.'
+             else 'Your September contribution of ' || mf.amount ||
+                  ' TZS, collected at the meeting on 26 September, is now recorded.'
+           end,
+           jsonb_build_object('period', v_period, 'amount', mf.amount)
+      from monthly_fees mf
+     where mf.period = v_period and mf.member_id = any(v_member_ids);
+  end if;
 
   raise notice 'September: % fee(s) marked paid (% TZS). Opening balances reduced on % row(s) (% TZS). Members: %',
     v_fees_marked, v_fee_total, v_offset_rows, v_offset_total, v_roster;
