@@ -1,0 +1,29 @@
+-- 046_approval_without_proof.sql — approving a loan no longer requires a
+-- disbursement screenshot.
+--
+-- THE PROBLEM. 008 made loan_approvals.proof_url NOT NULL, so the first admin
+-- to sign had to attach an M-Pesa screenshot before the button would do
+-- anything. The group does not work that way. Loans are agreed in the monthly
+-- meeting (030), in one sitting, with the money handed over in the room and the
+-- borrower sitting across the table. The screenshot arrives later, if at all, and
+-- the admin chairing the meeting is the one blocked by it.
+--
+-- It was never the control it looked like either. What actually guards a
+-- disbursement is the two signatures — loan_approvals is UNIQUE (loan_id,
+-- admin_id), so one admin can never be both — plus the ceilings approve_loan
+-- checks. An image uploaded by the same admin who is approving proves nothing
+-- the signature does not already say.
+--
+-- THE FIX. Drop the NOT NULL. approve_loan's signature, body and every check in
+-- it are untouched: it still takes p_proof_url and still writes the FIRST
+-- approver's value onto loans.disbursement_proof_url, so an approval that does
+-- carry a proof records it exactly as before.
+--
+-- NOT CHANGED. Payment submissions (§7 proofs from members), withdrawals,
+-- distributions and social-fund entries all keep their proofs. This is about the
+-- one upload that stood between an agreed loan and the money leaving.
+--
+-- SCOPE. Nothing recorded is restated. Existing rows keep the proofs they have,
+-- and they stay viewable wherever they are shown today.
+
+ALTER TABLE loan_approvals ALTER COLUMN proof_url DROP NOT NULL;

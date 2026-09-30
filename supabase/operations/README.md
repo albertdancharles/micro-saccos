@@ -25,10 +25,23 @@ The loans file goes **last**. It needs the profit in the pool — 3,932,700 of l
 a 3,220,000 pool overdraws it by 712,700 — and it checks, so running it early costs nothing
 but a refusal.
 
-Apply migration `045_loan_cap_on_group_assets.sql` before or after these, but do apply it. The
-loans file computes its own report either way, but `approve_loan` does not: until 045 lands it
-measures the 25% ceiling against the liquid pool, which this recording leaves at zero, so the
-next loan filed in the app would be refused for a reason the group did not vote for.
+**Migrations to apply alongside these.** None of them are required by the files below — every
+one of these runs against the schema as it stands — but each one is required by the APP once
+these have run, so apply all three around the same sitting.
+
+* `044_meeting_day_fee_due_dates.sql` — a monthly fee falls due at the meeting, not on the last
+  day of the month. The September fee file records a collection made at the 26 Sep meeting;
+  without 044 the app keeps showing later fees as still payable for several days after the only
+  meeting at which they could have been paid.
+* `045_loan_cap_on_group_assets.sql` — the loans file computes its own report either way, but
+  `approve_loan` does not: until 045 lands it measures the 25% ceiling against the liquid pool,
+  which this recording leaves at zero, so the next loan filed in the app would be refused for a
+  reason the group did not vote for.
+* `046_approval_without_proof.sql` — drops the NOT NULL on `loan_approvals.proof_url`. The app no
+  longer asks an admin for a disbursement screenshot, so without 046 the very next approval fails
+  in the database with a not-null violation and the admin sees the raw error. Independent of the
+  files below: none of them writes a `loan_approvals` row, and the loans file records its thirteen
+  loans without going through `approve_loan` at all.
 
 | File | When | What |
 |---|---|---|

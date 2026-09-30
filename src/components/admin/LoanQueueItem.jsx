@@ -1,14 +1,16 @@
 // Pending loan row (build plan §9). Multi-admin aware:
-//   * 0 approvals → this admin is the first; uploads disbursement proof and submits.
-//   * 1+ approvals → first proof wins; second admin views it and confirms (no upload).
+//   * 0 approvals → this admin is the first; submits their signature.
+//   * 1+ approvals → the loan goes active on the signature that meets the threshold.
 //   * Self-loans can never be approved by the same person.
+//
+// No disbursement screenshot is asked for. The group agrees its loans in the
+// meeting, in the room, and the money is handed over there — a screenshot the
+// admin has to find before the button will work only stalls the meeting. The
+// two signatures are the control; the proof never was one.
 import { useState } from 'react'
-import UploadZone from '../ui/UploadZone'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatDate } from '../../lib/format'
 import { approveLoan, rejectLoan } from '../../lib/loans'
-import { buildDisbursementPath, uploadPaymentProof } from '../../lib/storage'
-import { useSignedProof } from '../../hooks/useSignedProof'
 import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
 
@@ -28,12 +30,10 @@ function Row({ label, value, danger }) {
 export default function LoanQueueItem({ loan, onActioned }) {
   const { t } = useLanguage()
   const hasPriorApproval = loan.approvalsCount > 0
-  const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-  const { proofUrl, loadingProof, viewProof, error: proofError } = useSignedProof()
 
   const overLimit = Number(loan.principal) > Number(loan.maxEligible)
   const contribBinds = Number(loan.contributionCeiling) <= Number(loan.assetsCeiling)
@@ -53,18 +53,9 @@ export default function LoanQueueItem({ loan, onActioned }) {
     setError('')
     setBusy(true)
     try {
-      if (hasPriorApproval) {
-        await approveLoan(supabase, loan.id, loan.firstProofUrl)
-      } else {
-        if (!file) {
-          setError(t('Upload the M-Pesa disbursement screenshot first.'))
-          setBusy(false)
-          return
-        }
-        const path = buildDisbursementPath(loan.id, file)
-        await uploadPaymentProof(supabase, file, path)
-        await approveLoan(supabase, loan.id, path)
-      }
+      // approve_loan still takes p_proof_url — 046 only made it nullable, so the
+      // parameter has to be sent explicitly or PostgREST cannot find the function.
+      await approveLoan(supabase, loan.id, null)
       onActioned?.()
     } catch (err) {
       setError(err?.message || t('Could not approve the loan.'))
@@ -189,38 +180,6 @@ export default function LoanQueueItem({ loan, onActioned }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {hasPriorApproval ? (
-            <div>
-              <p className="text-sm font-medium text-slate-700 mb-1">
-                {t('Disbursement proof (from first approver)')}
-              </p>
-              {proofUrl ? (
-                <a href={proofUrl} target="_blank" rel="noreferrer">
-                  <img
-                    src={proofUrl}
-                    alt={t('Disbursement proof')}
-                    className="max-h-48 rounded-lg border border-slate-100"
-                  />
-                </a>
-              ) : (
-                <>
-                  <button
-                    onClick={() => viewProof(loan.firstProofUrl)}
-                    disabled={loadingProof}
-                    className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline underline-offset-2 disabled:opacity-50"
-                  >
-                    {loadingProof ? t('Loading…') : t('View proof')}
-                  </button>
-                  {proofError && <p className="mt-1 text-sm text-red-600">{proofError}</p>}
-                </>
-              )}
-            </div>
-          ) : (
-            <div>
-              <p className="text-sm font-medium text-slate-700 mb-1">{t('Disbursement proof')}</p>
-              <UploadZone file={file} onSelect={setFile} />
-            </div>
-          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           {/* Stacked below sm — see CorrectionsPanel. This card is p-4 nested in
               the queue's own padding, so it has only ~279px at 375px, and

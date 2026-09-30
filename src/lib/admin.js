@@ -354,7 +354,6 @@ export async function getAdminData(supabase, currentAdminId = null) {
         // 2-of-N still holds, and loan_approvals is UNIQUE (loan_id, admin_id), so
         // a borrowing admin still cannot be both signatures on their own loan.
         canApprove: !iApproved,
-        firstProofUrl: approvals[0]?.proof_url ?? null,
       }
     })
     // First-time borrowers first; within each group, oldest request wins.

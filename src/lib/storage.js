@@ -32,13 +32,6 @@ export function buildProofPath({ submissionType, memberId, period, loanId, insta
   }
 }
 
-// Admin disbursement proof path (build plan §7). The admin-upload policy only checks
-// is_admin(), so any path works; we keep it under loan-disbursements/{loan_id}/.
-export function buildDisbursementPath(loanId, file) {
-  const ext = EXT_BY_TYPE[file.type] || 'jpg'
-  return `loan-disbursements/${loanId}/${crypto.randomUUID()}.${ext}`
-}
-
 // Money going OUT to a member — a withdrawal, an exit settlement, or a share-out
 // (migrations 024/025). Uploaded by an admin, so the same is_admin()-only storage
 // policy as disbursements applies and any path works; these are kept grouped by
