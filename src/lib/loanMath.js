@@ -8,8 +8,13 @@
 // it (see hooks/useGroupSettings), fall back to the default where you don't.
 
 // Loan ceilings (whole TZS, floored so we never round above the cap):
-//   - 5x the member's contribution (approved savings + paid monthly fees) at the
-//     time of request, so a borrower is anchored to what they've put in.
+//   - 5x the member's contribution at the time of request, so a borrower is
+//     anchored to what they've put in. Contribution IS savings, and savings is the
+//     three-term sum in lib/savings.js getApprovedSavings: approved deposits +
+//     monthly_fees.amount_paid across every row + approved savings_adjustments.
+//     Migration 047 made `approve_loan` read the same three (via member_savings());
+//     before it, the RPC counted only deposits and fully-paid fees, so a balance
+//     recorded as an adjustment was worth nothing at the approval desk.
 //   - 25% of TOTAL GROUP ASSETS — the pool plus everything out on loan — so one
 //     member can't take a disproportionate share of the group.
 // Effective max = the lower of the two; both must hold.
