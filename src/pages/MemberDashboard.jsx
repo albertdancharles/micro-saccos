@@ -50,7 +50,10 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
       {isView ? (
         <AppHeader
           eyebrow={t('Viewing as admin')}
-          title={viewedName || 'Member'}
+          // The member's own header below has fenced this since the name bug;
+          // this one, which an admin reads, did not — so Eva came back from
+          // Chrome's translator as "Eve". A name is a name in either header.
+          title={viewedName ? <Name>{viewedName}</Name> : t('Member')}
           back={{ to: '/admin', label: t('← Admin') }}
           showControls={false}
         />

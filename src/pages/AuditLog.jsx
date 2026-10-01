@@ -8,6 +8,7 @@ import { useLanguage } from '../hooks/useLanguage'
 import Badge from '../components/ui/Badge'
 import AppHeader from '../components/ui/AppHeader'
 import BottomNav from '../components/ui/BottomNav'
+import Name from '../components/ui/Name'
 
 const ACTION_LABEL = {
   approve_submission: 'Approved payment',
@@ -100,6 +101,10 @@ const ACTION_BADGE = {
   drop_guarantors: 'rejected',
 }
 
+// A row's detail line. Mostly a string; the branches that carry a person return
+// JSX instead, because a name inside a template literal is one text node and a
+// page translator rewrites the lot. <Name> fences the person and leaves the
+// words around them translatable.
 function summary(row, t) {
   const d = row.details || {}
   switch (row.action) {
@@ -116,17 +121,37 @@ function summary(row, t) {
     case 'update_phone':
       return `${d.old || '—'} → ${d.new || '—'}`
     case 'create_member':
-      return `${d.full_name || ''} (${d.email || ''})`
+      return (
+        <>
+          <Name>{d.full_name || ''}</Name> ({d.email || ''})
+        </>
+      )
     case 'request_member_deletion':
-      return `${d.target_name || ''}${d.reason ? ` · reason: ${d.reason}` : ''}`
+      return (
+        <>
+          <Name>{d.target_name || ''}</Name>
+          {d.reason ? ` · reason: ${d.reason}` : ''}
+        </>
+      )
     case 'partial_approve_member_deletion':
       return `${d.approvals}/${d.required} approved`
     case 'execute_member_deletion':
-      return `${d.full_name || ''} (${d.email || ''}) · role: ${d.role || '—'}`
+      return (
+        <>
+          <Name>{d.full_name || ''}</Name> ({d.email || ''}) · role: {d.role || '—'}
+        </>
+      )
     case 'cancel_member_deletion':
       return t('Request cancelled')
     case 'request_savings_edit':
-      return `${d.target_name || ''} · ${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${d.reason || '—'}`
+      return (
+        <>
+          <Name>{d.target_name || ''}</Name>
+          {` · ${Number(d.delta || 0) >= 0 ? '+' : ''}${formatTZS(d.delta || 0)} · reason: ${
+            d.reason || '—'
+          }`}
+        </>
+      )
     case 'partial_approve_savings_edit':
       return `${d.approvals}/${d.required} approved`
     case 'execute_savings_edit':
@@ -142,7 +167,12 @@ function summary(row, t) {
     case 'cancel_pool_edit':
       return t('Request cancelled')
     case 'request_role_change':
-      return `${d.target_name || ''} · ${d.change_type || ''} · reason: ${d.reason || '—'}`
+      return (
+        <>
+          <Name>{d.target_name || ''}</Name>
+          {` · ${d.change_type || ''} · reason: ${d.reason || '—'}`}
+        </>
+      )
     case 'partial_approve_role_change':
       return `${d.approvals}/${d.required} approved`
     case 'execute_role_change':
@@ -193,7 +223,10 @@ function summary(row, t) {
     case 'schedule_notification_drain':
       return `${t('every')} ${d.schedule || '—'}`
     default:
-      return JSON.stringify(d)
+      // The fallback for an action with no case of its own — including the ones
+      // the operations files write, whose payloads carry a member's name. A raw
+      // payload is data, not prose, so none of it is for translating.
+      return <span translate="no">{JSON.stringify(d)}</span>
   }
 }
 
@@ -276,7 +309,15 @@ export default function AuditLog() {
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">{summary(r, t)}</p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {t('by')} {actors[r.actor_id] || (r.actor_id ? t('unknown') : t('system'))}
+                      {/* "by" translates; the admin who acted does not. */}
+                      {t('by')}{' '}
+                      {actors[r.actor_id] ? (
+                        <Name>{actors[r.actor_id]}</Name>
+                      ) : r.actor_id ? (
+                        t('unknown')
+                      ) : (
+                        t('system')
+                      )}
                     </p>
                   </div>
                   <p className="text-xs text-slate-400 shrink-0 whitespace-nowrap tabular-nums">

@@ -39,6 +39,8 @@ function Monogram({ name, isAdmin }) {
   return (
     <span
       aria-hidden="true"
+      // Initials are a name too, cut short: "EV" is as much Eva as "Eva" is.
+      translate="no"
       className={`grid size-9 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
         isAdmin
           ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100'
