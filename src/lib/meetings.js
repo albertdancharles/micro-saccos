@@ -31,6 +31,10 @@ function isoDate(year, monthIndex, day) {
 // Not simply "this month's last Saturday": record_meeting rejects a future date,
 // and for most of a month that Saturday has not happened yet — on the 5th of a
 // month the meeting to record is still last month's.
+//
+// The SQL twin is last_meeting_day() in migration 048, which asks the same
+// question for a different reason: the meeting a loan was handed over at, and so
+// the meeting its first repayment is counted from. Change one, change the other.
 export function lastMeetingOnOrBefore(today = new Date()) {
   const year = today.getFullYear()
   const monthIndex = today.getMonth()

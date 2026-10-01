@@ -3,7 +3,9 @@ import { lastMeetingOnOrBefore, recordSocialContributionForAll } from './meeting
 
 // The group meets on the last Saturday of every month. These dates are the ones
 // migration 043's meeting_day() must also produce — if the two ever disagree, a
-// loan's due date stops landing on a meeting.
+// loan's due date stops landing on a meeting. The reach-back cases are also
+// last_meeting_day() in 048, which anchors a loan's whole schedule to the meeting
+// its money was handed over at: on 2026-10-01 that is still 2026-09-26.
 
 describe('lastMeetingOnOrBefore', () => {
   it('returns this month\'s meeting once it has happened', () => {
