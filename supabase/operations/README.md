@@ -53,9 +53,23 @@ was neither. `2026-09-29_social_fund_290000.sql` is still unverified — the fun
 
 **Migrations to apply alongside these.** None of them are required by the files below — every
 one of these runs against the schema as it stands — but each one is required by the APP once
-these have run, so apply all three around the same sitting. **047 and 048 are applied, verified
-against the live project on 2026-10-01** (`member_savings(uuid)` and `last_meeting_day(date)` both
-resolve there); 044, 045 and 046 are still unconfirmed.
+these have run. **All six are applied, verified against the live project on 2026-10-07**, by
+reading the schema rather than inferring from a screenshot:
+
+| | how it was confirmed |
+|---|---|
+| 043 | `meeting_day(date)` is in `pg_proc`, and `meeting_day('2026-11-15')` returns 2026-11-28 |
+| 044 | `pg_get_viewdef('v_fee_status')` calls `meeting_day()`, so a November fee falls due on the 28th, not the 30th |
+| 045 | `approve_loan` reads both `v_group_assets` (the re-based cap) and `v_group_pool` (the liquidity check) |
+| 046 | `loan_approvals.proof_url` is nullable in `information_schema.columns` |
+| 047 | `member_savings(uuid)` exists and returns 230,000 for a member holding a 220,000 adjustment + 20,000 of fees |
+| 048 | `last_meeting_day(date)` exists and returns 2026-09-26 for today |
+
+November 2026 is the first month where 044 actually bites — the meeting (Sat 28th) and the old
+last-day-of-month rule (Mon 30th) finally differ — so that is the month to watch if anything
+about fee due dates looks wrong. Note `to_regproc('meeting_day(date)')` is NOT a valid check:
+`to_regproc` takes a bare name and returns NULL when handed an argument list, which reads as a
+missing function. Use `to_regprocedure`, or look in `pg_proc` as above.
 
 * `044_meeting_day_fee_due_dates.sql` — a monthly fee falls due at the meeting, not on the last
   day of the month. The September fee file records a collection made at the 26 Sep meeting;
