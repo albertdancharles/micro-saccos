@@ -3,6 +3,11 @@
 import { maxLoan as computeMaxLoan } from './loanMath'
 import { getMemberContribution } from './savings'
 import { getSettings } from './settings'
+// todayEAT lives in fees.js because that is where the group's "what counts as
+// today" rule is written down and tested. installmentsDueNow below has to answer
+// the same question about the same calendar, so it borrows it rather than keeping
+// a second copy that could drift.
+import { todayEAT } from './fees'
 
 // The member's one non-terminal loan (pending or active), if any (Decision #4).
 export async function getCurrentLoan(supabase, memberId) {
@@ -27,6 +32,33 @@ export async function getInstallments(supabase, loanId) {
     .order('installment_number', { ascending: true })
   if (error) throw error
   return data
+}
+
+// The installments that count toward "amount due" today.
+//
+// THE SAME RULE AS feesDueNow, AND FOR THE SAME REASON. A repayment is handed over
+// at the monthly meeting and nowhere else, and since migration 043 the due date IS
+// that meeting — so before it the money is owed for the month but there has been no
+// occasion to pay it.
+//
+// What this replaces: "overdue, or falling in the current month". That counted the
+// whole installment from the 1st, which put a red AMOUNT DUE on the dashboard for
+// four weeks over money the member could not hand over until the last Saturday —
+// while the membership fee falling due at that very same meeting stayed out of the
+// number, because fees already waited for their due date. One meeting, two
+// obligations, two different answers, and no reason for the difference.
+//
+// Note the rule is the due date, not the status: an overdue installment is by
+// definition already past it, and a part-paid one is caught by the same comparison.
+// Cancelled installments are historical (022) and never an obligation.
+//
+// What is coming still shows in the repayment schedule and in "This month" under
+// the card. This governs only the number that claims to be owed right now.
+export function installmentsDueNow(installments, today = todayEAT()) {
+  return (installments || []).filter(
+    (i) =>
+      i.computed_status !== 'paid' && i.computed_status !== 'cancelled' && i.due_date <= today,
+  )
 }
 
 // Admin: raise a loan on a member's behalf. The client-side ceiling check that

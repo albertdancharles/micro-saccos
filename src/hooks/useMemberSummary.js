@@ -6,7 +6,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from './useAuth'
 import { useCoalesced } from './useCoalesced'
 import { getApprovedSavings } from '../lib/savings'
-import { getCurrentLoan, getInstallments } from '../lib/loans'
+import { getCurrentLoan, getInstallments, installmentsDueNow } from '../lib/loans'
 import { getMyFees, feesDueNow } from '../lib/fees'
 
 // 'YYYY-MM' for month comparison (period and due_date are DB date strings, already EAT).
@@ -64,16 +64,13 @@ export function useMemberSummary(overrideMemberId = null) {
       const paidFees = fees.reduce((s, f) => s + Number(f.amount_paid ?? 0), 0)
       const contribution = savings
 
-      // Amount due now = fees the member has actually had a chance to pay (see
-      // feesDueNow) + installments that are overdue or due this month. Cancelled
-      // installments are historical, never an obligation.
+      // Amount due now = everything the member has actually had a chance to pay:
+      // fees and installments alike, each counted once its due date has arrived.
+      // Both fall due at the same monthly meeting, so both answer to the same rule
+      // — see feesDueNow and installmentsDueNow for why waiting for the due date is
+      // the point. Cancelled installments are historical, never an obligation.
       const feesDue = feesDueNow(fees)
-      const instDue = installments.filter(
-        (i) =>
-          i.computed_status !== 'paid' &&
-          i.computed_status !== 'cancelled' &&
-          (i.computed_status === 'overdue' || monthKey(i.due_date) === currentMonthKey),
-      )
+      const instDue = installmentsDueNow(installments)
       const due = [...feesDue, ...instDue]
       const amountDue = due.reduce((s, r) => s + Number(r.total_with_penalty), 0)
       const penaltyDue = due.reduce((s, r) => s + Number(r.penalty_due), 0)
