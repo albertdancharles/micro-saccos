@@ -1098,6 +1098,50 @@ const sw = {
     'Nusu ya kuingia kwake. Hakikisha ni nambari anayoitumia.',
   'Members sign in by phone and PIN. A real email here also enables self-service password reset.':
     'Wanachama huingia kwa simu na PIN. Barua pepe halisi hapa pia huwezesha kubadilisha nywila mwenyewe.',
+
+  // Admin: settling the whole group's month (049)
+  'Settle the month': 'Maliza malipo ya mwezi',
+  'Monthly fees and loan interest for the whole group, in one go.':
+    'Ada za mwezi na riba za mikopo za kikundi kizima, kwa mara moja.',
+  'Fees {fees} · Interest {interest} · Members {n}': 'Ada {fees} · Riba {interest} · Wanachama {n}',
+  'Review and settle everyone': 'Kagua na umalize wote',
+  'Nothing is due right now. Anything waiting for a second signature is under Approvals.':
+    'Hakuna kinachodaiwa sasa. Chochote kinachosubiri saini ya pili kiko kwenye Idhini.',
+  'Could not load the month’s settlement.': 'Imeshindwa kupakia malipo ya mwezi.',
+  'Could not settle the month.': 'Imeshindwa kumaliza malipo ya mwezi.',
+  'Everyone is ticked. Untick anyone who did not pay — they stay owing.':
+    'Wote wamechaguliwa. Ondoa tiki kwa ambaye hajalipa — ataendelea kudaiwa.',
+  'Tick everyone': 'Chagua wote',
+  'Untick everyone': 'Ondoa wote',
+  'Fee': 'Ada',
+  'Loan principal is not settled here. Record a repayment with “Record a payment”.':
+    'Mtaji wa mkopo haumalizwi hapa. Ingiza marejesho kwa “Ingiza malipo”.',
+  'All of this posts immediately on your signature.': 'Yote haya yanaingia mara moja kwa saini yako.',
+  '{amount} of this needs a second admin’s signature: loan interest, and your own money. The rest posts immediately.':
+    '{amount} kati ya hizi zinahitaji saini ya msimamizi wa pili: riba ya mikopo, na fedha zako mwenyewe. Zilizobaki zinaingia mara moja.',
+  'Members {n} · {amount}': 'Wanachama {n} · {amount}',
+  'Settle {amount}': 'Maliza {amount}',
+  'Record {amount} as received? Only do this once the money is really in hand.':
+    'Ingiza {amount} kama zimepokelewa? Fanya hivi tu baada ya kupokea fedha kweli.',
+  'Yes, settle': 'Ndiyo, maliza',
+  'Settling…': 'Inamaliza…',
+  'Done. {amount} is recorded.': 'Imekamilika. {amount} zimeingizwa.',
+  '{amount} is waiting for a second admin’s signature, under Approvals.':
+    '{amount} zinasubiri saini ya msimamizi wa pili, kwenye Idhini.',
+  'Monthly settlement from {name}': 'Malipo ya mwezi kutoka kwa {name}',
+  'Payments {n} · {amount}': 'Malipo {n} · {amount}',
+  'Sign all · {amount}': 'Saini yote · {amount}',
+  'Signing…': 'Inasaini…',
+  'Reject all': 'Kataa yote',
+  'See each payment': 'Angalia kila malipo',
+  'You have already signed these. Another admin has to finish them.':
+    'Tayari umesaini haya. Msimamizi mwingine lazima ayamalize.',
+  'Your own payment here needs another admin.': 'Malipo yako hapa yanahitaji msimamizi mwingine.',
+  'Could not sign the settlement.': 'Imeshindwa kusaini malipo ya mwezi.',
+  'Could not reject the settlement.': 'Imeshindwa kukataa malipo ya mwezi.',
+  'Settled the month': 'Malipo ya mwezi yamemalizwa',
+  'Signed the monthly settlement': 'Malipo ya mwezi yamesainiwa',
+  'Rejected the monthly settlement': 'Malipo ya mwezi yamekataliwa',
 }
 
 export function createTranslator(lang) {

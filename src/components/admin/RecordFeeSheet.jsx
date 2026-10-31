@@ -109,7 +109,7 @@ export default function RecordFeeSheet({ onActioned }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="btn-primary w-full !min-h-12"
+        className="btn-secondary w-full !min-h-12"
       >
         {t('Record monthly fees')}
       </button>

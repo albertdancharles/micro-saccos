@@ -37,6 +37,7 @@ import RequestMemberExitModal from '../components/admin/RequestMemberExitModal'
 import ReconciliationBanner from '../components/admin/ReconciliationBanner'
 import MessagingBanner from '../components/admin/MessagingBanner'
 import PoolChart from '../components/admin/PoolChart'
+import MonthlySettlementSheet from '../components/admin/MonthlySettlementSheet'
 import RecordFeeSheet from '../components/admin/RecordFeeSheet'
 import RecordPaymentModal from '../components/admin/RecordPaymentModal'
 import FileLoanModal from '../components/admin/FileLoanModal'
@@ -112,9 +113,12 @@ export default function AdminDashboard() {
             <PoolChart />
 
             {/* The intake. Members file nothing now (migration 034), so every
-                shilling that enters the system starts on one of these three
-                controls. They sit above the approval queues because recording is
-                the daily work; approving is what happens to what was recorded. */}
+                shilling that enters the system starts on one of these controls.
+                They sit above the approval queues because recording is the daily
+                work; approving is what happens to what was recorded. The settlement
+                is first because it is most of the month's money in one press; the
+                rest are for whatever does not fit it. */}
+            <MonthlySettlementSheet onActioned={refresh} refreshSignal={admin.gridRows} />
             <RecordFeeSheet onActioned={refresh} />
             <div className="grid grid-cols-2 gap-3">
               <button

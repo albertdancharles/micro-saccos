@@ -34,7 +34,9 @@ function AllocRow({ label, value, tone }) {
   )
 }
 
-export default function PaymentQueueItem({ submission, onActioned }) {
+// rejectOnly is for a row inside a monthly settlement (049): the card above it signs
+// the batch as one, so all a row needs of its own is a way to be taken out of it.
+export default function PaymentQueueItem({ submission, onActioned, rejectOnly = false }) {
   const { t } = useLanguage()
   const firstAmount = submission.firstAmount
   const hasPriorApproval = submission.approvalsCount > 0
@@ -278,13 +280,15 @@ export default function PaymentQueueItem({ submission, onActioned }) {
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleApprove}
-              disabled={busy || !submission.canApprove || overCeiling}
-              className="btn-primary flex-1"
-            >
-              {approveLabel}
-            </button>
+            {!rejectOnly && (
+              <button
+                onClick={handleApprove}
+                disabled={busy || !submission.canApprove || overCeiling}
+                className="btn-primary flex-1"
+              >
+                {approveLabel}
+              </button>
+            )}
             <button onClick={() => setRejecting(true)} className="btn-secondary">
               {t('Reject')}
             </button>

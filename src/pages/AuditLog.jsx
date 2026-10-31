@@ -45,6 +45,9 @@ const ACTION_LABEL = {
   // now that members cannot write at all.
   record_payment: 'Recorded payment',
   record_fee_payments: 'Recorded monthly fees',
+  record_monthly_settlement: 'Settled the month',
+  approve_monthly_settlement: 'Signed the monthly settlement',
+  reject_monthly_settlement: 'Rejected the monthly settlement',
   file_loan: 'Filed loan',
   admin_request_withdrawal: 'Opened withdrawal',
   request_payment_void: 'Requested correction',
@@ -89,6 +92,9 @@ const ACTION_BADGE = {
 
   record_payment: 'approved',
   record_fee_payments: 'approved',
+  record_monthly_settlement: 'approved',
+  approve_monthly_settlement: 'approved',
+  reject_monthly_settlement: 'rejected',
   file_loan: 'pending',
   admin_request_withdrawal: 'pending',
   request_payment_void: 'pending',
@@ -185,6 +191,16 @@ function summary(row, t) {
       } · ${d.settled ? 'settled' : `${d.approvals}/${d.required} signed`}`
     case 'record_fee_payments':
       return `${d.entries ?? 0} fee payment(s)`
+    case 'record_monthly_settlement':
+      return `${d.entries ?? 0} payment(s) · ${formatTZS(d.total ?? 0)}${
+        d.awaiting_count ? ` · ${formatTZS(d.awaiting_total ?? 0)} awaiting a signature` : ''
+      }`
+    case 'approve_monthly_settlement':
+      return `${d.signed_count ?? 0} payment(s) · ${formatTZS(d.signed_total ?? 0)}${
+        d.left_count ? ` · ${d.left_count} left for another admin` : ''
+      }`
+    case 'reject_monthly_settlement':
+      return `${d.rejected ?? 0} payment(s) · reason: ${d.reason || '—'}`
     case 'file_loan':
       return `principal ${formatTZS(d.principal ?? 0)}`
     case 'admin_request_withdrawal':
