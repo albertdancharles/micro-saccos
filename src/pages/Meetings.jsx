@@ -175,6 +175,13 @@ function Register({ meeting, names, onChanged }) {
                 )
               : t('Nobody is being fined for this meeting.')}
           </p>
+          {/* Nothing links a cash fine (050) to this register, so pressing the button
+              after one was recorded would charge the same member a second time. */}
+          {preview > 0 && (
+            <p className="text-xs px-3 py-2 rounded-lg bg-amber-50 ring-1 ring-inset ring-amber-200/70 text-amber-800">
+              {t('Already paid this fine in cash through “Record a payment”? Mark that member excused first, or they will be charged twice.')}
+            </p>
+          )}
           <button onClick={applyFines} disabled={busy || preview <= 0} className="btn-danger w-full">
             {busy ? t('Working…') : t('Apply the fines')}
           </button>

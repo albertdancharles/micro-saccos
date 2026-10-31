@@ -26,6 +26,8 @@ const TYPE_LABEL = {
   savings_deposit: 'Savings deposit',
   monthly_fee: 'Monthly fee',
   loan_installment: 'Loan repayment',
+  fine_late: 'Fine for arriving late',
+  fine_absent: 'Fine for missing a meeting',
 }
 
 export default function CorrectionsPanel({ onActioned }) {

@@ -1,6 +1,6 @@
-// Record one payment for a member — savings deposit, a single monthly fee, or a
-// loan repayment. The fee sheet handles the monthly bulk; this is for everything
-// that varies, and for the admin's own money.
+// Record one payment for a member — savings deposit, a single monthly fee, a loan
+// repayment, or a fine for arriving late or missing the meeting. The fee sheet handles
+// the monthly bulk; this is for everything that varies, and for the admin's own money.
 //
 // How many signatures it needs depends on what is being recorded, so the modal says
 // which case applies BEFORE the admin commits. The rule lives in SQL
@@ -10,18 +10,26 @@ import Modal from '../ui/Modal'
 import { supabase } from '../../supabaseClient'
 import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../hooks/useLanguage'
-import { recordPayment } from '../../lib/payments'
+import { useGroupSettings } from '../../hooks/useGroupSettings'
+import { FINE_SETTING, recordPayment } from '../../lib/payments'
 import { formatTZS, formatDate } from '../../lib/format'
 
 const TYPES = [
   { value: 'savings_deposit', label: 'Savings deposit' },
   { value: 'monthly_fee', label: 'Monthly fee' },
   { value: 'loan_installment', label: 'Loan repayment' },
+  { value: 'fine_late', label: 'Fine for arriving late' },
+  { value: 'fine_absent', label: 'Fine for missing a meeting' },
 ]
+
+// Only these two pay against a specific row, so only they get the picker.
+const settlesRow = (type) => type === 'monthly_fee' || type === 'loan_installment'
+const isFine = (type) => type in FINE_SETTING
 
 function Form({ members, onSubmitted, onClose }) {
   const { user, isOverseer } = useAuth()
   const { t } = useLanguage()
+  const { settings, refresh } = useGroupSettings()
   const [memberId, setMemberId] = useState('')
   const [type, setType] = useState('savings_deposit')
   const [relatedId, setRelatedId] = useState('')
@@ -33,7 +41,10 @@ function Form({ members, onSubmitted, onClose }) {
   const isSelf = memberId && memberId === user?.id
   // The overseer settles everything on one signature, their own money included
   // (041), so promising a second admin here would be a lie the RPC then contradicts.
-  const needsTwo = !isOverseer && (isSelf || type !== 'monthly_fee')
+  const needsTwo = !isOverseer && (isSelf || (type !== 'monthly_fee' && !isFine(type)))
+  // Read from the settings the group voted. Undefined only if they failed to load, and
+  // then the RPC, which holds the same ceiling, is the one to say so.
+  const fineCeiling = settings[FINE_SETTING[type]]
 
   // What this member can actually pay against, for the two types that settle a
   // specific row. Refetched whenever the member or type changes so the picker can
@@ -41,7 +52,7 @@ function Form({ members, onSubmitted, onClose }) {
   const loadOptions = useCallback(async () => {
     setOptions([])
     setRelatedId('')
-    if (!supabase || !memberId || type === 'savings_deposit') return
+    if (!supabase || !memberId || !settlesRow(type)) return
     try {
       if (type === 'monthly_fee') {
         const { data, error: err } = await supabase
@@ -90,6 +101,12 @@ function Form({ members, onSubmitted, onClose }) {
     }
   }, [memberId, type, t])
 
+  // The provider loads settings once. A form left open across a vote on the fines would
+  // otherwise fill in the old amount and refuse the new one until someone reloaded.
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
   useEffect(() => {
     // load() sets a loading/reset flag synchronously before it awaits. That is
     // the one render the rule is warning about, and it is the intended one:
@@ -104,20 +121,41 @@ function Form({ members, onSubmitted, onClose }) {
     if (hit && !amount) setAmount(String(hit.suggested))
   }
 
+  // A fine's amount is the group's, so it arrives filled in. It is taken away again on
+  // the way out: left in the box, 4,000 would quietly become a deposit of 4,000.
+  function changeType(next) {
+    setType(next)
+    setError('')
+    if (isFine(next)) {
+      const fine = Number(settings[FINE_SETTING[next]])
+      setAmount(fine > 0 ? String(fine) : '')
+    } else if (isFine(type)) {
+      setAmount('')
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     if (!memberId) return setError(t('Choose a member.'))
     if (!(Number(amount) > 0)) return setError(t('Enter an amount greater than zero.'))
-    if (type !== 'savings_deposit' && !relatedId) {
+    if (settlesRow(type) && !relatedId) {
       return setError(t('Choose which fee or installment this payment settles.'))
+    }
+    if (isFine(type) && fineCeiling !== undefined && Number(amount) > Number(fineCeiling)) {
+      return setError(
+        t('This fine is {amount}. Enter what actually arrived, up to that amount.').replace(
+          '{amount}',
+          formatTZS(fineCeiling),
+        ),
+      )
     }
     setBusy(true)
     try {
       await recordPayment(supabase, {
         memberId,
         submissionType: type,
-        relatedId: type === 'savings_deposit' ? null : relatedId,
+        relatedId: settlesRow(type) ? relatedId : null,
         amount: Number(amount),
       })
       onSubmitted?.()
@@ -158,7 +196,7 @@ function Form({ members, onSubmitted, onClose }) {
         <select
           id="rec-type"
           value={type}
-          onChange={(e) => setType(e.target.value)}
+          onChange={(e) => changeType(e.target.value)}
           className="input-field"
         >
           {TYPES.map((o) => (
@@ -169,7 +207,7 @@ function Form({ members, onSubmitted, onClose }) {
         </select>
       </div>
 
-      {type !== 'savings_deposit' && (
+      {settlesRow(type) && (
         <div>
           <label htmlFor="rec-related" className="block text-sm font-medium text-slate-700 mb-1">
             {type === 'monthly_fee' ? t('Which fee') : t('Which installment')}
@@ -214,6 +252,11 @@ function Form({ members, onSubmitted, onClose }) {
         <p className="mt-1 text-xs text-slate-500">
           {t('Enter what actually arrived, not what was owed.')}
         </p>
+        {isFine(type) && (
+          <p className="mt-1 text-xs text-slate-500">
+            {t('This goes into the group’s money for lending. It does not add to the member’s savings.')}
+          </p>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

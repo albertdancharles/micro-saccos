@@ -488,6 +488,7 @@ const sw = {
   // Admin recording (migrations 036–037). Members file nothing; admins key it all.
   'Record monthly fees': 'Ingiza ada za mwezi',
   'Record a payment': 'Ingiza malipo',
+  'Record payment': 'Ingiza malipo',
   'File a loan': 'Fungua mkopo',
   'Open a withdrawal': 'Fungua utoaji',
   'Close': 'Funga',
@@ -515,6 +516,12 @@ const sw = {
   'you': 'wewe',
   'Enter what actually arrived, not what was owed.':
     'Weka kilichopokelewa kweli, si kilichodaiwa.',
+  'Already paid this fine in cash through “Record a payment”? Mark that member excused first, or they will be charged twice.':
+    'Ameshalipa faini hii taslimu kupitia “Ingiza malipo”? Mweke kuwa ana udhuru kwanza, la sivyo atatozwa mara mbili.',
+  'This goes into the group’s money for lending. It does not add to the member’s savings.':
+    'Hii inaingia kwenye fedha za kikundi kwa ajili ya mikopo. Haiongezi akiba ya mwanachama.',
+  'This fine is {amount}. Enter what actually arrived, up to that amount.':
+    'Faini hii ni {amount}. Weka kilichopokelewa kweli, kisichozidi kiasi hicho.',
   'Could not load what this member owes.': 'Haikuweza kupakia madeni ya mwanachama huyu.',
   'Could not record the payment.': 'Haikuweza kuingiza malipo.',
   'Recording…': 'Inaingiza…',

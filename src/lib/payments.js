@@ -2,10 +2,18 @@
 // direct member INSERT is gone — 034 dropped the policy that allowed it, so these
 // all go through admin RPCs now.
 
+// The fines a member can hand over at a meeting (050), each with the group setting
+// that holds its amount. They settle no row of their own, and they go to the group:
+// nothing that computes a member's savings counts them.
+export const FINE_SETTING = {
+  fine_late: 'attendance_fine_late',
+  fine_absent: 'attendance_fine_absent',
+}
+
 // Record one payment for a member. Casts the recording admin's signature too, and
 // settles immediately if that already meets the row's threshold: one signature for
-// another member's monthly fee, two for a savings deposit or a repayment, and two
-// always for the admin's own money.
+// another member's monthly fee or fine, two for a savings deposit or a repayment, and
+// two always for the admin's own money.
 export async function recordPayment(
   supabase,
   { memberId, submissionType, relatedId = null, amount, proofUrl = null },
