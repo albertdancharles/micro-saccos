@@ -3,6 +3,7 @@
 // inline with the amount column. Cancelled installments stay hidden.
 import Badge from '../ui/Badge'
 import { formatTZS, formatDate } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 import { useLanguage } from '../../hooks/useLanguage'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
@@ -35,15 +36,16 @@ function ObligationRow({ title, subtitle, penalty, total, status, paid = 0 }) {
   )
 }
 
-export default function ObligationsCard({ fees, installments, currentMonthKey }) {
+export default function ObligationsCard({ fees, installments, loans = [], currentMonthKey }) {
   const { t } = useLanguage()
   const fee = fees.find((f) => monthKey(f.period) === currentMonthKey) || null
-  const inst =
-    installments.find(
-      (i) => monthKey(i.due_date) === currentMonthKey && i.computed_status !== 'cancelled',
-    ) || null
+  // One per loan: a member with two loans owes both of them at this meeting.
+  const dueThisMonth = installments.filter(
+    (i) => monthKey(i.due_date) === currentMonthKey && i.computed_status !== 'cancelled',
+  )
+  const activeLoans = loans.filter((l) => l.status === 'active')
 
-  if (!fee && !inst) return null
+  if (!fee && !dueThisMonth.length) return null
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card">
@@ -63,16 +65,21 @@ export default function ObligationsCard({ fees, installments, currentMonthKey })
             status={fee.computed_status}
           />
         )}
-        {inst && (
+        {dueThisMonth.map((inst) => (
           <ObligationRow
-            title={t('Loan installment {n}').replace('{n}', inst.installment_number)}
+            key={inst.id}
+            title={
+              activeLoans.length > 1
+                ? loanLabel(activeLoans.find((l) => l.id === inst.loan_id), t)
+                : t('Loan installment {n}').replace('{n}', inst.installment_number)
+            }
             subtitle={`${Number(inst.principal_due) > 0 ? t('Principal + interest') : t('Interest')} · ${t('due')} ${formatDate(inst.due_date)}`}
             penalty={Number(inst.penalty_due)}
             total={Number(inst.total_with_penalty)}
             paid={Number(inst.interest_paid ?? 0) + Number(inst.principal_paid ?? 0)}
             status={inst.computed_status}
           />
-        )}
+        ))}
       </ul>
     </section>
   )

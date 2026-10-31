@@ -221,5 +221,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, tests;
 
+-- Run as if today were `p_today`. A loan's term now depends on the month it was
+-- issued in (051), so the date itself is what some tests are checking. Replaces
+-- today_eat() inside the test file's transaction, which ROLLBACK then undoes.
+CREATE OR REPLACE FUNCTION tests.as_of(p_today date)
+RETURNS void AS $$
+BEGIN
+  EXECUTE format(
+    $f$CREATE OR REPLACE FUNCTION public.today_eat() RETURNS date
+       AS $b$ SELECT %L::date $b$ LANGUAGE sql STABLE$f$,
+    p_today);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Give every new loan a term of `p_months`, whatever month the suite runs in. For
+-- suites about something else that need a loan with a known number of installments;
+-- without this they would pass in September and fail in November. Rolled back with
+-- the test file, like as_of.
+CREATE OR REPLACE FUNCTION tests.fix_loan_term(p_months int)
+RETURNS void AS $$
+BEGIN
+  EXECUTE format(
+    $f$CREATE OR REPLACE FUNCTION public.loan_term_months(p_anchor date) RETURNS int
+       AS $b$ SELECT %s $b$ LANGUAGE sql IMMUTABLE$f$,
+    p_months);
+END;
+$$ LANGUAGE plpgsql;
+
 GRANT USAGE ON SCHEMA tests TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA tests TO authenticated;

@@ -23,6 +23,7 @@ import {
   summarise,
 } from '../../lib/settlement'
 import { formatMonth, formatTZS } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 
 export default function MonthlySettlementSheet({ onActioned, refreshSignal }) {
   const { user } = useAuth()
@@ -337,6 +338,7 @@ function MemberRow({ member, index, isYou, unticked, onToggleMember, onToggleRow
           <RowChip
             key={rowKey(row)}
             row={row}
+            showLoan={new Set(member.rows.map((r) => r.loan_id).filter(Boolean)).size > 1}
             on={!unticked.has(rowKey(row))}
             onToggle={() => onToggleRow(row)}
           />
@@ -347,11 +349,17 @@ function MemberRow({ member, index, isYou, unticked, onToggleMember, onToggleRow
 }
 
 // One thing this member owes. The month is shown because a member in arrears has more
-// than one of each, and those are different debts.
-function RowChip({ row, on, onToggle }) {
+// than one of each, and those are different debts. So are two loans in one month, which
+// would otherwise read the same.
+function RowChip({ row, showLoan, on, onToggle }) {
   const { t } = useLanguage()
   const isFee = row.kind === 'fee'
-  const label = `${isFee ? t('Fee') : t('Interest')} · ${formatMonth(isFee ? row.period : row.due_date)}`
+  const month = formatMonth(isFee ? row.period : row.due_date)
+  const label = `${isFee ? t('Fee') : t('Interest')} · ${month}${
+    showLoan && !isFee
+      ? ` · ${loanLabel({ principal: row.loan_principal, disbursed_at: row.loan_issued_at }, t)}`
+      : ''
+  }`
   return (
     <label
       className={`inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs ring-1 ring-inset transition-colors ${

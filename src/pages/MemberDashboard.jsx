@@ -92,18 +92,28 @@ export default function MemberDashboard({ viewAs = null, viewedName = null }) {
               totalAssets={summary.totalAssets}
               savings={summary.savings}
               contribution={summary.contribution}
-              loan={summary.loan}
+              loans={summary.loans}
               amountDue={summary.amountDue}
               penaltyDue={summary.penaltyDue}
             />
             <ObligationsCard
               fees={summary.fees}
               installments={summary.installments}
+              loans={summary.loans}
               currentMonthKey={summary.currentMonthKey}
             />
-            <LoanProgressBar loan={summary.loan} installments={summary.installments} />
+            {summary.loans
+              .filter((loan) => loan.status === 'active')
+              .map((loan) => (
+                <LoanProgressBar
+                  key={loan.id}
+                  loan={loan}
+                  installments={summary.installments.filter((i) => i.loan_id === loan.id)}
+                />
+              ))}
             <RepaymentSchedule
               installments={summary.installments}
+              loans={summary.loans}
               currentMonthKey={summary.currentMonthKey}
             />
             <SavingsChart memberId={viewAs} />

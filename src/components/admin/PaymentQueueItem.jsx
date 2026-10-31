@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatTZS, formatMonth, formatDate } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 import { approveSubmission, rejectSubmission } from '../../lib/payments'
 import { allocateFeePayment, allocateInstallmentPayment } from '../../lib/allocation'
 import { useSignedProof } from '../../hooks/useSignedProof'
@@ -135,6 +136,7 @@ export default function PaymentQueueItem({ submission, onActioned, rejectOnly = 
             )}
             {submission.submission_type === 'loan_installment' && submission.installmentNumber && (
               <>
+                {submission.paidLoan ? ` · ${loanLabel(submission.paidLoan, t)}` : ''}
                 {' '}· #{submission.installmentNumber}
                 {submission.dueDate
                   ? ` · ${t('due')} ${formatDate(submission.dueDate)}`

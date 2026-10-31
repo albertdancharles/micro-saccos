@@ -2,7 +2,8 @@
 // so we fetch the small datasets once and join client-side (15 members → trivial).
 // Returns everything the admin dashboard renders: stats, the member grid, and the
 // pending loan + payment queues.
-import { contributionCeiling, assetsCeiling, maxLoan } from './loanMath'
+import { contributionCeiling, assetsCeiling, maxLoan, remainingLoanRoom } from './loanMath'
+import { combineInstallments } from './loans'
 import { SETTING_DEFAULTS } from './settings'
 
 const monthKey = (s) => (s ? String(s).slice(0, 7) : '')
@@ -215,10 +216,13 @@ export async function getAdminData(supabase, currentAdminId = null) {
   for (const f of fees) if (f.period === currentPeriod) feeByMember[f.member_id] = f
 
   const memberByLoan = Object.fromEntries(loans.map((l) => [l.id, l.member_id]))
-  const currentInstByMember = {}
+  // A list per member: with several loans (051) they can owe several in one month.
+  const currentInstsByMember = {}
   for (const i of installments) {
     const memberId = memberByLoan[i.loan_id]
-    if (memberId && monthKey(i.due_date) === currentMonthKey) currentInstByMember[memberId] = i
+    if (memberId && monthKey(i.due_date) === currentMonthKey) {
+      ;(currentInstsByMember[memberId] ||= []).push(i)
+    }
   }
 
   const pool = Number(poolRes.data?.pool_balance_tzs ?? 0)
@@ -262,7 +266,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
   // Grid: one row per active member (admin included, Decision #1).
   const gridRows = profiles.map((p) => {
     const fee = feeByMember[p.id] || null
-    const installment = currentInstByMember[p.id] || null
+    const installment = combineInstallments(currentInstsByMember[p.id])
     const statuses = [fee?.computed_status, installment?.computed_status].filter(Boolean)
     let overall = 'pending'
     if (statuses.includes('overdue')) overall = 'overdue'
@@ -324,6 +328,13 @@ export async function getAdminData(supabase, currentAdminId = null) {
     loans.filter((l) => l.status === 'active' || l.status === 'closed').map((l) => l.member_id),
   )
 
+  // What each member owes across their active loans, which the ceiling now covers (051).
+  const owedByMember = {}
+  for (const l of loans.filter((loan) => loan.status === 'active')) {
+    owedByMember[l.member_id] =
+      (owedByMember[l.member_id] || 0) + Number(l.outstanding_principal ?? l.principal ?? 0)
+  }
+
   const pendingLoans = pendingLoansArr
     .map((l) => {
       const savings = savingsByMember[l.member_id] || 0
@@ -333,16 +344,20 @@ export async function getAdminData(supabase, currentAdminId = null) {
       const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
       const iApproved = !!(currentAdminId && approvals.some((a) => a.admin_id === currentAdminId))
       const isSelf = currentAdminId === l.member_id
+      const maxEligible = maxLoan(contribution, totalAssets, {
+        fraction: settings.pool_loan_fraction,
+        multiplier: settings.contribution_multiplier,
+      })
+      const alreadyOwed = owedByMember[l.member_id] || 0
       return {
         ...l,
         memberName: profileName[l.member_id] || 'Unknown',
         contribution,
         contributionCeiling: contributionCeiling(contribution, settings.contribution_multiplier),
         assetsCeiling: assetsCap,
-        maxEligible: maxLoan(contribution, totalAssets, {
-          fraction: settings.pool_loan_fraction,
-          multiplier: settings.contribution_multiplier,
-        }),
+        maxEligible,
+        alreadyOwed,
+        canStillBorrow: remainingLoanRoom(maxEligible, alreadyOwed),
         hasPriorLoan: everBorrowed.has(l.member_id),
         approvalsCount: approvals.length,
         requiredApprovals,
@@ -378,6 +393,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
     // remaining principal — the ceiling on early repayment.
     let obligation = null
     let outstanding = 0
+    let paidLoan = null
     if (s.submission_type === 'monthly_fee' && feeById[s.related_id]) {
       const fee = feeById[s.related_id]
       suggested = Number(fee.total_with_penalty)
@@ -393,6 +409,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
       obligation = inst
       const loan = loans.find((l) => l.id === inst.loan_id)
       outstanding = Number(loan?.outstanding_principal ?? loan?.principal ?? 0)
+      paidLoan = loan ?? null
     }
     const approvals = subApprovalsBy[s.id] || []
     const approverNames = approvals.map((a) => profileName[a.admin_id] || 'unknown')
@@ -411,6 +428,7 @@ export async function getAdminData(supabase, currentAdminId = null) {
       dueDate,
       obligation,
       outstanding,
+      paidLoan,
       approvalsCount: approvals.length,
       requiredApprovals,
       approverNames,

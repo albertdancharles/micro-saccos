@@ -43,6 +43,13 @@ export const contributionCeiling = (contribution, multiplier = CONTRIBUTION_LOAN
 export const maxLoan = (contribution, totalAssets, { fraction, multiplier } = {}) =>
   Math.min(contributionCeiling(contribution, multiplier), assetsCeiling(totalAssets, fraction))
 
+// What is left of a ceiling. Since 051 it covers everything the member owes, so a
+// second or third loan only gets what the others have not used. `pending` counts too
+// here, though approve_loan does not need it: it re-checks at every signature, and
+// this is only so an admin is not shown room that another filed loan will take.
+export const remainingLoanRoom = (ceiling, owed = 0, pending = 0) =>
+  Math.max(0, Number(ceiling) - Number(owed) - Number(pending))
+
 // Flat monthly interest = principal x rate, whole shillings (Decision #2).
 export const monthlyInterest = (principal, rate = LOAN_INTEREST_RATE) =>
   Math.round(Number(principal) * Number(rate))

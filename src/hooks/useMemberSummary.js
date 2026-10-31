@@ -1,12 +1,12 @@
 // Member summary (build plan §3 item 15, §9). Aggregates everything the member
-// dashboard renders: group pool, my savings, my current loan + schedule, my fees,
+// dashboard renders: group pool, my savings, my loans + their schedules, my fees,
 // and the derived "amount due" (incl. live penalties from the money views).
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from './useAuth'
 import { useCoalesced } from './useCoalesced'
 import { getApprovedSavings } from '../lib/savings'
-import { getCurrentLoan, getInstallments, installmentsDueNow } from '../lib/loans'
+import { getOpenLoans, getInstallmentsFor, installmentsDueNow } from '../lib/loans'
 import { getMyFees, feesDueNow } from '../lib/fees'
 
 // 'YYYY-MM' for month comparison (period and due_date are DB date strings, already EAT).
@@ -20,7 +20,7 @@ const EMPTY = {
   savings: 0,
   paidFees: 0,
   contribution: 0,
-  loan: null,
+  loans: [],
   fees: [],
   installments: [],
   currentMonthKey: '',
@@ -41,9 +41,9 @@ export function useMemberSummary(overrideMemberId = null) {
   const load = useCallback(async () => {
     if (!supabase || !memberId) return
     try {
-      const [savings, loan, fees, assetsRes] = await Promise.all([
+      const [savings, loans, fees, assetsRes] = await Promise.all([
         getApprovedSavings(supabase, memberId),
-        getCurrentLoan(supabase, memberId),
+        getOpenLoans(supabase, memberId),
         getMyFees(supabase, memberId),
         supabase
           .from('v_group_assets')
@@ -52,7 +52,11 @@ export function useMemberSummary(overrideMemberId = null) {
       ])
       if (assetsRes.error) throw assetsRes.error
 
-      const installments = loan?.status === 'active' ? await getInstallments(supabase, loan.id) : []
+      // A pending loan has no schedule yet, and must not hide the ones that do.
+      const installments = await getInstallmentsFor(
+        supabase,
+        loans.filter((l) => l.status === 'active').map((l) => l.id),
+      )
 
       // Current month = the latest fee period (fees are generated monthly).
       const currentMonthKey = fees.length ? monthKey(fees[0].period) : ''
@@ -82,7 +86,7 @@ export function useMemberSummary(overrideMemberId = null) {
         savings,
         paidFees,
         contribution,
-        loan,
+        loans,
         fees,
         installments,
         currentMonthKey,

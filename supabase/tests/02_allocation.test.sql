@@ -23,6 +23,10 @@ DECLARE
   v_penalty numeric;
   v_r       record;
 BEGIN
+  -- A term that holds whatever month this runs in (051): the waterfall needs a loan
+  -- with interest-only rows before its final one.
+  PERFORM tests.fix_loan_term(3);
+
   v_admin  := tests.make_admin('Alloc Admin');
   v_member := tests.make_member('Alloc Member');
   v_funder := tests.make_member('Alloc Funder');

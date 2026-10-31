@@ -46,6 +46,24 @@ export function lastMeetingOnOrBefore(today = new Date()) {
   return isoDate(prevYear, prevMonth, lastSaturdayOf(prevYear, prevMonth))
 }
 
+// How long a loan issued today runs: every loan ends at the next March, June,
+// September or December meeting, counted from the meeting just gone so a late
+// recording changes nothing. One issued AT a quarter-end meeting runs the whole next
+// quarter. Returns { months, dueDate } for showing the terms while an admin types.
+//
+// The SQL twin is loan_term_months() in migration 051, which is what actually writes
+// the schedule. Change one, change the other.
+export function quarterEndAfter(today = new Date()) {
+  const [year, month] = lastMeetingOnOrBefore(today).split('-').map(Number)
+  const months = 3 - (month % 3)
+  const dueYear = month + months > 12 ? year + 1 : year
+  const dueMonthIndex = (month + months - 1) % 12
+  return {
+    months,
+    dueDate: isoDate(dueYear, dueMonthIndex, lastSaturdayOf(dueYear, dueMonthIndex)),
+  }
+}
+
 export async function getMeetings(supabase) {
   const { data, error } = await supabase
     .from('meetings')

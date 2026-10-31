@@ -10,6 +10,10 @@
 -- from under a schedule that has since moved on is worse than no reversal at all,
 -- so the refusals are tested as carefully as the successes.
 
+-- A term that holds whatever month this runs in (051): the refusals need a loan with
+-- a later installment to move on to.
+SELECT tests.fix_loan_term(3);
+
 -- ============================================================================
 -- A. A mistyped savings deposit. The simplest case: one flag.
 -- ============================================================================

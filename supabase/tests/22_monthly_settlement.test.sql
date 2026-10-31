@@ -11,6 +11,10 @@
 --   * It is all-or-nothing, and what posts is exactly what the admin was shown.
 --   * It does not send one notification per row. Each is a billable SMS (026).
 
+-- A term that holds whatever month this runs in (051): these blocks need a loan
+-- with interest-only rows before its final one.
+SELECT tests.fix_loan_term(3);
+
 -- A clean group for each block: the file runs in one transaction, so admins and
 -- members from the block above would otherwise still be active and on the sheet.
 CREATE FUNCTION pg_temp.fresh_group() RETURNS void AS $$

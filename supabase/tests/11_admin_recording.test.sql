@@ -248,11 +248,10 @@ BEGIN
   PERFORM tests.eq((SELECT status FROM loans WHERE id = v_loan), 'pending',
     'filing a loan does not disburse it');
 
-  -- The one-open-loan rule (Decision #4) is enforced in SQL for the first time;
-  -- it used to live only in the client, which made it a disabled button, not a rule.
+  -- Since 051 a member may hold up to three loans; 24_several_loans covers that
+  -- limit. Here, only that a member who already has one is not turned away.
   PERFORM tests.as_user(v_a1);
-  PERFORM tests.raises(format($q$ SELECT file_loan(%L, 10000) $q$, v_m),
-    'a member cannot have two loans in progress');
+  PERFORM file_loan(v_m, 10000);
   PERFORM tests.as_owner();
 
   PERFORM tests.as_user(v_a1);

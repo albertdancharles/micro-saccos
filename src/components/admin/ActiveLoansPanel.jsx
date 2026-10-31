@@ -1,8 +1,10 @@
 // Active loans, riskiest first (migration 022). `risk` comes from v_loan_risk,
 // which derives non-performance from the installment record — two or more overdue
-// installments — so it is always current and never needs an admin to set a flag.
+// installments, or overdue principal (051) — so it is always current and never needs
+// an admin to set a flag. A member with two loans has two rows here.
 import { useState } from 'react'
 import { formatTZS } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 import { useLanguage } from '../../hooks/useLanguage'
 import RequestLoanActionModal from './RequestLoanActionModal'
 
@@ -15,6 +17,7 @@ function LoanRow({ loan, onAction }) {
       <div className="min-w-0">
         <p className="text-sm font-medium text-slate-900 truncate" translate="no">{loan.memberName}</p>
         <p className="text-xs text-slate-500 mt-0.5">
+          {loanLabel(loan, t)} ·{' '}
           {atRisk
             ? t('{n} overdue · {d} days')
                 .replace('{n}', loan.risk.overdue_installments)

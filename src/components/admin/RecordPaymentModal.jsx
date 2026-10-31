@@ -13,6 +13,7 @@ import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
 import { FINE_SETTING, recordPayment } from '../../lib/payments'
 import { formatTZS, formatDate } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 
 const TYPES = [
   { value: 'savings_deposit', label: 'Savings deposit' },
@@ -74,7 +75,7 @@ function Form({ members, onSubmitted, onClose }) {
       } else {
         const { data: loans, error: le } = await supabase
           .from('loans')
-          .select('id')
+          .select('id, principal, disbursed_at')
           .eq('member_id', memberId)
           .eq('status', 'active')
         if (le) throw le
@@ -86,14 +87,19 @@ function Form({ members, onSubmitted, onClose }) {
           .not('status', 'in', '("paid","cancelled")')
           .order('installment_number', { ascending: true })
         if (ie) throw ie
+        // With two loans there are two #1s, so each option has to say whose it is.
+        const whichLoan = (i) =>
+          loans.length > 1 ? `${loanLabel(loans.find((l) => l.id === i.loan_id), t)} · ` : ''
         setOptions(
-          data.map((i) => ({
-            id: i.id,
-            label: `#${i.installment_number} — ${formatDate(i.due_date)} — ${formatTZS(
-              i.total_with_penalty,
-            )}`,
-            suggested: Number(i.total_with_penalty),
-          })),
+          [...data]
+            .sort((a, b) => a.due_date.localeCompare(b.due_date))
+            .map((i) => ({
+              id: i.id,
+              label: `${whichLoan(i)}#${i.installment_number} — ${formatDate(i.due_date)} — ${formatTZS(
+                i.total_with_penalty,
+              )}`,
+              suggested: Number(i.total_with_penalty),
+            })),
         )
       }
     } catch (err) {

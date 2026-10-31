@@ -3,9 +3,10 @@
 // UI/UX Pro Max: motion-meaning (segment fill = progress), state clarity
 // (paid / part paid / overdue / cancelled / pending), tabular nums.
 //
-// The segment count is derived, not fixed at three: the term is a group setting
-// (020) and a restructure (022) appends further installments.
+// One bar per loan. The segment count is derived: a loan runs to the next quarter-end
+// meeting (051), so it has one to three, and a restructure (022) appends further ones.
 import { formatDate, formatTZS } from '../../lib/format'
+import { loanLabel } from '../../lib/loans'
 import { useLanguage } from '../../hooks/useLanguage'
 
 export default function LoanProgressBar({ loan, installments }) {
@@ -24,7 +25,7 @@ export default function LoanProgressBar({ loan, installments }) {
     <section className="rounded-2xl border border-slate-200/70 bg-white p-4 sm:p-5 shadow-card">
       <div className="flex items-baseline justify-between mb-3">
         <h2 className="text-[13px] font-semibold tracking-tight text-slate-900">
-          {t('Loan progress')}
+          {t('Loan progress')} · {loanLabel(loan, t)}
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
           {t('{paid} / {total} paid').replace('{paid}', paidCount).replace('{total}', live.length)}

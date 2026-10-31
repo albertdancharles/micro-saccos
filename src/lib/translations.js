@@ -844,7 +844,25 @@ const sw = {
   'Limited by {n}× your savings.': 'Imezuiwa na mara {n} ya akiba yako.',
   'Both rules cap at the same amount.': 'Sheria zote mbili zinafikia kiasi sawa.',
   'Limited by {n}% of total group assets.': 'Imezuiwa na {n}% ya jumla ya mali ya kikundi.',
-  'Available once your current loan is closed.': 'Itapatikana mkopo wako wa sasa ukifungwa.',
+  'You already owe {amount}.': 'Tayari unadaiwa {amount}.',
+  'You have {n} loans in progress. One must be repaid before another.':
+    'Una mikopo {n} inayoendelea. Mmoja lazima ulipwe kabla ya mwingine.',
+  '{n} loans': 'Mikopo {n}',
+  'Loan of {amount}': 'Mkopo wa {amount}',
+  'Already owes': 'Tayari anadaiwa',
+  'Can still borrow': 'Bado anaweza kukopa',
+  'Above the {amount} they can still borrow, counting their other loans — it may be refused at approval.':
+    'Zaidi ya {amount} anayoweza kukopa bado, ukihesabu mikopo yake mingine — inaweza kukataliwa wakati wa kuidhinisha.',
+  'With what they already owe, this goes over the {cap} cap; the database will reject the approval.':
+    'Pamoja na deni lake la sasa, hii inazidi kikomo cha {cap}; mfumo utakataa kuidhinisha.',
+  'This member already has {n} loans in progress. One must be repaid or rejected first.':
+    'Mwanachama huyu tayari ana mikopo {n} inayoendelea. Mmoja lazima ulipwe au ukataliwe kwanza.',
+  'Due {date}, with one interest payment of {amount}.':
+    'Inatakiwa {date}, pamoja na malipo moja ya riba ya {amount}.',
+  'Due {date}, with {n} monthly interest payments of {amount}.':
+    'Inatakiwa {date}, pamoja na malipo {n} ya riba ya kila mwezi ya {amount}.',
+  'Default term when restructuring a loan (months)':
+    'Muda wa kawaida wa kupanga upya mkopo (miezi)',
 
   // Obligations card
   'This month': 'Mwezi huu',

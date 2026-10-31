@@ -35,7 +35,9 @@ export default function LoanQueueItem({ loan, onActioned }) {
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
 
-  const overLimit = Number(loan.principal) > Number(loan.maxEligible)
+  // 051: what they already owe has used part of the ceiling.
+  const overLimit = Number(loan.principal) > Number(loan.canStillBorrow)
+  const alreadyOwes = Number(loan.alreadyOwed) > 0
   const contribBinds = Number(loan.contributionCeiling) <= Number(loan.assetsCeiling)
 
   // Both caps are group settings now (020), so the labels have to track the vote
@@ -144,11 +146,19 @@ export default function LoanQueueItem({ loan, onActioned }) {
         <Row label={assetsLabel} value={formatTZS(loan.assetsCeiling)} />
         <div className="border-t border-slate-200 my-1" />
         <Row label={t('Max eligible')} value={formatTZS(loan.maxEligible)} />
+        {alreadyOwes && (
+          <>
+            <Row label={t('Already owes')} value={formatTZS(loan.alreadyOwed)} />
+            <Row label={t('Can still borrow')} value={formatTZS(loan.canStillBorrow)} />
+          </>
+        )}
         <Row label={t('Requested')} value={formatTZS(loan.principal)} danger={overLimit} />
         {overLimit && (
           <p className="text-xs text-red-600 pt-1">
-            {t('Exceeds the {cap} cap; the database will reject the approval.')
-              .replace('{cap}', contribBinds ? contribLabel : assetsLabel)}
+            {(alreadyOwes
+              ? t('With what they already owe, this goes over the {cap} cap; the database will reject the approval.')
+              : t('Exceeds the {cap} cap; the database will reject the approval.')
+            ).replace('{cap}', contribBinds ? contribLabel : assetsLabel)}
           </p>
         )}
       </div>

@@ -48,7 +48,7 @@ BEGIN
                      WHERE id = v_loan AND disbursement_proof_url IS NULL),
                    1, 'the loan records no proof, rather than an empty string');
   PERFORM tests.eq((SELECT count(*)::numeric FROM loan_installments WHERE loan_id = v_loan),
-                   setting('default_loan_months'),
+                   loan_term_months(last_meeting_day(today_eat()))::numeric,
                    'the schedule is generated exactly as it is with a proof');
   PERFORM tests.assert_balanced('a loan approved without a proof');
 

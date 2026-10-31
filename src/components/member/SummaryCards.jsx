@@ -4,7 +4,8 @@
 // Honors UI/UX Pro Max §6 typography (tabular nums), §5 layout, §4 elevation.
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
-import { contributionCeiling, assetsCeiling, maxLoan } from '../../lib/loanMath'
+import { contributionCeiling, assetsCeiling, maxLoan, remainingLoanRoom } from '../../lib/loanMath'
+import { MAX_OPEN_LOANS, summariseLoans } from '../../lib/loans'
 import { useLanguage } from '../../hooks/useLanguage'
 import { useGroupSettings } from '../../hooks/useGroupSettings'
 
@@ -45,7 +46,7 @@ export default function SummaryCards({
   totalAssets = 0,
   savings,
   contribution,
-  loan,
+  loans = [],
   amountDue,
   penaltyDue,
 }) {
@@ -54,22 +55,26 @@ export default function SummaryCards({
   const multiplier = settings.contribution_multiplier
   const fraction = settings.pool_loan_fraction
 
-  const loanBalance =
-    loan?.status === 'active'
-      ? Number(loan.outstanding_principal ?? loan.principal)
-      : 0
-  const originalPrincipal = loan?.status === 'active' ? Number(loan.principal) : 0
-  const principalRepaid = Math.max(0, originalPrincipal - loanBalance)
+  const {
+    owed: loanBalance,
+    pending: pendingPrincipal,
+    activeCount,
+    pendingCount,
+    repaid: principalRepaid,
+  } = summariseLoans(loans)
 
   const contribCap = contributionCeiling(contribution, multiplier)
   // 045: a quarter of what the group is WORTH — pool plus what is out on loan —
   // so this figure does not drop every time somebody else borrows.
   const assetsCap = assetsCeiling(totalAssets, fraction)
-  const maxLoanAmount = maxLoan(contribution, totalAssets, { fraction, multiplier })
-  const hasOpenLoan = loan?.status === 'pending' || loan?.status === 'active'
+  const ceiling = maxLoan(contribution, totalAssets, { fraction, multiplier })
+  // 051: the ceiling covers everything they owe, and three loans is the most they can
+  // have in progress, so this is what an admin could still file for them today.
+  const atLoanLimit = activeCount + pendingCount >= MAX_OPEN_LOANS
+  const maxLoanAmount = atLoanLimit ? 0 : remainingLoanRoom(ceiling, loanBalance, pendingPrincipal)
 
   const bindingNote =
-    maxLoanAmount === 0
+    ceiling === 0
       ? contribCap === 0
         ? t('Make a savings deposit or pay your monthly fee to become eligible.')
         : t('The group is currently too small to issue a loan.')
@@ -83,20 +88,30 @@ export default function SummaryCards({
             )
 
   const loanSub =
-    loan?.status === 'pending'
-      ? t('Request pending')
-      : principalRepaid > 0
-        ? t('Repaid {amount} of {total}')
-            .replace('{amount}', formatTZS(principalRepaid))
-            .replace('{total}', formatTZS(originalPrincipal))
-        : undefined
+    [
+      activeCount > 1 && t('{n} loans').replace('{n}', activeCount),
+      principalRepaid > 0 &&
+        t('Repaid {amount} of {total}')
+          .replace('{amount}', formatTZS(principalRepaid))
+          .replace('{total}', formatTZS(loanBalance + principalRepaid)),
+      pendingCount > 0 && t('Request pending'),
+    ]
+      .filter(Boolean)
+      .join(' · ') || undefined
 
   const dueSub = penaltyDue > 0
     ? t('Incl. {penalty} penalty').replace('{penalty}', formatTZS(penaltyDue))
     : undefined
 
-  const maxLoanSub = bindingNote +
-    (hasOpenLoan && maxLoanAmount > 0 ? ' ' + t('Available once your current loan is closed.') : '')
+  const maxLoanSub = atLoanLimit
+    ? t('You have {n} loans in progress. One must be repaid before another.').replace(
+        '{n}',
+        activeCount + pendingCount,
+      )
+    : bindingNote +
+      (loanBalance + pendingPrincipal > 0
+        ? ' ' + t('You already owe {amount}.').replace('{amount}', formatTZS(loanBalance + pendingPrincipal))
+        : '')
 
   return (
     <div className="grid grid-cols-2 gap-3">
