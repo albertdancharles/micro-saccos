@@ -3,22 +3,38 @@
 // hierarchy so admins navigating between roles feel consistency.
 import StatCard from '../ui/StatCard'
 import { formatTZS } from '../../lib/format'
+import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../hooks/useLanguage'
 
-export default function AdminSummaryCards({ stats }) {
+export default function AdminSummaryCards({ stats, onEditTotalAssets }) {
   const { t } = useLanguage()
+  const { isOverseer } = useAuth()
   const outstanding = Number(stats.outstandingLoans ?? 0)
   const total = Number(stats.totalAssets ?? stats.pool)
 
   return (
     <div className="space-y-3">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-50 to-white p-4 sm:p-5 ring-1 ring-sky-200/70 shadow-hero">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">
-          {t('Total group assets')}
-        </p>
-        <p className="mt-1 text-[28px] font-semibold leading-tight tabular-nums text-sky-900">
-          {formatTZS(total)}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+              {t('Total group assets')}
+            </p>
+            <p className="mt-1 text-[28px] font-semibold leading-tight tabular-nums text-sky-900">
+              {formatTZS(total)}
+            </p>
+          </div>
+          {isOverseer && (
+            <button
+              type="button"
+              onClick={onEditTotalAssets}
+              aria-label={t('Adjust pool and total assets')}
+              className="shrink-0 inline-flex items-center justify-center min-h-11 rounded-xl bg-white text-sky-700 text-sm font-medium px-4 ring-1 ring-inset ring-sky-200 hover:bg-sky-50 hover:ring-sky-300 active:scale-[0.99] transition-all duration-150"
+            >
+              {t('Adjust')}
+            </button>
+          )}
+        </div>
         <p className="mt-1.5 text-xs text-sky-700/75">
           {formatTZS(stats.pool)} {t('in the pool')} · {formatTZS(outstanding)} {t('out on loans')}
         </p>

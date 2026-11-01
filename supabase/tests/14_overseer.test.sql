@@ -261,3 +261,83 @@ BEGIN
     'the overseer is exempt from the loan-free-admin mandate');
   PERFORM tests.assert_balanced('both admins hold loans');
 END $$;
+
+-- ============================================================================
+-- H. Adjusting the pool and total assets on one signature.
+--
+--    Total assets is the pool plus what is out on loans, so one delta moves both
+--    and leaves the loans alone. It needs a loan out to prove that: with none the
+--    two figures are equal and a test could not tell them apart.
+-- ============================================================================
+DO $$
+DECLARE
+  v_over    uuid;
+  v_a1      uuid;
+  v_a2      uuid;
+  v_loan    uuid;
+  v_req     uuid;
+  v_pool    numeric;
+  v_assets  numeric;
+  v_out     numeric;
+BEGIN
+  v_over := tests.make_overseer('OvrH Overseer');
+  v_a1   := tests.make_admin('OvrH Admin One');
+  v_a2   := tests.make_admin('OvrH Admin Two');
+
+  PERFORM tests.give_savings(v_a1, 5000000);
+
+  PERFORM tests.as_user(v_over);
+  v_loan := file_loan(v_a1, 100000);
+  PERFORM approve_loan(v_loan, 'test://proof');
+  PERFORM tests.as_owner();
+
+  SELECT pool_balance_tzs, total_assets_tzs, outstanding_loans_tzs
+    INTO v_pool, v_assets, v_out FROM v_group_assets;
+  PERFORM tests.eq((v_assets <> v_pool)::int::numeric, 1,
+    'a loan is out, so the pool and total assets are different figures');
+
+  -- Up, on the overseer's signature alone.
+  PERFORM tests.as_user(v_over);
+  v_req := request_pool_edit(50000, 'Interest from the bank');
+  PERFORM tests.as_owner();
+
+  PERFORM tests.eq((SELECT status FROM pool_adjustments WHERE id = v_req), 'approved',
+    'the overseer''s pool edit applies inside its own call');
+  PERFORM tests.eq(tests.pool(), v_pool + 50000, 'the pool rises by the delta');
+  PERFORM tests.eq((SELECT total_assets_tzs FROM v_group_assets), v_assets + 50000,
+    'total assets rise by the same delta');
+  PERFORM tests.eq((SELECT outstanding_loans_tzs FROM v_group_assets), v_out,
+    'what is out on loans does not move');
+  PERFORM tests.assert_balanced('the overseer raised the pool');
+
+  -- And back down.
+  PERFORM tests.as_user(v_over);
+  PERFORM request_pool_edit(-50000, 'Correcting the entry above');
+  PERFORM tests.as_owner();
+
+  PERFORM tests.eq(tests.pool(), v_pool, 'a negative delta brings the pool back');
+  PERFORM tests.eq((SELECT total_assets_tzs FROM v_group_assets), v_assets,
+    'and total assets with it');
+  PERFORM tests.assert_balanced('the overseer lowered the pool');
+
+  -- An ordinary admin's edit still waits, and the overseer's signature finishes it.
+  PERFORM tests.as_user(v_a1);
+  v_req := request_pool_edit(10000, 'Ordinary admin');
+  PERFORM tests.as_owner();
+
+  PERFORM tests.eq((SELECT status FROM pool_adjustments WHERE id = v_req), 'pending',
+    'an ordinary admin cannot adjust the pool alone');
+  PERFORM tests.eq(tests.pool(), v_pool, 'and the pool has not moved');
+
+  -- One edit at a time holds for the overseer too, or the same change could land twice.
+  PERFORM tests.as_user(v_over);
+  PERFORM tests.raises($q$ SELECT request_pool_edit(1, 'While one is pending') $q$,
+    'the overseer must settle a pending edit before opening another');
+  PERFORM approve_pool_edit(v_req);
+  PERFORM tests.as_owner();
+
+  PERFORM tests.eq((SELECT status FROM pool_adjustments WHERE id = v_req), 'approved',
+    'the overseer''s one approval carries an ordinary admin''s edit');
+  PERFORM tests.eq(tests.pool(), v_pool + 10000, 'and only then does the pool move');
+  PERFORM tests.assert_balanced('the overseer approved an ordinary admin''s edit');
+END $$;

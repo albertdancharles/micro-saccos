@@ -384,8 +384,16 @@ const sw = {
   'Cancel this pool edit request?': 'Ghairi ombi hili la kuhariri hazina?',
 
   // Request pool edit modal
-  'Edit group total assets': 'Hariri jumla ya mali ya kikundi',
-  'After approval: pool {pool} · total assets {total}.': 'Baada ya idhini: hazina {pool} · mali jumla {total}.',
+  'Adjust': 'Rekebisha',
+  'Adjust pool and total assets': 'Rekebisha hazina na jumla ya mali',
+  'Now: {amount}': 'Sasa: {amount}',
+  'Change: {amount}': 'Mabadiliko: {amount}',
+  '{amount} is out on loans and stays there, so the pool and total assets move together.':
+    '{amount} iko kwenye mikopo na haibadiliki, kwa hiyo hazina na jumla ya mali hubadilika pamoja.',
+  'Enter a figure different from today’s.': 'Weka kiasi tofauti na cha sasa.',
+  'This applies at once, on your signature alone, and goes in the audit log. Total assets also set the loan ceiling for every member.':
+    'Hii inatekelezwa mara moja kwa sahihi yako pekee, na inaandikwa katika kumbukumbu ya ukaguzi. Jumla ya mali pia huweka kikomo cha mkopo cha kila mwanachama.',
+  'Apply adjustment': 'Tekeleza marekebisho',
   'e.g. recorded interest from external account, or correction of a deposit mis-entry':
     'mf. riba iliyoandikwa kutoka akaunti ya nje, au marekebisho ya kosa la kuingiza amana',
   'A reason is required for every pool edit.': 'Sababu inahitajika kwa kila marekebisho ya hazina.',
